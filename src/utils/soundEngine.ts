@@ -504,7 +504,7 @@ class SoundEngine {
    * @param out - Destination array; must be at least `SPECTRUM_BANDS` long.
    */
   /** Time-domain scratch for `readEnergy`; allocated on first use. */
-  private timeScratch: Uint8Array | null = null
+  private timeScratch: Uint8Array<ArrayBuffer> | null = null
 
   /**
    * Instantaneous loudness envelope, normalised to 0..1.
