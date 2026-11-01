@@ -212,6 +212,44 @@ export function renderCardActivate(ctx: BaseAudioContext, out: AudioNode, at: nu
 }
 
 /**
+ * Crisp two-note confirmation, used when the interface language changes.
+ *
+ * An ORDERED pair rather than a chord: a chord reads as "something happened",
+ * while a rising interval reads as "switched from one state to another", which is
+ * exactly what the control does. Both notes are short and low-passed so they stay
+ * clean at the top of the spectrum instead of hissing.
+ */
+export function renderLocaleConfirm(ctx: BaseAudioContext, out: AudioNode, at: number): void {
+  const first = 1318.51 // E6
+  const second = 1760.0 // A6, a perfect fourth above
+
+  const tone = ctx.createBiquadFilter()
+  tone.type = 'lowpass'
+  tone.frequency.setValueAtTime(6200, at)
+  tone.Q.setValueAtTime(0.7, at)
+  tone.connect(out)
+
+  const voice = (freq: number, start: number, length: number, level: number): void => {
+    const osc = ctx.createOscillator()
+    osc.type = 'triangle'
+    osc.frequency.setValueAtTime(freq, start)
+
+    const env = ctx.createGain()
+    // Ramped rather than stepped: a step at these amplitudes clicks.
+    env.gain.setValueAtTime(SILENCE, start)
+    env.gain.exponentialRampToValueAtTime(level, start + 0.008)
+    env.gain.exponentialRampToValueAtTime(SILENCE, start + length)
+
+    osc.connect(env).connect(tone)
+    osc.start(start)
+    osc.stop(start + length + 0.02)
+  }
+
+  voice(first, at, 0.09, 0.2)
+  voice(second, at + 0.075, 0.16, 0.16)
+}
+
+/**
  * A weighty acrylic/steel knock, parameterised by impact speed.
  *
  * ── Mapping ───────────────────────────────────────────────────────────────
@@ -384,7 +422,7 @@ export function renderLaserPulse(ctx: BaseAudioContext, out: AudioNode, at: numb
 /* -------------------------------------------------------------------------- */
 
 /** Identifier used for per-sound throttling. */
-type SoundId = 'hover' | 'activate' | 'collision' | 'snap' | 'laser'
+type SoundId = 'hover' | 'activate' | 'collision' | 'snap' | 'laser' | 'locale'
 
 class SoundEngine {
   private ctx: AudioContext | null = null
@@ -610,6 +648,13 @@ class SoundEngine {
     const bus = this.begin('snap')
     if (!bus) return
     renderRopeSnap(bus.ctx, bus.out, bus.at)
+  }
+
+  /** Crisp two-note confirmation for an interface language change. */
+  playLocaleConfirm(): void {
+    const bus = this.begin('locale')
+    if (!bus) return
+    renderLocaleConfirm(bus.ctx, bus.out, bus.at)
   }
 
   /** Laser discharge sweep. */

@@ -17,6 +17,20 @@ export type PerformanceTier = 'high' | 'medium'
  *                otherwise a reset coordinate of (0,0) would be indistinguishable
  *                from a cursor resting exactly at the screen centre.
  */
+/**
+ * The showroom's chapters, in scroll order.
+ *
+ * A closed union rather than `string` so `t.sections[id]` type-checks: adding a
+ * chapter without adding its copy becomes a compile error, which is the point.
+ */
+export type SectionId =
+  | 'hero'
+  | 'gallery'
+  | 'architecture'
+  | 'playground'
+  | 'archive'
+  | 'contact'
+
 export interface MouseState {
   /**
    * Eased pointer influence in [0, 1].

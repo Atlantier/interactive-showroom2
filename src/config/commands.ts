@@ -11,6 +11,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { SHOWROOM_SECTIONS } from '@/config/sections'
+import { getDictionary } from '@/i18n/useI18n'
 import { startScroll, scrollToTarget } from '@/lib/scrollEngine'
 import { VFX_PRESET_ORDER, getVfxPalette } from '@/lib/vfxPalette'
 import {
@@ -146,7 +147,7 @@ function downloadResumeJson(): void {
     sections: SHOWROOM_SECTIONS.map((section) => ({
       index: section.index,
       id: section.id,
-      title: section.label,
+      title: getDictionary().sections[section.id].title,
     })),
     skills: [
       { group: '实时图形', items: ['WebGL', 'Three.js', 'R3F', 'GLSL', '后处理管线'] },
@@ -177,10 +178,10 @@ export function buildCommands(): Command[] {
 
   const sectionCommands: Command[] = SHOWROOM_SECTIONS.map((section) => ({
     id: `goto-${section.id}`,
-    title: `跳转到 ${section.label}`,
+    title: `${getDictionary().commands.jumpTo} ${getDictionary().sections[section.id].title}`,
     subtitle: section.id,
     group: '跳转章节',
-    keywords: `${section.id} section chapter goto jump navigate ${section.label}`,
+    keywords: `${section.id} section chapter goto jump navigate ${getDictionary().sections[section.id].title}`,
     icon: ArrowRight,
     hint: section.index,
     active: state.activeSection === section.id,

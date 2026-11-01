@@ -5,6 +5,7 @@ import { BentoShowcase } from '@/components/bento/BentoShowcase'
 import { FabrikCreature } from '@/components/sandbox/FabrikCreature'
 import { VerletLanyard } from '@/components/sandbox/VerletLanyard'
 import { cn } from '@/lib/cn'
+import { useI18n } from '@/i18n/useI18n'
 
 /* -------------------------------------------------------------------------- */
 /*  Section shell — every chapter shares this frame                           */
@@ -64,6 +65,8 @@ export function SectionShell({
 /*  HERO                                                                      */
 /* -------------------------------------------------------------------------- */
 export function HeroSection() {
+  const { t } = useI18n()
+
   return (
     <section
       id="hero"
@@ -73,22 +76,22 @@ export function HeroSection() {
       {/* Status strip */}
       <div className="mb-8 flex items-center gap-2.5 font-mono text-[0.62rem] tracking-[0.28em] text-ink-500 uppercase">
         <StatusDot tone="cyan" />
-        <span>system online</span>
+        <span>{t.hero.statusOnline}</span>
         <span aria-hidden className="h-px w-8 bg-void-600" />
-        <span className="text-ink-700">webgl · lenis · r3f</span>
+        <span className="text-ink-700">{t.hero.stackStack}</span>
       </div>
 
       <h1
         id="hero-title"
         className="max-w-5xl text-[clamp(2.75rem,9vw,7rem)] leading-[0.92] font-medium tracking-[-0.03em] text-ink-100"
       >
-        <span className="block text-ink-500">个人</span>
-        <span className="block text-glow">数字展厅</span>
+        <span className="block text-ink-500">{t.hero.titleLead}</span>
+        <span className="block text-glow">{t.hero.titleMain}</span>
       </h1>
 
       <p className="mt-8 max-w-xl text-base leading-relaxed text-ink-500 sm:text-lg">
-        一个由 WebGL、惯性滚动与实时状态编排构成的沉浸式空间。
-        <span className="text-ink-300"> 在这里，滚动即是镜头运动。</span>
+        {t.hero.body}
+        <span className="text-ink-300"> {t.hero.bodyAccent}</span>
       </p>
 
       <div className="mt-10 flex flex-wrap items-center gap-3">
@@ -98,7 +101,7 @@ export function HeroSection() {
           className="group inline-flex items-center gap-2 rounded-lg border border-signal-cyan/45 bg-signal-cyan/10 px-5 py-3 text-sm font-medium tracking-wide text-signal-cyan transition-all duration-300 hover:border-signal-cyan hover:bg-signal-cyan/18 hover:shadow-[0_0_32px_-8px_var(--color-signal-cyan)]"
         >
           <Sparkles className="size-4" aria-hidden />
-          进入展厅
+          {t.hero.ctaEnter}
           <ArrowUpRight
             className="size-4 transition-transform duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
             aria-hidden
@@ -110,14 +113,14 @@ export function HeroSection() {
           onClick={() => scrollToTarget('#archive', -16)}
           className="rounded-lg border border-void-600 px-5 py-3 text-sm tracking-wide text-ink-300 transition-colors hover:border-void-500 hover:text-ink-100"
         >
-          浏览档案
+          {t.hero.ctaArchive}
         </button>
       </div>
 
       {/* Scroll hint */}
       <div className="absolute inset-x-0 bottom-8 flex flex-col items-center gap-2">
         <span className="font-mono text-[0.55rem] tracking-[0.4em] text-ink-700 uppercase">
-          scroll
+          {t.hero.scrollHint}
         </span>
         <span aria-hidden className="relative h-10 w-px overflow-hidden bg-void-600">
           <span className="absolute inset-x-0 top-0 h-4 animate-scan bg-signal-cyan" />
@@ -131,13 +134,14 @@ export function HeroSection() {
 /*  GALLERY                                                                   */
 /* -------------------------------------------------------------------------- */
 export function GallerySection() {
+  const { t } = useI18n()
+
   return (
-    <SectionShell
-      id="gallery"
-      index="02"
-      eyebrow="gallery"
-      title="展厅"
-      description="每一件展品都是一段可被滚动与指针解读的实时图形。"
+    <SectionShell  id="gallery"
+      index={t.sections.gallery.index}
+      eyebrow={t.sections.gallery.eyebrow}
+      title={t.sections.gallery.title}
+      description={t.sections.gallery.description}
     >
       <BentoShowcase />
     </SectionShell>
@@ -148,13 +152,15 @@ export function GallerySection() {
 /*  PLAYGROUND                                                                */
 /* -------------------------------------------------------------------------- */
 export function PlaygroundSection() {
+  const { t } = useI18n()
+
   return (
     <SectionShell
       id="playground"
-      index="04"
-      eyebrow="playground"
-      title="沙盒"
-      description="手写求解器：Verlet 绳索物理，与 FABRIK 逆向运动学驱动的机械生物。"
+      index={t.sections.playground.index}
+      eyebrow={t.sections.playground.eyebrow}
+      title={t.sections.playground.title}
+      description={t.sections.playground.description}
     >
       <VerletLanyard className="mt-12 h-[clamp(24rem,52vh,34rem)] w-full" />
       <FabrikCreature className="mt-6 h-[clamp(22rem,48vh,30rem)] w-full" />
@@ -165,23 +171,23 @@ export function PlaygroundSection() {
 /* -------------------------------------------------------------------------- */
 /*  ARCHIVE                                                                   */
 /* -------------------------------------------------------------------------- */
-const ARCHIVE_ROWS = [
-  { year: '2026', title: '实时图形实验', type: 'WebGL' },
-  { year: '2025', title: '交互叙事装置', type: 'Installation' },
-  { year: '2024', title: '生成式视觉系统', type: 'Generative' },
-]
-
 export function ArchiveSection() {
+  const { t } = useI18n()
+
   return (
     <SectionShell
       id="archive"
-      index="05"
-      eyebrow="archive"
-      title="档案"
-      description="按时间索引的创作记录。"
+      index={t.sections.archive.index}
+      eyebrow={t.sections.archive.eyebrow}
+      title={t.sections.archive.title}
+      description={t.sections.archive.description}
     >
       <ul className="mt-14 divide-y divide-void-600/60 border-y border-void-600/60">
-        {ARCHIVE_ROWS.map((row) => (
+        {[
+          { year: '2026', title: t.archive.rows.graphics, type: 'WebGL' },
+          { year: '2025', title: t.archive.rows.narrative, type: 'Installation' },
+          { year: '2024', title: t.archive.rows.generative, type: 'Generative' },
+        ].map((row) => (
           <li key={row.title}>
             <button
               type="button"
@@ -212,13 +218,15 @@ export function ArchiveSection() {
 /*  CONTACT                                                                   */
 /* -------------------------------------------------------------------------- */
 export function ContactSection() {
+  const { t } = useI18n()
+
   return (
     <SectionShell
       id="contact"
-      index="06"
-      eyebrow="contact"
-      title="通讯"
-      description="如果你也在构建某种沉浸式的数字空间，我们可以聊聊。"
+      index={t.sections.contact.index}
+      eyebrow={t.sections.contact.eyebrow}
+      title={t.sections.contact.title}
+      description={t.sections.contact.description}
       className="min-h-[80svh]"
     >
       <div className="mt-12 flex flex-wrap items-center gap-3">
@@ -235,10 +243,10 @@ export function ContactSection() {
       </div>
 
       <footer className="mt-24 flex flex-col gap-4 border-t border-void-600/60 pt-6 font-mono text-[0.6rem] tracking-[0.2em] text-ink-700 uppercase sm:flex-row sm:items-center sm:justify-between">
-        <span>© 2026 digital showroom</span>
+        <span>{t.footer.copyright}</span>
         <span className="flex items-center gap-2">
           <StatusDot tone="teal" pulse={false} />
-          built with react 19 · three.js · lenis
+          {t.footer.builtWith}
         </span>
       </footer>
     </SectionShell>

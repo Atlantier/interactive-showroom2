@@ -21,6 +21,8 @@ import { ScrollProgressRing } from '@/components/ui/ScrollProgressRing'
 import { AudioSpectrumMeter } from '@/components/layout/AudioSpectrumMeter'
 import { VfxSweepTransition } from '@/components/layout/VfxSweepTransition'
 import { SHOWROOM_SECTIONS } from '@/config/sections'
+import { useI18n } from '@/i18n/useI18n'
+import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher'
 import {
   ActiveSectionBadge,
   ScrollProgressRail,
@@ -36,6 +38,7 @@ import {
  * only React updates happen when the user toggles the tier or the panel itself.
  */
 function FpsReadout() {
+  const { t } = useI18n()
   const tier = useAppStore((state) => state.performanceTier)
   const cycleTier = useAppStore((state) => state.cyclePerformanceTier)
 
@@ -111,7 +114,7 @@ function FpsReadout() {
             </span>
           </div>
           <div className="flex items-baseline justify-between">
-            <span className="text-ink-500">峰值</span>
+            <span className="text-ink-500">{t.nav.worst}</span>
             <span className="tabular-nums text-ink-300">
               <span ref={worstMsRef}>--.--</span>
               <span className="ml-1 text-[0.6rem] text-ink-700">ms</span>
@@ -122,7 +125,7 @@ function FpsReadout() {
 
           {/* viewport */}
           <div className="flex items-baseline justify-between">
-            <span className="text-ink-500">视口</span>
+            <span className="text-ink-500">{t.nav.viewport}</span>
             <span className="tabular-nums text-ink-300">
               <span ref={viewportRef}>---×---</span>
             </span>
@@ -139,11 +142,11 @@ function FpsReadout() {
             type="button"
             onClick={cycleTier}
             className="mt-1 flex w-full items-center justify-between rounded-md border border-void-600/70 px-2 py-1.5 transition-colors hover:border-signal-cyan/50 hover:text-signal-cyan"
-            title="切换渲染档位"
+            title={t.nav.tierCycle}
           >
             <span className="flex items-center gap-1.5 text-ink-500">
               <Cpu className="size-3" aria-hidden />
-              档位
+              {t.nav.tierLabel}
             </span>
             <span
               className={cn(
@@ -166,6 +169,7 @@ function FpsReadout() {
 /*  Navbar                                                                    */
 /* -------------------------------------------------------------------------- */
 export function Navbar() {
+  const { t } = useI18n()
   const soundEnabled = useAppStore((state) => state.soundEnabled)
   const toggleSound = useAppStore((state) => state.toggleSound)
   const fpsMonitorEnabled = useAppStore((state) => state.fpsMonitorEnabled)
@@ -249,7 +253,7 @@ export function Navbar() {
             type="button"
             onClick={() => goTo('hero')}
             className="group flex shrink-0 items-center gap-2.5"
-            aria-label="返回展厅入口"
+            aria-label={t.nav.homeAria}
           >
             <span className="relative grid size-8 place-items-center rounded-md border border-signal-cyan/35 bg-signal-cyan/8 text-signal-cyan transition-colors group-hover:border-signal-cyan/70">
               <Terminal className="size-4" aria-hidden />
@@ -260,10 +264,10 @@ export function Navbar() {
             </span>
             <span className="flex flex-col items-start leading-none">
               <span className="font-mono text-[0.72rem] font-medium tracking-[0.22em] text-ink-100 uppercase">
-                Showroom
+                {t.nav.brand}
               </span>
               <span className="mt-1 font-mono text-[0.55rem] tracking-[0.28em] text-ink-700 uppercase">
-                Digital · v0.1
+                {t.nav.brandSub}
               </span>
             </span>
           </button>
@@ -283,7 +287,7 @@ export function Navbar() {
             {/* ── Live FPS toggle + panel ────────────────────────────── */}
             <div className="relative">
               <IconButton
-                label={fpsMonitorEnabled ? '关闭 FPS 监视器' : '开启 FPS 监视器'}
+                label={fpsMonitorEnabled ? t.nav.fpsMonitorOn : t.nav.fpsMonitorOff}
                 active={fpsMonitorEnabled}
                 onClick={toggleFpsMonitor}
               >
@@ -294,7 +298,7 @@ export function Navbar() {
 
             {/* ── Developer telemetry overlay (Shift+D) ──────────────── */}
             <IconButton
-              label={perfHudOpen ? '关闭性能遥测面板 (Shift+D)' : '打开性能遥测面板 (Shift+D)'}
+              label={perfHudOpen ? t.nav.perfHudClose : t.nav.perfHudOpen}
               active={perfHudOpen}
               onClick={togglePerfHud}
             >
@@ -303,7 +307,7 @@ export function Navbar() {
 
             {/* ── Command palette (Cmd/Ctrl+K) ───────────────────────── */}
             <IconButton
-              label="打开命令面板 (Ctrl/⌘ + K)"
+              label={t.nav.commandPaletteOpen}
               onClick={toggleCommandPalette}
             >
               <Command className="size-4" aria-hidden />
@@ -318,7 +322,7 @@ export function Navbar() {
                 palette exposes direct per-preset selection for anyone who does
                 not want to cycle. */}
             <IconButton
-              label={`切换视觉调色（当前：${vfxPalette.label}）`}
+              label={`${t.nav.paletteCycle} · ${vfxPalette.label}`}
               active={vfxPreset !== DEFAULT_VFX_PRESET}
               onClick={() => setVfxPreset(getNextVfxPreset(vfxPreset))}
             >
@@ -341,7 +345,7 @@ export function Navbar() {
                */}
               <AudioSpectrumMeter className="hidden sm:flex" />
               <IconButton
-                label={soundEnabled ? '关闭音效' : '开启音效'}
+                label={soundEnabled ? t.nav.soundMute : t.nav.soundUnmute}
                 active={soundEnabled}
                 onClick={toggleSound}
               >
@@ -355,9 +359,16 @@ export function Navbar() {
 
             <span aria-hidden className="mx-0.5 hidden h-5 w-px bg-void-600/70 sm:block" />
 
+            {/*
+              * Language capsule. Sits with the other persistent preferences and
+              * before the mobile menu, so the right-hand cluster keeps its order:
+              * system state, preferences, then navigation collapse.
+              */}
+            <LanguageSwitcher className="mr-1 hidden sm:flex" />
+
             {/* ── Mobile menu ────────────────────────────────────────── */}
             <IconButton
-              label={mobileOpen ? '关闭菜单' : '打开菜单'}
+              label={mobileOpen ? t.nav.closeMenu : t.nav.openMenu}
               active={mobileOpen}
               className="lg:hidden"
               onClick={() => setMobileOpen((open) => !open)}
@@ -378,7 +389,7 @@ export function Navbar() {
             mobileOpen ? 'max-h-80 opacity-100' : 'max-h-0 opacity-0',
           )}
         >
-          <nav aria-label="章节导航" className="flex flex-col px-4 py-2 sm:px-6">
+          <nav aria-label={t.nav.mobileMenuAria} className="flex flex-col px-4 py-2 sm:px-6">
             {SHOWROOM_SECTIONS.map((section) => (
               <button
                 key={section.id}
@@ -394,7 +405,7 @@ export function Navbar() {
                 <span className="font-mono text-[0.62rem] tracking-widest text-ink-700">
                   {section.index}
                 </span>
-                <span className="text-sm tracking-wide">{section.label}</span>
+                <span className="text-sm tracking-wide">{t.sections[section.id].title}</span>
                 {section.id === activeSection && <StatusDot className="ml-auto" />}
               </button>
             ))}

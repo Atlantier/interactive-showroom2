@@ -1,11 +1,13 @@
 import { useEffect, useRef } from 'react'
 import { onScrollFrame, scrollToTarget } from '@/lib/scrollEngine'
 import { useAppStore } from '@/store/useAppStore'
+import { useI18n } from '@/i18n/useI18n'
+import type { SectionId } from '@/types'
 import { cn } from '@/lib/cn'
 
 export interface SectionLink {
-  id: string
-  label: string
+  /** Closed union, so the label lookup below cannot miss. */
+  id: SectionId
   /** Short mono index shown before the label, e.g. "01". */
   index: string
 }
@@ -52,8 +54,10 @@ export function SectionNav({
   sections: SectionLink[]
   activeSection: string
 }) {
+  const { t } = useI18n()
+
   return (
-    <nav aria-label="主要章节" className="hidden items-center gap-1 lg:flex">
+    <nav aria-label={t.nav.primarySectionsAria} className="hidden items-center gap-1 lg:flex">
       {sections.map((section) => {
         const isActive = section.id === activeSection
         return (
@@ -75,7 +79,7 @@ export function SectionNav({
             >
               {section.index}
             </span>
-            <span>{section.label}</span>
+            <span>{t.sections[section.id].title}</span>
             {isActive && (
               <span
                 aria-hidden
@@ -98,11 +102,14 @@ export function SectionNav({
  */
 export function ActiveSectionBadge({ sections }: { sections: SectionLink[] }) {
   const activeSection = useAppStore((state) => state.activeSection)
+  const { t } = useI18n()
   const current = sections.find((section) => section.id === activeSection)
   return (
     <span className="flex shrink-0 items-baseline gap-1.5 font-mono text-[0.65rem] tracking-[0.16em] whitespace-nowrap uppercase lg:hidden">
       <span className="text-signal-cyan">{current ? current.index : '--'}</span>
-      <span className="hidden text-ink-500 xs:inline">{current?.label ?? '展厅'}</span>
+      <span className="hidden text-ink-500 xs:inline">
+        {current ? t.sections[current.id].title : t.nav.fallbackSection}
+      </span>
     </span>
   )
 }
