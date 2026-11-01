@@ -1,0 +1,28 @@
+# Normalize line endings for a cross-platform repository.
+#
+# The dev machine is Windows and CI runs on Linux. Without this, Git's
+# `core.autocrlf` default can check files out as CRLF locally while the
+# repository (and therefore CI) sees LF — producing whole-file diffs on every
+# touch and making `git blame` useless.
+#
+# `eol=lf` stores LF and checks it out as LF on every platform, which is what
+# the toolchain here expects (Vite, ESLint-style configs and the CDN all treat
+# LF as canonical).
+* text=auto eol=lf
+
+# Generated verification output — never diff, never merge.
+screenshots/** -text -diff
+
+# Binary assets: keep bytes untouched.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+
+# pnpm owns this file; merging it by hand produces a broken tree.
+pnpm-lock.yaml merge=binary

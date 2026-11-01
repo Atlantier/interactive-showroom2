@@ -1,0 +1,135 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Deploy the showroom to GitHub Pages.
+#
+# Trigger: every push to `main`, plus manual runs from the Actions tab.
+#
+# The pipeline is deliberately split into two jobs so that the things that can
+# fail fast (install, typecheck, build) are separated from the thing that
+# mutates production (publish). A type error therefore never reaches the deploy
+# step, and the deploy job only starts once a verified `dist/` artifact exists.
+#
+# One-time repository setup:
+#   Settings → Pages → Build and deployment → Source: **GitHub Actions**
+# Without that, `actions/deploy-pages` has nowhere to publish and fails with
+# "Get Pages site failed".
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  # Lets you re-deploy without an empty commit (e.g. after changing Pages config).
+  workflow_dispatch:
+
+# Least privilege. `pages: write` + `id-token: write` are what the Pages
+# deployment action exchanges for its publish token; nothing here needs write
+# access to the repository itself.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two deploys race. Queue the newest run and let an in-flight publish
+# finish rather than cancelling it mid-upload, which can leave Pages serving a
+# half-written artifact.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  # ───────────────────────────────────────────────────────────────────────────
+  # Build: install → typecheck → build → upload the artifact
+  # ───────────────────────────────────────────────────────────────────────────
+  build:
+    name: Typecheck & build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Must run before setup-node: `cache: pnpm` shells out to pnpm to locate
+      # the store directory, and fails if the binary is not on PATH yet.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          # Pinned to the version that authored pnpm-lock.yaml. The lockfile is
+          # format v9.0 (readable by pnpm 9+), but pinning the EXACT resolver is
+          # what makes CI resolve the tree the same way local `pnpm install` did
+          # — the cheapest defence against "works on my machine".
+          version: '11.8.0'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          # Vite 8 requires ^20.19 || >=22.12. Node 22 LTS satisfies it.
+          node-version: 22
+          # Keyed on pnpm-lock.yaml, so an unchanged lockfile restores the whole
+          # store in a few seconds instead of re-resolving the tree.
+          cache: pnpm
+
+      - name: Install dependencies
+        # `--frozen-lockfile` fails if package.json and the lockfile disagree,
+        # which is the CI-safe behaviour: never silently resolve a different tree
+        # than the one that was tested locally.
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        # Runs `tsc -b --noEmit` across the app and node projects. Kept as its own
+        # step so a type error is reported as a red "Typecheck" check rather than
+        # being buried inside a failed build log. (`pnpm build` re-checks anyway —
+        # the build script is `tsc -b && vite build` — but fail-fast is worth the
+        # duplicated pass.)
+        run: pnpm typecheck
+
+      - name: Resolve Pages base path
+        # GitHub Pages serves project sites from /<repo>/, user/organisation sites
+        # from /. Vite reads this at config time (see vite.config.ts).
+        run: |
+          repo_name="${GITHUB_REPOSITORY#*/}"
+          if [[ "$repo_name" == *.github.io ]]; then
+            echo "VITE_BASE_PATH=/" >> "$GITHUB_ENV"
+          else
+            echo "VITE_BASE_PATH=/${repo_name}/" >> "$GITHUB_ENV"
+          fi
+          echo "Using base path: ${VITE_BASE_PATH:-}"
+
+      - name: Build
+        run: pnpm build
+        env:
+          NODE_ENV: production
+
+      - name: Verify build output
+        # A build that silently emits nothing (or only the HTML shell) would
+        # deploy a blank page. Fail loudly here instead of after publishing.
+        run: |
+          test -f dist/index.html || { echo "::error::dist/index.html missing"; exit 1; }
+          js_count=$(find dist -name '*.js' | wc -l)
+          css_count=$(find dist -name '*.css' | wc -l)
+          echo "bundles: ${js_count} js, ${css_count} css"
+          test "$js_count" -gt 0 || { echo "::error::no JS bundle emitted"; exit 1; }
+          echo "dist size: $(du -sh dist | cut -f1)"
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Deploy: publish the verified artifact
+  # ───────────────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      # Surfaces the live URL on the Actions run summary.
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
