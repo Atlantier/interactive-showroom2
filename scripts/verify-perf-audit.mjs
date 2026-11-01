@@ -2,9 +2,9 @@
  * Verifies the performance audit: viewport culling, adaptive quality and the
  * developer telemetry HUD.
  *
- * 鈹€鈹€ Measuring "did it actually sleep?" 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+ * ── Measuring "did it actually sleep?" ────────────────────────────────────
  * The meaningful proof is that GPU work STOPS, not that a flag flipped. For the
- * R3F canvas that is `gl.info.render.frame` 鈥?a counter three.js increments on
+ * R3F canvas that is `gl.info.render.frame` —a counter three.js increments on
  * every `gl.render()` call. Scrolling the section away must freeze it; scrolling
  * back must resume it. That cannot be faked by an early-returning `useFrame`,
  * which is exactly why it is the right thing to measure.
@@ -51,7 +51,7 @@ function installHelpers() {
      * Must be `__archScene`, not `__showroomScene`: the latter belongs to the
      * fixed, full-viewport background nebula, which is on screen at every scroll
      * position and therefore renders unconditionally. Measuring it would report
-     * "always rendering" no matter how well the culling worked 鈥?which is exactly
+     * "always rendering" no matter how well the culling worked —which is exactly
      * the false negative the first run of this check produced.
      */
     renderFrames() {
@@ -269,7 +269,7 @@ const report = {}
 report.install = await evalAsync('(' + installHelpers.toString() + ')()')
 report.load = await evalAsync('window.__pf.load()')
 
-/* 鈹€鈹€ P1/P2: canvas culling 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
+/* ── P1/P2: canvas culling ──────────────────────────────────────────────── */
 // Park the architecture section on screen and let it run.
 await evalAsync('window.__pf.scrollTo("#architecture", "center")')
 await sleep(2500)
@@ -294,7 +294,7 @@ report.P2_onscreenSample = await evalAsync(
   'window.__pf.sample(function () { return window.__pf.renderFrames() }, 900)',
 )
 
-/* 鈹€鈹€ P3: 2D sandbox culling 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
+/* ── P3: 2D sandbox culling ─────────────────────────────────────────────── */
 await evalAsync('window.__pf.scrollTo("#playground", "center")')
 await sleep(1800)
 report.P3_sandboxAwake = await evalAsync(
@@ -310,7 +310,7 @@ report.P3_sandboxAsleep = await evalAsync(
   'window.__pf.sample(function () { return window.__pf.sandboxClock() }, 800)',
 )
 
-/* 鈹€鈹€ P4/P5/P6: tier levers 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
+/* ── P4/P5/P6: tier levers ──────────────────────────────────────────────── */
 await evalAsync('window.__pf.scrollTo("#hero", "center")')
 await sleep(1200)
 
@@ -342,7 +342,7 @@ report.P4_medium = await evalAsync(`({
   notice: document.body.innerText.includes('已切换至性能模式'),
 })`)
 
-/* 鈹€鈹€ P7: a manual choice disarms the automatic monitor 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
+/* ── P7: a manual choice disarms the automatic monitor ──────────────────── */
 report.P7_armAfterManual = await evalAsync(`(async () => {
   window.__pfStore.useAppStore.setState({ performanceTier: 'medium', autoDowngradeArmed: true })
   await new Promise((r) => setTimeout(r, 200))
@@ -356,7 +356,7 @@ report.P7_armAfterManual = await evalAsync(`(async () => {
   }
 })()`)
 
-/* 鈹€鈹€ P8/P9: telemetry HUD 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
+/* ── P8/P9: telemetry HUD ───────────────────────────────────────────────── */
 report.P8_closed = await evalAsync('window.__pf.hudOpen()')
 report.P8_afterShortcut = await evalAsync('window.__pf.pressShortcut()')
 await sleep(900)
@@ -384,7 +384,7 @@ report.P8_afterSecondShortcut = await evalAsync('window.__pf.pressShortcut()')
 report.exceptions = exceptions
 report.consoleErrors = consoleErrors
 
-/* 鈹€鈹€ Assertions 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
+/* ── Assertions ─────────────────────────────────────────────────────────── */
 const off = report.P1_offscreenSample ?? {}
 const on = report.P2_onscreenSample ?? {}
 const awake = report.P3_sandboxAwake ?? {}
@@ -396,28 +396,28 @@ const hud = report.P9_metrics ?? {}
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
 
 report.assertions = {
-  /* P1 鈥?the canvas genuinely stops rendering while off screen */
+  /* P1 —the canvas genuinely stops rendering while off screen */
   renderFrozenOffscreen: (num(off.delta) ?? 1) === 0,
   renderFramesObserved: (off.samples ?? 0) > 20,
 
-  /* P2 鈥?and resumes, without a stall */
+  /* P2 —and resumes, without a stall */
   renderResumesOnscreen: (num(on.delta) ?? 0) > 10,
 
-  /* P3 鈥?the 2D physics loop stops too */
+  /* P3 —the 2D physics loop stops too */
   // A rope point oscillates, so the delta can legitimately be negative; what
   // matters is that the value MOVED. Comparing `delta > 0` would fail on any
   // sample window that happened to end lower than it started.
   sandboxRanWhileVisible: (num(awake.max) ?? 0) - (num(awake.min) ?? 0) > 0.001,
   sandboxFrozenWhileOffscreen: (num(asleep.max) ?? 1) - (num(asleep.min) ?? 0) === 0,
 
-  /* P4 鈥?particles halve on the medium tier */
+  /* P4 —particles halve on the medium tier */
   highParticles: high.counters?.particles === 8000,
   mediumParticles: medium.counters?.particles === 4000,
 
-  /* P5 鈥?DPR pinned to exactly 1.0 on medium */
+  /* P5 —DPR pinned to exactly 1.0 on medium */
   mediumDprIsOne: num(medium.pixelRatio) === 1,
 
-  /* P6 鈥?ChromaticAberration is dropped on medium */
+  /* P6 —ChromaticAberration is dropped on medium */
   highHasChromaticAberration:
     Array.isArray(high.quality?.effects) && high.quality.effects.includes('ChromaticAberration'),
   mediumDropsChromaticAberration:
@@ -429,16 +429,16 @@ report.assertions = {
   /* The user is told about the downgrade */
   downgradeNoticeShown: medium.notice === true,
 
-  /* P7 鈥?a manual tier choice is never overridden */
+  /* P7 —a manual tier choice is never overridden */
   manualChoiceDisarmsMonitor: report.P7_armAfterManual?.armedAfterManual === false,
   ignoredDegradeAfterManual: report.P7_armAfterManual?.tierAfterIgnoredDegrade === 'high',
 
-  /* P8 鈥?Shift+D toggles the panel */
+  /* P8 —Shift+D toggles the panel */
   hudStartsClosed: report.P8_closed === false,
   shortcutOpensHud: report.P8_afterShortcut === true,
   shortcutClosesHud: report.P8_afterSecondShortcut === false,
 
-  /* P9 鈥?the panel reports live values, not placeholders */
+  /* P9 —the panel reports live values, not placeholders */
   hudShowsFps: num(parseFloat(hud.fps ?? '')) !== null && parseFloat(hud.fps) > 0,
   hudShowsFrameTime: num(parseFloat(hud.frame ?? '')) !== null && parseFloat(hud.frame) > 0,
   // The displayed count must match the live counter, so a hard-coded string

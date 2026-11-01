@@ -2,13 +2,16 @@
 
 # 个人数字展厅 · INTERACTIVE SHOWROOM
 
-**一个由 WebGL、惯性滚动与实时状态编排构成的沉浸式空间。滚动即是镜头运动。**
+**Apple / NVIDIA 主题演讲风格的 3D 与物理交互数字展厅 —— 滚动即镜头运动，物理真的在算。**
 
 <p>
-  <img alt="Vite" src="https://img.shields.io/badge/Vite-8.3-646CFF?logo=vite&logoColor=white">
-  <img alt="React" src="https://img.shields.io/badge/React-19.3-61DAFB?logo=react&logoColor=black">
+  <img alt="React 19" src="https://img.shields.io/badge/React-19.3-61DAFB?logo=react&logoColor=black">
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white">
   <img alt="Three.js" src="https://img.shields.io/badge/Three.js-r186-000000?logo=three.js&logoColor=white">
+  <img alt="React Three Fiber" src="https://img.shields.io/badge/R3F-9.8-000000?logo=react&logoColor=61DAFB">
+  <img alt="Framer Motion" src="https://img.shields.io/badge/Framer_Motion-14-E10098?logo=framer&logoColor=white">
+  <img alt="Web Audio API" src="https://img.shields.io/badge/Web_Audio_API-procedural-FF6D00">
+  <img alt="Vite" src="https://img.shields.io/badge/Vite-8.3-646CFF?logo=vite&logoColor=white">
   <img alt="Tailwind" src="https://img.shields.io/badge/Tailwind-v4-06B6D4?logo=tailwindcss&logoColor=white">
 </p>
 
@@ -23,6 +26,7 @@
 </p>
 
 <p>
+  <a href="#-核心特性">特性</a> ·
   <a href="#-三十秒速览">速览</a> ·
   <a href="#-架构拓扑">架构</a> ·
   <a href="#-核心物理与数学">物理</a> ·
@@ -51,6 +55,34 @@
 
 > 没有一张贴图、没有一个视频、没有一段音频文件。
 > 你看到的全部像素与听到的全部声音，都是运行时算出来的。
+
+---
+
+## ✨ 核心特性
+
+### 🌌 GPU 粒子流场
+8 000 个点、单 `draw call`。手写 curl-noise GLSL 构造**无散度**向量场（`∇ · v = 0`），粒子沿丝绢状流线运动；鼠标斥力半径 `R = 2.5`、强度 34，高速滚动触发 warp 拉伸与弹性回弹。颜色由「鼠标影响量」驱动而非位移，速度只做次级色阶。
+
+### 🃏 双层流光 Bento Grid
+NVIDIA / Linear 式卡片矩阵，**两层**独立聚光：`1px` 边框环（400 px 径向渐变 + 遮罩合成）+ 大面积表面光泽。父容器用**单个** `pointermove` 驱动全部卡片，通过 CSS 变量 `--mouse-x/--mouse-y` 写位置，配 ±8° 弹簧 3D 倾斜与 `translateZ(30px)` 视差。触摸屏自动降级为呼吸光效 + 陀螺仪偏移。
+
+### 🎫 Verlet 物理工牌
+4 条手写 Verlet 绳索：`Δt = 1/60` 定长步进、12 次 Gauss-Seidel 松弛、OBB 碰撞、逐绳相位风场 `W(t) = A·sin(ω₁t)·cos(ω₂t)`。应变超过 `2.5` 直接断裂、工牌脱手下坠。绳索以 Catmull-Rom → 三次贝塞尔绘制，带织物渐变与高光边。
+
+### 🦾 FABRIK 逆向运动学机械生物
+同一套求解器两种形态：**6 骨工业机械臂**（激光爪 + 后坐力弹簧）与 **12 节脊椎四足生物**（转向行为 + 4× 双骨 IK 腿）。带角度锥约束的**对角小跑**步态、抛物线摆动、落地涟漪。
+
+### 🏛️ Apple 主题演讲式 3D 架构章节
+300vh 吸附舞台，单一 `p ∈ [0,1]` 驱动三层装配 → 分层拆解 → 结构重组。`MeshTransmissionMaterial` 磨砂折射棱镜、数据流脉冲 shader、点击图层拉近相机并展开技术栈浮层。
+
+### 🔊 程序化音频（Web Audio API）
+纯代码合成，**零音频文件**。信号链：母总线 → 压缩器 → 分析器 → 输出。悬停滴答、卡片激活、物理碰撞、绳索断裂、激光脉冲五个音色全部实时合成，高频触发 40 ms 节流。导航栏 5 段实时频谱由 `AnalyserNode` 驱动。
+
+### ⌘ 命令面板
+`⌘ / Ctrl + K`，Raycast / Linear 手感。模糊匹配按「连续子串 > 子序列」分级、词边界与连续段加权，16 条命令分 4 组：章节跳转 · 重力模式 · 主题配色 · 复制邮箱 / 下载简历 JSON。
+
+### ⚡ 单主时钟与自适应画质
+全站唯一 `requestAnimationFrame`，R3F 以 `frameloop="never"` 手动推进。视口外**三层休眠**（物理循环 / GPU 提交 / 重型子树卸载）。2 秒滚动均值 < 45 FPS 自动降档：粒子 8000 → 4000、DPR → 1.0、关闭 Bloom 与色差。
 
 ---
 

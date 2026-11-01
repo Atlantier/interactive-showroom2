@@ -1,4 +1,42 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Dependencies
+# ─────────────────────────────────────────────────────────────────────────────
+node_modules/
+.pnpm-store/
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Build output
+# ─────────────────────────────────────────────────────────────────────────────
+dist/
+dist-ssr/
+*.tsbuildinfo
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Environment & secrets — NEVER COMMIT THESE
+#
+# `.env.example` is deliberately re-included: it documents which variables a
+# contributor must provide, without carrying any real value. Everything else
+# that looks like an environment file or a private key is ignored, including
+# variants such as `.env.production` and `.env.local`.
+# ─────────────────────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.local
+*.pem
+*.key
+*.p12
+id_rsa*
+credentials*.json
+
+# Note: this project needs no environment variables at build or run time.
+# `VITE_BASE_PATH` is injected by CI only (see .github/workflows/deploy.yml);
+# the local default is `/`, so nothing has to be configured to run it.
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Logs
+# ─────────────────────────────────────────────────────────────────────────────
+logs/
 logs
 *.log
 npm-debug.log*
@@ -7,31 +45,34 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
-
-# Editor directories and files
+# ─────────────────────────────────────────────────────────────────────────────
+# Editor & OS noise
+# ─────────────────────────────────────────────────────────────────────────────
 .vscode/*
 !.vscode/extensions.json
-.idea
+.idea/
 .DS_Store
+Thumbs.db
+desktop.ini
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
 
-# TS build info
-*.tsbuildinfo
-
-# DSH
-.dsh
-
-# Verification output.
+# ─────────────────────────────────────────────────────────────────────────────
+# Verification / test output
+#
 # The CDP scripts in scripts/ write full-page screenshots and JSON reports here
 # on every run. They are regenerable test artifacts — a fresh run recreates them
 # byte-for-byte — and at ~60 MB they would dominate the repository and every
 # clone. Keep a curated image in docs/ instead if a README ever needs one.
-screenshots
+# ─────────────────────────────────────────────────────────────────────────────
+screenshots/
+coverage/
+*.lcov
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Local tooling
+# ─────────────────────────────────────────────────────────────────────────────
+.dsh
