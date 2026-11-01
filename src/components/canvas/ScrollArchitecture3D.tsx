@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
-import { Environment, Lightformer } from '@react-three/drei'
+import { Billboard, Environment, Lightformer } from '@react-three/drei'
 import { VolumetricStageLights } from '@/components/canvas/VolumetricStageLights'
 import { FloorCaustics } from '@/components/canvas/architecture/FloorCaustics'
 import * as THREE from 'three'
@@ -682,9 +682,9 @@ function SpatialLayer({
        * saturated colour anywhere on the sphere is a desaturated cyan: the limb is
        * pure white, which is what the reference shows at the silhouette.
        */
-      uDeep: { value: new THREE.Color('#7fd8e4') },
+      uDeep: { value: new THREE.Color('#b9e9f2') },
       uHot: { value: new THREE.Color('#ffffff') },
-      uIntensity: { value: 0.92 },
+      uIntensity: { value: 1.02 },
     }),
     [],
   )
@@ -790,7 +790,7 @@ function SpatialLayer({
 
       // Drives overall plasma brightness; the shader owns the colour mix.
       // 6 s breathing cycle, +/-10%: no flicker, no pulse.
-      plasmaUniforms.uIntensity.value = 0.92 * (1 + 0.1 * Math.sin((t * Math.PI * 2) / 6))
+      plasmaUniforms.uIntensity.value = 1.02 * (1 + 0.1 * Math.sin((t * Math.PI * 2) / 6))
 
       /*
        * The dispersion shell is a ShaderMaterial, so the rig's `material.opacity`
@@ -905,22 +905,32 @@ function SpatialLayer({
         {stage >= 1 && (
           <>
             {/*
-              * Volumetric halo. An opaque sphere always has a silhouette, however
-              * soft its shading; this additive shell is what lets the glow bleed
-              * past that silhouette and fade into the glass instead of ending on a
-              * circle. Low exponent on purpose -- a tight Fresnel would simply draw
-              * a second ring.
+              * Volumetric halo, as a camera-facing quad rather than a shell.
+              *
+              * A shell was the wrong primitive: its Fresnel peaks on ITS OWN
+              * silhouette, so however soft it was shaded it drew a ring at its
+              * radius and read as a second sphere sitting around the core. A quad
+              * has no silhouette at all -- just a radial falloff in screen space --
+              * so the glow can bleed past the core's edge and simply stop existing
+              * before the quad's edge.
+              *
+              * Sized to stay inside the icosahedron's insphere so the glow never
+              * pokes out through a facet.
               */}
-            <mesh renderOrder={1}>
-              <sphereGeometry args={[CORE_INNER_RADIUS * 1.35, 48, 32]} />
-              <shaderMaterial
-                transparent
-                depthWrite={false}
-                blending={THREE.AdditiveBlending}
-                vertexShader={RIM_VERTEX}
-                fragmentShader={CORE_HALO_FRAGMENT}
-              />
-            </mesh>
+            <Billboard>
+              <mesh renderOrder={1}>
+                <planeGeometry
+                  args={[CORE_INNER_RADIUS * 3.1, CORE_INNER_RADIUS * 3.1]}
+                />
+                <shaderMaterial
+                  transparent
+                  depthWrite={false}
+                  blending={THREE.AdditiveBlending}
+                  vertexShader={CONTACT_VERTEX}
+                  fragmentShader={CORE_GLOW_FRAGMENT}
+                />
+              </mesh>
+            </Billboard>
 
             <mesh ref={coreRef} material={plasmaMaterial}>
               <sphereGeometry args={[CORE_INNER_RADIUS, 64, 48]} />
@@ -1871,29 +1881,34 @@ const CONTACT_FRAGMENT = `
 `
 
 /**
- * Core halo.
+ * Core glow.
  *
- * The whole job of this shader is to erase a hard edge: it takes the core
- * sphere's silhouette and smears it outward as an additive falloff, so the glow
- * dissolves into the surrounding glass rather than stopping on a circle. The
- * exponent is low (1.6) for the same reason -- a high one would trace a bright
- * ring instead of a gradient.
+ * A screen-space radial falloff, not a Fresnel on a shell. The previous version
+ * was a slightly larger sphere whose brightness peaked at ITS silhouette, which
+ * guaranteed a visible ring at a fixed radius from the core -- the "second sphere"
+ * look. A radial gradient has no ring anywhere: it is brightest at the centre and
+ * monotonically decreases, so the only thing it can do at the core's edge is keep
+ * fading.
+ *
+ * Two terms, because the reference shows two: a wide soft bloom that carries the
+ * glow out past the limb, plus a tighter lift right around it so the transition
+ * from sphere to glow is not a step.
  */
-const CORE_HALO_FRAGMENT = `
-  varying vec3 vRimN;
-  varying vec3 vRimV;
+const CORE_GLOW_FRAGMENT = `
+  varying vec2 vContactUv;
 
   void main() {
-    float f = 1.0 - clamp(dot(normalize(vRimN), normalize(vRimV)), 0.0, 1.0);
+    float d = length(vContactUv - 0.5) * 2.0;
 
-    // Low exponent and a wide shell: the halo has to look like bloom spreading
-    // out of the limb, not like a second sphere sitting around the core. A high
-    // exponent is what made the previous revision legible as an extra ball.
-    f = pow(f, 1.5);
+    // Wide bloom: reaches zero exactly at the quad's edge, so no border shows.
+    float wide = pow(clamp(1.0 - d, 0.0, 1.0), 2.6);
 
-    // Near-white, because the reference's outer glow is white -- it is the
-    // limb's own light, not a cyan halo.
-    vec3 col = vec3(0.88, 0.97, 0.99);
-    gl_FragColor = vec4(col * f * 0.22, 1.0);
+    // Tight lift hugging the limb.
+    float tight = pow(clamp(1.0 - d * 1.45, 0.0, 1.0), 3.2);
+
+    float glow = wide * 0.42 + tight * 0.5;
+    vec3 col = vec3(0.82, 0.96, 0.99);
+
+    gl_FragColor = vec4(col * glow, 1.0);
   }
 `
