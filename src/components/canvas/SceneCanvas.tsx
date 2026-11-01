@@ -8,6 +8,7 @@ import { supportsWebGL } from '@/lib/device'
 import { useAppStore } from '@/store/useAppStore'
 import { CameraRig } from '@/components/canvas/CameraRig'
 import { FlowFieldParticles } from '@/components/canvas/FlowFieldParticles'
+import { CursorStardustTrail } from '@/components/canvas/CursorStardustTrail'
 
 /**
  * SceneCanvas — the full-viewport, fixed WebGL background.
@@ -39,6 +40,16 @@ import { FlowFieldParticles } from '@/components/canvas/FlowFieldParticles'
 
 /** Particle counts per tier: halved on 'medium' as specified. */
 const PARTICLE_COUNT = { high: 8000, medium: 4000 } as const
+
+/**
+ * Stardust-trail pool size per tier.
+ *
+ * Kept separate from `PARTICLE_COUNT` because the two effects scale for
+ * different reasons: the nebula is a fill-rate cost across the whole viewport,
+ * while the trail is a sparse plume whose pool only needs to hold one lifetime
+ * of emission, so it is roughly half the size at every tier.
+ */
+const TRAIL_COUNT = { high: 4000, medium: 2000 } as const
 
 /** Average fps below which the monitor steps the tier down. */
 const DEGRADE_FPS = 45
@@ -125,6 +136,7 @@ export function SceneCanvas() {
   )
 
   const particleCount = PARTICLE_COUNT[tier]
+  const trailCount = TRAIL_COUNT[tier]
   const highQuality = tier === 'high'
 
   /**
@@ -149,6 +161,7 @@ export function SceneCanvas() {
     host.__showroomScene.quality = {
       tier,
       particleCount,
+      trailCount,
       highQuality,
       effects: highQuality
         ? ['Bloom', 'ChromaticAberration', 'Vignette']
@@ -204,6 +217,7 @@ export function SceneCanvas() {
             quality: {
               tier,
               particleCount,
+              trailCount,
               highQuality,
               effects: highQuality
                 ? ['Bloom', 'ChromaticAberration', 'Vignette']
@@ -229,6 +243,13 @@ export function SceneCanvas() {
       <DprSync max={highQuality ? 2 : 1} />
       <CameraRig />
       <FlowFieldParticles tier={tier} count={particleCount} />
+
+      {/*
+       * Cursor stardust. Last in the scene graph on purpose: it is an additive
+       * overlay drawn with `depthTest: false`, so it composites on top of the
+       * nebula rather than being occluded by it.
+       */}
+      <CursorStardustTrail tier={tier} count={trailCount} />
 
       <Suspense fallback={null}>
         <EffectComposer multisampling={0} enableNormalPass={false}>
