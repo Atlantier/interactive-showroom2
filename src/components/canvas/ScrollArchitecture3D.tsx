@@ -3,6 +3,7 @@ import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { Environment, Lightformer } from '@react-three/drei'
 import { Bloom, EffectComposer } from '@react-three/postprocessing'
 import { VolumetricStageLights } from '@/components/canvas/VolumetricStageLights'
+import { FloorCaustics } from '@/components/canvas/architecture/FloorCaustics'
 import * as THREE from 'three'
 import { preloadR3FAdvance, setCanvasActive } from '@/lib/frameBridge'
 import { supportsWebGL } from '@/lib/device'
@@ -206,6 +207,13 @@ function InfrastructureLayer({ groupRef }: { groupRef: React.RefObject<THREE.Gro
  * tint; at this size it read as a matte coloured block, which is what the brief
  * asked to replace.
  */
+/**
+ * Design-time opacity of every material the exit fade touches, captured the
+ * first time the traversal sees it. A WeakMap so materials stay collectable
+ * along with the rig that owns them.
+ */
+const baseOpacity = new WeakMap<THREE.Material, number>()
+
 /**
  * Global exit weight for the chapter: 1 while it is live, 0 once it has handed
  * over to the stat cards.
@@ -587,7 +595,74 @@ void main() {
  * previous revision. Twenty large planes are what make it read as a machined
  * component.
  */
-function SpatialLayer({ groupRef }: { groupRef: React.RefObject<THREE.Group | null> }) {
+/* -------------------------------------------------------------------------- */
+/*  Chromatic dispersion                                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Per-channel refractive indices for the top-layer prism, per the brief.
+ *
+ * The spread is deliberately tiny — 0.06 across the visible spectrum — because
+ * that is all real glass shows: a couple of pixels of colour fringing right at
+ * the silhouette. Widening it further reads as a rendering artefact.
+ */
+const IOR_RED = 1.12
+const IOR_GREEN = 1.15
+const IOR_BLUE = 1.18
+
+/**
+ * Dispersion shell.
+ *
+ * The cage is a translucent metal with no transmission, so a literal per-channel
+ * refraction has nothing to refract. What the eye actually reads as dispersion on
+ * a lit edge is the three channels' Fresnel falloffs landing at slightly
+ * different distances from the silhouette — a higher IOR bends more, so its rim
+ * band sits further out. This shell reproduces that directly: the graze-angle
+ * term is offset per channel by its IOR delta, then all three are raised to the
+ * same falloff exponent so the separation comes from the IOR alone.
+ */
+const DISPERSION_VERTEX = `
+  varying vec3 vN;
+  varying vec3 vV;
+
+  void main() {
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    vN = normalize(normalMatrix * normal);
+    vV = normalize(-mvPosition.xyz);
+    gl_Position = projectionMatrix * mvPosition;
+  }
+`
+
+const DISPERSION_FRAGMENT = `
+  uniform vec3 uIOR;
+  uniform float uBase;
+  uniform float uSpread;
+  uniform float uIntensity;
+
+  varying vec3 vN;
+  varying vec3 vV;
+
+  void main() {
+    float facing = abs(dot(normalize(vN), normalize(vV)));
+    float graze = clamp(1.0 - facing, 0.0, 1.0);
+
+    // Offset each channel by its IOR relative to green, which is the reference
+    // axis: red bends less (band shifts inward), blue bends more (outward).
+    vec3 shifted = clamp(vec3(graze) + (uIOR - vec3(uIOR.g)) * uSpread, 0.0, 1.0);
+
+    vec3 spectrum = pow(shifted, vec3(uBase));
+
+    gl_FragColor = vec4(spectrum * uIntensity, spectrum.g);
+  }
+`
+
+function SpatialLayer({
+  groupRef,
+  progress,
+}: {
+  groupRef: React.RefObject<THREE.Group | null>
+  progress: ProgressStore
+}) {
   const shellGeo = useMemo(
     () => new THREE.IcosahedronGeometry(CORE_SHELL_RADIUS, 0),
     [],
@@ -642,6 +717,38 @@ function SpatialLayer({ groupRef }: { groupRef: React.RefObject<THREE.Group | nu
   )
   useEffect(() => () => plasmaMaterial.dispose(), [plasmaMaterial])
 
+  const dispersionUniforms = useMemo(
+    () => ({
+      uIOR: { value: new THREE.Vector3(IOR_RED, IOR_GREEN, IOR_BLUE) },
+      uBase: { value: 2.6 },
+      /**
+       * Screen-space separation per unit of IOR delta. The delta is only ±0.03
+       * around green, so this multiplier is what turns it into a visible fringe;
+       * 2.0 puts the three bands roughly two pixels apart at the chapter's
+       * camera distance, which is the range real dispersion occupies.
+       */
+      uSpread: { value: 2.0 },
+      uIntensity: { value: 1 },
+    }),
+    [],
+  )
+
+  const dispersionMaterial = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        uniforms: dispersionUniforms,
+        vertexShader: DISPERSION_VERTEX,
+        fragmentShader: DISPERSION_FRAGMENT,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+        toneMapped: false,
+      }),
+    [dispersionUniforms],
+  )
+  useEffect(() => () => dispersionMaterial.dispose(), [dispersionMaterial])
+
   const shellRef = useRef<THREE.Group>(null)
   const coreRef = useRef<THREE.Mesh>(null)
   const lightRef = useRef<THREE.PointLight>(null)
@@ -678,6 +785,13 @@ function SpatialLayer({ groupRef }: { groupRef: React.RefObject<THREE.Group | nu
 
       // Drives overall plasma brightness; the shader owns the colour mix.
       plasmaUniforms.uIntensity.value = 1.35 + breathe * 0.45
+
+      /*
+       * The dispersion shell is a ShaderMaterial, so the rig's `material.opacity`
+       * fade traversal never reaches it — it has to apply the chapter's exit
+       * weight itself, or it stays lit after everything else has faded.
+       */
+      dispersionUniforms.uIntensity.value = 1.05 * sceneFade(progress.get())
 
       if (lightRef.current) lightRef.current.intensity = 2.6 + breathe * 1.8
     }
@@ -726,6 +840,13 @@ function SpatialLayer({ groupRef }: { groupRef: React.RefObject<THREE.Group | nu
               depthWrite={false}
             />
           </lineSegments>
+
+          {/*
+           * Dispersion fringe. A hair larger than the cage and parented to it,
+           * so the three channel bands sit just outside the silhouette and
+           * rotate with the prism.
+           */}
+          <mesh geometry={shellGeo} material={dispersionMaterial} scale={1.021} renderOrder={5} />
         </group>
 
         {/*
@@ -1213,10 +1334,23 @@ function ArchitectureRig({
       for (const m of list) {
         const anyMat = m as THREE.Material & { opacity: number; transparent: boolean }
         if (typeof anyMat.opacity !== 'number') continue
-        // Only drive materials we own; the transmission material keeps its own.
-        if ((m as THREE.MeshPhysicalMaterial).transmission) continue
+        /*
+         * Scale the material's OWN opacity instead of overwriting it.
+         *
+         * Writing `opacity = fade` looks equivalent only because most materials
+         * are opaque (1). For the deliberately translucent ones — the prism cage
+         * at 0.25, the shard shells at 0.35 — it silently pushed them to fully
+         * opaque, which hid the plasma core behind a black mass at close camera
+         * ranges. An earlier `if (transmission) continue` guard masked this by
+         * accident: it skipped the old transmission prism, and vanished with it.
+         */
+        let base = baseOpacity.get(m)
+        if (base === undefined) {
+          base = anyMat.opacity
+          baseOpacity.set(m, base)
+        }
         anyMat.transparent = true
-        anyMat.opacity = fade
+        anyMat.opacity = base * fade
       }
     })
   })
@@ -1259,7 +1393,7 @@ function ArchitectureRig({
         <OrchestrationLayer groupRef={agentRef} progress={progress} />
       </group>
       <group onClick={handleSelect('spatial')} onPointerOver={handleHover}>
-        <SpatialLayer groupRef={spatialRef} />
+        <SpatialLayer groupRef={spatialRef} progress={progress} />
       </group>
       <DataStreams progress={progress} />
       <DataConduits
@@ -1267,6 +1401,13 @@ function ArchitectureRig({
         layerRefs={layerRefs}
         selectedRef={selectedRef}
       />
+
+      {/*
+       * Virtual floor beneath the stack. It follows the bottom layer every frame,
+       * so the caustic web stays under the model as the stack explodes rather
+       * than being sliced through by it.
+       */}
+      <FloorCaustics bottomRef={infraRef} intensity={1.5} />
     </group>
   )
 }
