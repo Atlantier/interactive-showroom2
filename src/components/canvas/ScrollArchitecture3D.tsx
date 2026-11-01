@@ -1527,13 +1527,12 @@ export function ScrollArchitecture3D({
    *
    * A material's shader program is compiled and linked the first time it is
    * drawn, and the driver blocks the main thread while that happens: measured at
-   * ~0.9s cold and ~0.5s once the driver's shader cache is warm, all inside the
-   * frame where the chapter first becomes awake. That is the hitch on entry.
+   * ~2.7s cold and ~0.12s once the driver's shader cache is warm. Left alone it
+   * lands the moment the chapter becomes visible, which is the freeze on entry.
    *
-   * Mounting the rig a little after load, while the visitor is still at the top
-   * of the page, moves that cost somewhere it is not attached to a scroll
-   * gesture. It is an idle callback so it lands in a gap rather than competing
-   * with the hero's entrance.
+   * Mounting the rig early moves that cost off the scroll path and under the boot
+   * veil, which is on screen from the first frame and only lifts once this
+   * component reports that the compiling is finished.
    */
   const [prewarmed, setPrewarmed] = useState(false)
 
@@ -1546,23 +1545,67 @@ export function ScrollArchitecture3D({
 
   const live = awake || prewarmed
 
+  const setPrewarmDone = useAppStore((state) => state.setPrewarmDone)
+
   useEffect(() => {
     if (prewarmed) return
-    const arm = (): void => {
-      const w = window as Window & {
-        requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number
-      }
-      if (typeof w.requestIdleCallback === 'function') {
-        w.requestIdleCallback(() => setPrewarmed(true), { timeout: 4000 })
-      } else {
-        window.setTimeout(() => setPrewarmed(true), 2500)
-      }
+    /*
+     * Start as soon as the veil is on screen.
+     *
+     * This used to wait 1.6s "so it does not compete with the hero's entrance".
+     * That reasoning no longer applies: BootSequence puts a full-screen veil up
+     * on the first frame, so every millisecond of compilation that lands under it
+     * is a millisecond the entry hitch loses.
+     *
+     * Two frames rather than one: the first commit is what paints the veil, and
+     * blocking before it lands would freeze an empty screen instead of a boot
+     * sequence.
+     */
+    let second = 0
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => setPrewarmed(true))
+    })
+    return () => {
+      cancelAnimationFrame(first)
+      cancelAnimationFrame(second)
     }
-    // Let the hero's entrance finish first; the point is to avoid competing with
-    // the first impression, not to be as early as possible.
-    const timer = window.setTimeout(arm, 1600)
-    return () => window.clearTimeout(timer)
   }, [prewarmed])
+
+  /*
+   * Tell the boot veil when the compile storm is over.
+   *
+   * No single moment in this component knows: the staged mount below commits one
+   * layer per frame and each commit compiles that layer's shaders synchronously.
+   * What IS observable is frame pacing -- a compiling frame takes hundreds of
+   * milliseconds, a settled one a few. Three consecutive fast frames therefore
+   * means the storm has drained, without hardcoding how many stages exist or how
+   * slow the driver is. A timer caps it so the signal is guaranteed even on a
+   * machine that never gets quiet.
+   */
+  useEffect(() => {
+    if (!prewarmed) return
+    let raf = 0
+    let quietFrames = 0
+    let last = performance.now()
+    const tick = (): void => {
+      const now = performance.now()
+      // 40ms counts both a 60Hz and a 30Hz display as quiet, while a compile
+      // frame (hundreds of ms) always resets the count.
+      quietFrames = now - last < 40 ? quietFrames + 1 : 0
+      last = now
+      if (quietFrames >= 3) {
+        setPrewarmDone()
+        return
+      }
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    const cap = window.setTimeout(() => setPrewarmDone(), 3000)
+    return () => {
+      cancelAnimationFrame(raf)
+      window.clearTimeout(cap)
+    }
+  }, [prewarmed, setPrewarmDone])
 
   useEffect(() => {
     if (!live) {

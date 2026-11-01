@@ -104,6 +104,16 @@ export interface AppState {
   gravityMode: GravityMode
   /** Whether the Cmd/Ctrl+K command palette is open. */
   commandPaletteOpen: boolean
+  /**
+   * Set once the architecture rig has drawn its materials for the first time.
+   *
+   * Shader programs compile on first draw and the driver blocks the main thread
+   * while it happens -- measured at ~2.7s spread over a few tasks on a cold
+   * driver cache. The boot veil covers that work and lifts when this flips, so
+   * the stall is never attached to a visible freeze. Deliberately NOT part of
+   * `partialize`: it describes this page load, not a user preference.
+   */
+  prewarmDone: boolean
 
   setSoundEnabled: (enabled: boolean) => void
   toggleSound: () => void
@@ -122,6 +132,8 @@ export interface AppState {
   setVfxPreset: (preset: VfxPreset) => void
   setGravityMode: (mode: GravityMode) => void
   setCommandPaletteOpen: (open: boolean) => void
+  /** Report that the architecture rig finished compiling its shaders. */
+  setPrewarmDone: () => void
   toggleCommandPalette: () => void
   /** Restore the persisted preferences to their boot defaults. */
   resetPreferences: () => void
@@ -268,6 +280,7 @@ export const useAppStore = create<AppState>()(
       vfxPreset: 'emerald-cyber',
       gravityMode: 'earth',
       commandPaletteOpen: false,
+      prewarmDone: false,
 
       setSoundEnabled: (enabled) => set({ soundEnabled: enabled }),
       toggleSound: () => set((state) => ({ soundEnabled: !state.soundEnabled })),
@@ -327,6 +340,8 @@ export const useAppStore = create<AppState>()(
       setAccentTheme: (theme) => set({ accentTheme: theme }),
       setVfxPreset: (preset) => set({ vfxPreset: preset }),
       setGravityMode: (mode) => set({ gravityMode: mode }),
+
+      setPrewarmDone: () => set({ prewarmDone: true }),
       setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
       toggleCommandPalette: () =>
         set((state) => ({ commandPaletteOpen: !state.commandPaletteOpen })),

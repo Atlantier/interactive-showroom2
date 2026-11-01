@@ -460,3 +460,75 @@
     opacity: 0.5;
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/*  Boot sequence                                                             */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * The entrance veil covers exactly one thing: the shader compilation that
+ * happens on a cold load (~2.7s of blocked main thread spread over a few tasks),
+ * which otherwise lands as an unexplained freeze.
+ *
+ * Everything below animates ONLY `transform` and `opacity`. That is the point,
+ * not a style preference: those two properties are handed to the compositor, so
+ * the sequence keeps moving while the main thread is busy compiling. A JS or
+ * rAF-driven animation would freeze at exactly the moment it is meant to hide.
+ */
+
+@keyframes boot-scan {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes veil-lift {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.015);
+  }
+}
+
+.boot-veil {
+  background-color: #04060b;
+  will-change: opacity, transform;
+}
+
+.boot-scan {
+  animation: boot-scan 1100ms cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.boot-veil--out {
+  animation: veil-lift 420ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/*
+ * The global reduced-motion rule collapses every animation to 0.001ms and one
+ * iteration. Applied to `boot-scan` that would run it straight to its end state
+ * and park the highlight off-screen, so the progress indicator would simply
+ * vanish. Freeze it at a visible position instead.
+ *
+ * A media query rather than the `prefersReducedMotion()` helper: this overlay is
+ * mounted at boot, and a query also reacts if the OS setting changes while the
+ * page is open, which a one-shot snapshot at mount cannot.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .boot-scan {
+    animation: none;
+    transform: translateX(0);
+    opacity: 0.6;
+  }
+
+  /* No lift; the component's safety timer removes the node. */
+  .boot-veil--out {
+    animation: none;
+    opacity: 0;
+  }
+}

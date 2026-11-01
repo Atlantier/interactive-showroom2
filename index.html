@@ -5,6 +5,15 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#04060b" />
+    <!-- The stylesheet and the JS bundle are separate requests. Without this the
+         document paints white for that gap, which is a visible flash on a page
+         whose entire identity is deep space. -->
+    <style>
+      html,
+      body {
+        background: #04060b;
+      }
+    </style>
     <meta
       name="description"
       content="个人数字展厅 · 基于 React 19 / Three.js / Lenis 构建的沉浸式交互展厅。"

@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect } from 'react'
 import { SmoothScroll } from '@/components/layout/SmoothScroll'
 import { Navbar } from '@/components/layout/Navbar'
 import { ClickRipple } from '@/components/layout/ClickRipple'
+import { BootSequence } from '@/components/layout/BootSequence'
 import { ScrollTelemetryHud } from '@/components/layout/ScrollTelemetryHud'
 import {
   PerfNoticeToast,
@@ -145,6 +146,13 @@ function App() {
 
         {/* Global click feedback: a single thin ripple, nothing else. */}
         <ClickRipple />
+
+        {/*
+          * Entrance veil. Sits above every other layer (z-200 clears the command
+          * palette at z-120) and unmounts itself completely when the boot is
+          * done, so it costs nothing once the page is up.
+          */}
+        <BootSequence />
 
         {/* ── Content ─────────────────────────────────────────────────── */}
         <main className="relative z-20">
