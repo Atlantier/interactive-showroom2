@@ -224,6 +224,7 @@ export const zh: Dictionary = {
     fabrikIterations: '迭代',
     fabrikShots: '射击',
     fabrikJoints: '机腿',
+    fabrikArmLabel: '机械臂',
     fabrikQuadruped: '四足',
     fabrikShowVectors: '显示 IK 向量',
     fabrikLaserHint: '点击发射离子光束',

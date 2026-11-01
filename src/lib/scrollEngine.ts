@@ -26,20 +26,41 @@ let lastTime = 0
 let smoothedVelocity = 0
 let lastProgress = 0
 
+/** Mirrors the scroll-busy state onto <html class="is-scrolling">. */
+let scrollBusy = false
+
 /**
  * Spring that carries the scroll velocity signal, allocated ONCE at module
  * scope and mutated in place — no per-frame garbage (see AGENTS.md).
  */
 const velocitySpring = createSpring(0)
 
-/** Tuning: Apple-ish inertia — long glide, soft exponential ease-out. */
+/**
+ * Scroll feel.
+ *
+ * ── Why `lerp` is 0.2 and not 0.09 ────────────────────────────────────────
+ * `lerp` is the fraction of the remaining distance Lenis closes each frame, so
+ * 0.09 needs ~25 frames to settle: a wheel notch produced a visible lag between
+ * the input and the page actually moving, which reads as "heavy" rather than
+ * "smooth". 0.2 settles in roughly half that time and still leaves a glide, so the
+ * page keeps the inertial character the camera choreography depends on while the
+ * input feels immediate.
+ *
+ * Dropping `smoothWheel` entirely was the alternative, and it was rejected: the
+ * scroll-driven camera, the layer separation and the progress rails are all
+ * authored against a continuous scroll signal, and a raw per-notch jump makes the
+ * 3D chapters visibly step.
+ *
+ * `wheelMultiplier` goes to 1.0 so one notch travels the distance the user expects;
+ * 0.92 made every gesture feel like it under-responded.
+ */
 const LENIS_OPTIONS = {
   duration: 1.15,
   easing: (t: number) => (t === 1 ? 1 : 1 - Math.pow(2, -10 * t)),
   smoothWheel: true,
-  wheelMultiplier: 0.92,
+  wheelMultiplier: 1.0,
   touchMultiplier: 1.4,
-  lerp: 0.09,
+  lerp: 0.2,
   syncTouch: false,
   autoRaf: false,
   anchors: false,
@@ -66,6 +87,15 @@ export function onScrollFrame(listener: FrameListener): () => void {
 /** Current smoothed progress, read outside React. */
 export const getScrollProgress = (): number => lastProgress
 export const getScrollVelocity = (): number => smoothedVelocity
+
+/**
+ * True while the inertial scroll is still settling.
+ *
+ * Consumers use this to stand down decorative per-frame work: the spotlight sweep
+ * across the bento grid, for instance, is invisible while the page is moving but
+ * writes a CSS custom property on every card each frame.
+ */
+export const isScrollBusy = (): boolean => scrollBusy
 
 const publish = (progress: number, velocity: number): void => {
   writeScroll(progress, velocity)
@@ -153,6 +183,24 @@ export function createScrollEngine(): () => void {
     } else {
       transient.mouse.x += dx * mouseEase
       transient.mouse.y += dy * mouseEase
+    }
+
+    /*
+     * 3c. Scroll-busy signal.
+     *
+     * CSS cannot read the spring, so the state is mirrored onto the root element
+     * as a class. Decorative infinite animations (comet beams, data pulses) are
+     * paused while it is set: during a scroll those loops do no visible work --
+     * the page is moving past them -- but they still rasterise every frame.
+     *
+     * Written only on transition, never per frame: a classList toggle is a style
+     * invalidation, and doing it 120 times a second would cost more than the
+     * animations it saves.
+     */
+    const busy = Math.abs(smoothedVelocity) > 0.035
+    if (busy !== scrollBusy) {
+      scrollBusy = busy
+      document.documentElement.classList.toggle('is-scrolling', busy)
     }
 
     // 4. Publish to the transient store + imperative DOM consumers.

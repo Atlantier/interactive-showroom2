@@ -246,6 +246,7 @@ export const en = {
     fabrikIterations: 'iter',
     fabrikShots: 'shots',
     fabrikJoints: 'Joints',
+    fabrikArmLabel: 'Arm',
     fabrikQuadruped: 'Quadruped',
     fabrikShowVectors: 'Show IK vectors',
     fabrikLaserHint: 'Click to fire the ion beam',

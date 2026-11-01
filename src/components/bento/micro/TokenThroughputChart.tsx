@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/cn'
 
+import { useInViewAnimation } from '@/hooks/useInViewAnimation'
 /**
  * TokenThroughputChart — a live sparkline of token throughput.
  *
@@ -39,6 +40,8 @@ export function TokenThroughputChart({
   className,
   baseline = 12_400,
 }: TokenThroughputChartProps) {
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const inViewRef = useInViewAnimation(wrapRef, { rootMargin: '120px 0px 120px 0px' })
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const bufferRef = useRef<Float32Array>(new Float32Array(HISTORY))
   const headRef = useRef(0)
@@ -158,6 +161,16 @@ export function TokenThroughputChart({
       if (!running) return
       rafId = requestAnimationFrame(tick)
 
+      /*
+       * Off-screen gate.
+       *
+       * This loop is a live data feed: it redraws a canvas and calls setState for
+       * the readout twice a second. Both are wasted when the card is two screens
+       * away, and the setState in particular re-renders the card subtree on the
+       * main thread during whatever the visitor is actually scrolling to.
+       */
+      if (!inViewRef.current) return
+
       // Sample on a fixed cadence rather than every frame, so the walk speed is
       // independent of the display refresh rate.
       if (now - lastSample >= SAMPLE_INTERVAL) {
@@ -198,7 +211,7 @@ export function TokenThroughputChart({
   const isUp = delta >= 0
 
   return (
-    <div className={cn('flex h-full flex-col', className)}>
+    <div ref={wrapRef} className={cn('flex h-full flex-col', className)}>
       <div className="flex items-baseline justify-between gap-2">
         <span className="font-mono text-[0.6rem] tracking-[0.2em] text-ink-700 uppercase">
           tokens / s

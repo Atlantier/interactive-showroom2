@@ -121,7 +121,7 @@ function LayerHud({
         aria-hidden={!layer}
         className={cn(
           'pointer-events-auto w-[19rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-panel',
-          'border bg-void-950/92 backdrop-blur-xl',
+          'border bg-void-950/95',
           'shadow-[0_32px_80px_-32px_rgba(0,0,0,0.95)]',
           'transition-all duration-400',
           layer
@@ -296,7 +296,10 @@ export function ArchitectureNarrative() {
    */
   const [canvasAwake, setCanvasAwake] = useState(false)
   const inViewRef = useInViewAnimation(canvasHostRef, {
-    rootMargin: '60% 0px 60% 0px',
+    // Fixed distance rather than a percentage: the section is 300vh tall, so a 60%
+  // margin woke the canvas more than a full screen early and kept it alive while
+  // the visitor was still two chapters away.
+  rootMargin: '600px 0px 600px 0px',
     initial: false,
     onChange: setCanvasAwake,
   })
@@ -407,7 +410,7 @@ export function ArchitectureNarrative() {
           {metrics.map((m) => (
             <li
               key={m.label}
-              className="rounded-panel border border-void-600/70 bg-void-950/72 p-3 backdrop-blur-md"
+              className="rounded-panel border border-void-600/70 bg-void-950/88 p-3"
             >
               <div className="flex items-baseline gap-1">
                 <span className="font-mono text-lg tabular-nums text-ink-100">{m.value}</span>

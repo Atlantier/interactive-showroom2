@@ -5,6 +5,7 @@ import { soundEngine } from '@/utils/soundEngine'
 import { useInViewAnimation } from '@/hooks/useInViewAnimation'
 import { reportIkSolve } from '@/lib/perfMetrics'
 import { useI18n } from '@/i18n/useI18n'
+import { isScrollBusy } from '@/lib/scrollEngine'
 import {
   applyAngleConstraints,
   chainLength,
@@ -1461,7 +1462,8 @@ export function FabrikCreature({ className }: { className?: string }) {
       const rect = wrap.getBoundingClientRect()
       cssW = Math.max(1, Math.round(rect.width))
       cssH = Math.max(1, Math.round(rect.height))
-      dpr = Math.min(window.devicePixelRatio || 1, 2)
+      // Matches the lanyard: glow-only canvas, so 1.5 is indistinguishable from 2.
+    dpr = Math.min(window.devicePixelRatio || 1, 1.5)
       canvas.width = Math.round(cssW * dpr)
       canvas.height = Math.round(cssH * dpr)
       canvas.style.width = `${cssW}px`
@@ -1531,6 +1533,8 @@ export function FabrikCreature({ className }: { className?: string }) {
       // Sleep when off screen; the loop keeps its rAF handle so waking is a
       // single flag flip with no observer round-trip.
       if (!inViewRef.current) return
+      // Same scroll-busy stand-down as the lanyard sandbox -- see the note there.
+      if (isScrollBusy()) return
 
       const dt = last === 0 ? FIXED : Math.min((now - last) / 1000, 0.1)
       last = now
@@ -1697,11 +1701,11 @@ export function FabrikCreature({ className }: { className?: string }) {
       <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-wrap items-start justify-between gap-3 p-3">
         <div className="pointer-events-auto flex flex-wrap items-center gap-2">
           {/* Mode switch */}
-          <div className="flex overflow-hidden rounded-md border border-void-600/70 bg-void-950/85 backdrop-blur-md">
+          <div className="flex overflow-hidden rounded-md border border-void-600/70 bg-void-950/92">
             {(
               [
-                ['arm', '机械臂'],
-                ['creature', '四足'],
+                ['arm', t.sandbox.fabrikArmLabel],
+                ['creature', t.sandbox.fabrikQuadruped],
               ] as const
             ).map(([value, label]) => (
               <button
@@ -1722,7 +1726,7 @@ export function FabrikCreature({ className }: { className?: string }) {
           </div>
 
           {/* Debug toggle */}
-          <label className="flex cursor-pointer items-center gap-1.5 rounded-md border border-void-600/70 bg-void-950/85 px-2.5 py-1.5 backdrop-blur-md">
+          <label className="flex cursor-pointer items-center gap-1.5 rounded-md border border-void-600/70 bg-void-950/92 px-2.5 py-1.5">
             <input
               type="checkbox"
               checked={debug.vectors}
@@ -1730,18 +1734,18 @@ export function FabrikCreature({ className }: { className?: string }) {
               className="size-3 accent-[#a78bfa]"
             />
             <span className="font-mono text-[0.6rem] tracking-wider text-ink-300 uppercase">
-              Show IK Vectors
+              {t.sandbox.fabrikShowVectors}
             </span>
           </label>
         </div>
 
         {/* Telemetry */}
-        <div className="rounded-md border border-void-600/60 bg-void-950/85 px-2.5 py-1.5 backdrop-blur-md">
+        <div className="rounded-md border border-void-600/60 bg-void-950/92 px-2.5 py-1.5">
           <p className="font-mono text-[0.55rem] tracking-[0.22em] text-ink-700 uppercase">
-            fabrik solver
+            {t.sandbox.fabrikLabel}
           </p>
           <div className="mt-1 flex items-center gap-2 font-mono text-[0.6rem]">
-            <span className="text-ink-500">err</span>
+            <span className="text-ink-500">{t.sandbox.fabrikError}</span>
             <span
               className={cn(
                 'tabular-nums',
@@ -1751,12 +1755,12 @@ export function FabrikCreature({ className }: { className?: string }) {
               {hud.error < 0.01 ? hud.error.toExponential(1) : hud.error.toFixed(2)}px
             </span>
             <span className="text-ink-700">·</span>
-            <span className="text-ink-500">iter</span>
+            <span className="text-ink-500">{t.sandbox.fabrikIterations}</span>
             <span className="tabular-nums text-ink-300">{hud.iterations}</span>
             {mode === 'arm' && (
               <>
                 <span className="text-ink-700">·</span>
-                <span className="text-ink-500">shots</span>
+                <span className="text-ink-500">{t.sandbox.fabrikShots}</span>
                 <span className="tabular-nums text-signal-rose">{hud.shots}</span>
               </>
             )}

@@ -10,6 +10,7 @@ import { cn } from '@/lib/cn'
 import { clamp } from '@/lib/math'
 import { useInViewAnimation } from '@/hooks/useInViewAnimation'
 import { soundEngine } from '@/utils/soundEngine'
+import { isScrollBusy } from '@/lib/scrollEngine'
 import {
   SpotlightContext,
   type SpotlightHandle,
@@ -438,6 +439,9 @@ export function BentoGrid({ children, className }: BentoGridProps) {
     const tick = (now: number): void => {
       raf = requestAnimationFrame(tick)
       if (!inViewRef.current) return
+      // Nothing of this sweep is perceptible while the page is scrolling, and it
+      // writes a custom property on every card per frame -- stand it down.
+      if (isScrollBusy()) return
 
       if (layoutDirtyRef.current) refreshLayout()
       const grid = gridBoxRef.current

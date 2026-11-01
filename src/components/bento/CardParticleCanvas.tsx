@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 
+import { isScrollBusy } from '@/lib/scrollEngine'
 /**
  * CardParticleCanvas — the ember field inside a Bento card.
  *
@@ -274,7 +275,9 @@ export const CardParticleCanvas = forwardRef<CardParticleHandle, CardParticleCan
         if (dt <= 0) return
         s.t += dt
 
-        const running = s.inView || s.hovered
+        // Also stand down during the scroll: eleven of these cards each repaint
+        // additive embers per frame, which is invisible while the page moves.
+        const running = (s.inView || s.hovered) && !isScrollBusy()
         if (!running) {
           // Nothing visible is happening: park the loop until visibility
           // returns, otherwise a scrolled-away card keeps burning frames.

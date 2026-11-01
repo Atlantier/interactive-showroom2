@@ -59,7 +59,7 @@ export function ScrollTelemetryHud() {
       )}
       aria-hidden={!fpsMonitorEnabled}
     >
-      <dl className="space-y-1 rounded-lg border border-void-600/60 bg-void-950/70 px-3 py-2 font-mono text-[0.62rem] tracking-wider text-ink-500 backdrop-blur-md">
+      <dl className="space-y-1 rounded-lg border border-void-600/60 bg-void-950/88 px-3 py-2 font-mono text-[0.62rem] tracking-wider text-ink-500">
         <div className="flex items-center gap-2">
           <StatusDot tone="cyan" />
           <dt className="uppercase">transient</dt>

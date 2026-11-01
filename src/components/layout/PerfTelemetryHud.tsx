@@ -261,7 +261,7 @@ export function PerfTelemetryHud() {
       className={cn(
         'panel-glass fixed top-[calc(var(--nav-height)+0.75rem)] right-3 z-90 w-64',
         'rounded-panel border border-signal-cyan/30 bg-void-950/80 p-3',
-        'font-mono text-[0.6rem] text-ink-300 backdrop-blur-xl',
+        'font-mono text-[0.6rem] text-ink-300',
         'shadow-[0_24px_60px_-32px_rgba(0,0,0,0.95)]',
       )}
       role="dialog"
@@ -452,7 +452,7 @@ export function PerfNoticeToast() {
       className={cn(
         'panel-glass fixed top-[calc(var(--nav-height)+0.75rem)] right-3 z-90 w-64',
         'rounded-panel border border-signal-amber/40 bg-void-950/85 p-3',
-        'font-mono text-[0.6rem] text-ink-300 backdrop-blur-xl',
+        'font-mono text-[0.6rem] text-ink-300',
         'shadow-[0_24px_60px_-32px_rgba(0,0,0,0.95)]',
       )}
       role="status"

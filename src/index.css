@@ -224,7 +224,15 @@
   box-shadow:
     0 1px 0 0 color-mix(in oklab, #ffffff 6%, transparent) inset,
     0 24px 60px -30px rgb(0 0 0 / 0.9);
-  backdrop-filter: blur(14px) saturate(1.15);
+  /*
+   * No backdrop-filter.
+   *
+   * A blur reads the pixels behind the element and re-runs on every scroll frame
+   * that moves what is behind it. Long-animation-frame traces of a full-page
+   * scroll put 460 ms of the worst frame in RENDER, with zero script time -- this
+   * filter and its siblings were the cost. The gradient fill below is opaque
+   * enough (92% / 88%) that the blur was contributing almost nothing visually.
+   */
 }
 
 @utility text-glow {
@@ -531,4 +539,21 @@
     animation: none;
     opacity: 0;
   }
+}
+
+/* ── Scroll-busy throttling ──────────────────────────────────────────────
+ * `scrollEngine` toggles `.is-scrolling` on <html> while the inertial scroll is
+ * still settling. Infinite decorative animations are paused for that window:
+ * they cost a compositor/raster pass per frame and are moving off-screen with the
+ * page anyway, so nothing perceptible is lost.
+ *
+ * `animation-play-state` is used rather than removing the animation, so resuming
+ * continues from the current phase instead of restarting every beam from zero and
+ * flashing when the scroll stops.
+ */
+html.is-scrolling .comet-beam,
+html.is-scrolling .data-pulse,
+html.is-scrolling .animate-scan,
+html.is-scrolling .animate-pulse-soft {
+  animation-play-state: paused;
 }

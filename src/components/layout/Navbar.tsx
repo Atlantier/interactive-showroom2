@@ -248,7 +248,7 @@ export function Navbar() {
         className={cn(
           'fixed inset-x-0 top-0 z-90 transition-all duration-500',
           scrolled
-            ? 'border-b border-void-600/50 bg-void-950/72 backdrop-blur-xl'
+            ? 'border-b border-void-600/50 bg-void-950/95'
             : 'border-b border-transparent bg-transparent',
         )}
       >
@@ -390,7 +390,7 @@ export function Navbar() {
         {/* ── Mobile sheet ───────────────────────────────────────────── */}
         <div
           className={cn(
-            'overflow-hidden border-t border-void-600/40 bg-void-950/92 backdrop-blur-xl transition-[max-height,opacity] duration-400 lg:hidden',
+            'overflow-hidden border-t border-void-600/40 bg-void-950/96 transition-[max-height,opacity] duration-400 lg:hidden',
             mobileOpen ? 'max-h-80 opacity-100' : 'max-h-0 opacity-0',
           )}
         >
