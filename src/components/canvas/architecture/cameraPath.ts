@@ -36,9 +36,22 @@ const CAMERA_POINTS: THREE.Vector3Tuple[] = [
 
 /** The point the camera aims at along the route. */
 const TARGET_POINTS: THREE.Vector3Tuple[] = [
-  [0, 0.1, 0],
-  [0, 0.15, 0],
-  [0, 0.3, 0],
+  /*
+   * The opening waypoints look HIGH.
+   *
+   * The closed stack now runs from the grid at y = -0.33 up to the crystal's top
+   * vertex at y = 4.25, because the crystal is 1.5x larger than the path was
+   * originally framed for. Aiming at y = 0.1 put the crystal's centre ~9.5 degrees
+   * above the frame centre while its own angular radius is ~11.2 degrees -- right
+   * on the 21-degree half-FOV, so its top was clipped.
+   *
+   * Centring the closed stack instead lifts that to ~2.5 + 11.1 degrees, which
+   * leaves real headroom. The value then eases back down before the explode so the
+   * camera tilt into the exploded view stays continuous.
+   */
+  [0, 1.55, 0],
+  [0, 1.5, 0],
+  [0, 1.1, 0],
   [0, 0.1, 0],
   [0, -0.25, 0],
   [0, 0.35, 0],
