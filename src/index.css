@@ -411,3 +411,52 @@
     filter: none;
   }
 }
+
+/* ── Inter-card data pulse ───────────────────────────────────────────────────
+ * The bolt is normalised with `pathLength="100"` on the SVG path, so a dasharray
+ * of 100 is "the whole bolt" no matter how long it actually is. Sweeping the
+ * dashoffset from 100 to 0 therefore draws it on end-to-end at a constant rate,
+ * which is what makes a short hop across one grid gap and a long diagonal run
+ * read at the same speed.
+ *
+ * The glow is a filtered duplicate path rather than SVG <filter>: feGaussianBlur
+ * on a wide stroke is far more expensive than a CSS drop-shadow on an element
+ * the compositor already knows about.
+ */
+@keyframes data-pulse-sweep {
+  0% {
+    stroke-dashoffset: 100;
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  58% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+
+.data-pulse {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: data-pulse-sweep 900ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  filter: drop-shadow(0 0 4px #22d3ee);
+  will-change: stroke-dashoffset, opacity;
+}
+
+.data-pulse--glow {
+  filter: drop-shadow(0 0 10px #67e8f9);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .data-pulse {
+    animation: none;
+    stroke-dashoffset: 0;
+    opacity: 0.5;
+  }
+}
