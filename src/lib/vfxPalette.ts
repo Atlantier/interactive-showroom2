@@ -53,8 +53,10 @@ export interface VfxPalette {
   particleEdge: string
   /**
    * `primary` as an "r, g, b" channel triple, for JS-built `rgba()` strings.
-   * Note: spaceless only for readability here — the string itself keeps the
-   * spaces its existing consumers expect ("16, 185, 129").
+   *
+   * Kept comma+space separated because the existing consumers interpolate it
+   * directly — `rgba(${glowColor}, 0.5)` — so no parsing or re-formatting is
+   * needed at runtime.
    */
   glowRgb: string
 }

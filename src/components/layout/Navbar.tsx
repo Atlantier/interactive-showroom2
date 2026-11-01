@@ -225,12 +225,13 @@ export function Navbar() {
        * Visual Overdrive sweep overlay.
        *
        * Mounted here, as a SIBLING of the fixed <header>, for a concrete reason:
-       * the header carries a backdrop-filter in its condensed state, and a
-       * nested full-screen fixed layer would be clipped / re-contained by it.
-       * As a sibling with its own stacking context it reliably covers the true
-       * viewport, and it keeps the header itself free of page-wide overlays.
-       * The component renders nothing when idle and tears its own DOM down after
-       * each wave, so this adds no permanent layer.
+       * the header applies a `backdrop-filter` in its condensed state, and that
+       * property makes the header a containing block for fixed-position
+       * descendants — a nested full-screen overlay would be sized and clipped
+       * against the header instead of the viewport. As a sibling it covers the
+       * true viewport, and the header stays free of page-wide overlays. The
+       * component itself renders nothing when idle and tears its DOM down after
+       * each wave, so mounting it permanently adds no permanent layer.
        */}
       <VfxSweepTransition />
 

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { prefersReducedMotion } from '@/lib/device'
 import { getVfxPalette, type VfxPreset } from '@/lib/vfxPalette'
 import { useAppStore } from '@/store/useAppStore'
 
@@ -26,11 +27,13 @@ import { useAppStore } from '@/store/useAppStore'
  * ── prefers-reduced-motion ─────────────────────────────────────────────────
  * Checked in the effect, at the moment the preset actually changes, so the
  * overlay is never even mounted for a user who asked for reduced motion. The
- * stylesheet repeats the guard as defence in depth (the check is a one-shot
- * snapshot; an OS setting changed between the change event and paint should
- * still win).
+ * check uses the shared `lib/device` helper — the same definition of "reduced
+ * motion" that `SmoothScroll` consults before enabling inertia — so the two
+ * cannot disagree. The stylesheet repeats the guard as defence in depth (the
+ * check is a one-shot snapshot; an OS setting changed between the change event
+ * and paint should still win).
  *
- * ── Why a CSS animation rather than a JS/or transform loop ─────────────────
+ * ── Why a CSS animation rather than a JS transform loop ────────────────────
  * The element is decorative and short-lived. A keyframe animation runs on the
  * compositor without a single React render or rAF callback after mount, and
  * `animationend` gives us an authoritative end signal that a timer alone cannot
@@ -40,9 +43,10 @@ import { useAppStore } from '@/store/useAppStore'
  * ── Why the component is not mounted by App ────────────────────────────────
  * It is rendered by the navbar, next to the palette control that triggers it.
  * Keeping it OUTSIDE the fixed `<header>` matters: the header paints a
- * backdrop-filter and a transform-ish condensed state, and a full-screen
- * overlay nested inside it could be clipped or re-contained by that backdrop
- * layer. As a sibling it always covers the true viewport.
+ * `backdrop-filter` in its condensed state, and that property makes the element
+ * a containing block for fixed-position descendants — a nested full-screen
+ * overlay would be sized/clipped against the header instead of the viewport. As
+ * a sibling it always covers the true viewport.
  */
 
 /** The wave's duration. Shared by the CSS keyframes and the safety timer. */
@@ -154,15 +158,6 @@ const SWEEP_STYLES = `
   }
 }
 `
-
-/** Snapshot of the OS setting, read when the preset changes. */
-function prefersReducedMotion(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  )
-}
 
 export function VfxSweepTransition() {
   const vfxPreset = useAppStore((state) => state.vfxPreset)
