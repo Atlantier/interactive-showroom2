@@ -9,6 +9,7 @@ import { useAppStore } from '@/store/useAppStore'
 import { CameraRig } from '@/components/canvas/CameraRig'
 import { FlowFieldParticles } from '@/components/canvas/FlowFieldParticles'
 import { CursorStardustTrail } from '@/components/canvas/CursorStardustTrail'
+import { VolumetricStageLights } from '@/components/canvas/VolumetricStageLights'
 
 /**
  * SceneCanvas — the full-viewport, fixed WebGL background.
@@ -243,6 +244,13 @@ export function SceneCanvas() {
       <DprSync max={highQuality ? 2 : 1} />
       <CameraRig />
       <FlowFieldParticles tier={tier} count={particleCount} />
+
+      {/*
+       * God rays for the first screen. This canvas is the always-mounted
+       * background, so the rig fades itself out as the hero scrolls away —
+       * otherwise the beams would shine through every later chapter.
+       */}
+      <VolumetricStageLights tier={tier} height={7} intensity={1} fadeWithScroll />
 
       {/*
        * Cursor stardust. Last in the scene graph on purpose: it is an additive

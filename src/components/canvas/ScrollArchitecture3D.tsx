@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { Environment, Lightformer } from '@react-three/drei'
 import { Bloom, EffectComposer } from '@react-three/postprocessing'
+import { VolumetricStageLights } from '@/components/canvas/VolumetricStageLights'
 import * as THREE from 'three'
 import { preloadR3FAdvance, setCanvasActive } from '@/lib/frameBridge'
 import { supportsWebGL } from '@/lib/device'
@@ -1422,6 +1423,13 @@ export function ScrollArchitecture3D({
             selectedLayer={selectedLayer}
             onSelectLayer={onSelectLayer}
           />
+
+          {/*
+           * Stage lighting for the exploded stack. Mounted inside the `awake`
+           * gate, so an off-screen chapter pays nothing for it — and no
+           * `fadeWithScroll`, because the gate already owns its visibility.
+           */}
+          <VolumetricStageLights tier={tier} height={9} scale={0.85} intensity={0.85} />
 
           {/*
            * Bloom is what makes the cyan read as neon instead of as coloured
