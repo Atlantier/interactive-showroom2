@@ -468,13 +468,21 @@ const CORE_HOVER_LIFT = 1.05
  * edge-on rather than a flat disc.
  */
 const PLASMA_VERTEX = `
-varying vec3 vPos;
+varying vec3 vViewPos;
+varying vec3 vCenter;
 varying vec3 vNormalW;
 varying vec3 vViewDir;
 
 void main() {
-  vPos = position;
   vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+
+  // The raymarch below works entirely in view space, so the fragment needs the
+  // eye-space position of the surface point and the eye-space centre of the
+  // sphere. Both are free here; deriving the centre in the fragment shader would
+  // mean uploading the model matrix instead.
+  vViewPos = mvPosition.xyz;
+  vCenter = (modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+
   vNormalW = normalize(normalMatrix * normal);
   vViewDir = normalize(-mvPosition.xyz);
   gl_Position = projectionMatrix * mvPosition;
@@ -491,11 +499,13 @@ void main() {
 
 const PLASMA_FRAGMENT = `
 uniform float uTime;
+uniform float uRadius;
 uniform vec3 uDeep;
 uniform vec3 uHot;
 uniform float uIntensity;
 
-varying vec3 vPos;
+varying vec3 vViewPos;
+varying vec3 vCenter;
 varying vec3 vNormalW;
 varying vec3 vViewDir;
 
@@ -503,9 +513,6 @@ float hash31(vec3 p) {
   return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453123);
 }
 
-// 2-octave value noise, deliberately low frequency and low amplitude: the old
-// 3-octave field produced the moon-crater mottling the brief calls dirty, so
-// this only drifts brightness by a few percent.
 float vnoise(vec3 p) {
   vec3 i = floor(p);
   vec3 f = fract(p);
@@ -517,61 +524,71 @@ float vnoise(vec3 p) {
   return mix(mix(a, b, f.y), mix(c, d, f.y), f.z);
 }
 
+// One cloud sample: a low-frequency field warps the lookup of a second one.
+float cloudAt(vec3 p, float t) {
+  float w = vnoise(p * 1.35 + vec3(0.0, t, 0.0));
+  return vnoise(p * 1.8 + vec3(w * 1.6, t * 0.65, w * 1.1));
+}
+
 void main() {
-  // Volumetric falloff: densest where the surface faces the viewer, fading to
-  // the rim. Reads as light inside a volume, not as a painted sphere.
   /*
-   * Volumetric core, matched to the reference render.
+   * VOLUMETRIC MARCH, not a surface texture.
    *
-   * What the reference actually shows, in order of brightness:
-   *   1. the LIMB is the brightest thing -- a near-white rim right at the
-   *      silhouette, brighter than any point in the middle,
-   *   2. the interior is a milky, desaturated cyan with soft cloud structure,
-   *   3. outside the limb a wide white halo fades into the background.
+   * The previous shader sampled the cloud field with the SURFACE NORMAL. A pattern
+   * driven by the normal is a texture map by construction: it sits on the sphere,
+   * follows its curvature like wallpaper, and reads flat no matter how much detail
+   * is added. That is the "looks like a texture" note.
    *
-   * The previous revision got (1) backwards: it put the near-white in the centre
-   * and the cyan at the limb, which is why it read as a soft ball rather than a
-   * glowing one.
+   * Here the view ray is intersected with the sphere and marched through its
+   * INTERIOR, accumulating density along the chord. The same cloud field then
+   * exists at different depths, the front and back halves of the volume both
+   * contribute, and the silhouette is naturally thinner because the chord is short
+   * there -- which is what actually produces volume rather than a painted ball.
    */
+  vec3 rd = normalize(vViewPos);
+  vec3 oc = -vCenter;
+  float R = uRadius;
+
+  float b = dot(rd, oc);
+  float c = dot(oc, oc) - R * R;
+  float disc = max(b * b - c, 0.0);
+  float sq = sqrt(disc);
+
+  // Entry and exit of this pixel's chord through the sphere, in view space.
+  float tEnter = max(-b - sq, 0.0);
+  float tExit = -b + sq;
+
+  float spin = uTime * 0.18;
+  float cs = cos(spin);
+  float sn = sin(spin);
+  float drift = uTime * 0.35;
+
+  float density = 0.0;
+  const int STEPS = 5;
+
+  for (int i = 0; i < STEPS; i++) {
+    float u = (float(i) + 0.5) / float(STEPS);
+    float dist = mix(tEnter, tExit, u);
+
+    // Position along the chord, normalised into the unit sphere.
+    vec3 sp = (rd * dist - vCenter) / R;
+
+    // Slow rotation so the volume visibly turns rather than sitting still.
+    vec3 rp = vec3(sp.x * cs - sp.z * sn, sp.y, sp.x * sn + sp.z * cs);
+
+    density += cloudAt(rp * 1.6, drift + u * 0.6);
+  }
+  density /= float(STEPS);
+
+  // Fresnel limb, kept because the reference is brightest at the silhouette.
   float facing = clamp(dot(normalize(vNormalW), normalize(vViewDir)), 0.0, 1.0);
+  float limb = pow(1.0 - facing, 2.2);
 
-  // 0 at the centre, 1 at the silhouette.
-  float fresnel = pow(1.0 - facing, 2.5);
+  float milk = smoothstep(0.22, 0.95, density);
+  vec3 col = mix(uDeep, uHot, clamp(max(milk * 0.8, limb), 0.0, 1.0));
 
-  float t = uTime * 0.11;
-
-  /*
-   * Domain-warped cloud field.
-   *
-   * The previous version modulated brightness by +/-7%, which at this scale is
-   * invisible -- the sphere rendered as a flat gradient, which is the "looks like
-   * plastic" note. This is a proper warp: a low-frequency field displaces the
-   * lookup of a second one, which is what produces wisps and folds instead of
-   * uniform fBm mush. Two octaves, and the amplitude is large enough to actually
-   * read as structure.
-   */
-  vec3 p = vNormalW * 2.2;
-  float warp = vnoise(p + vec3(0.0, t, 0.0));
-  float cloud = vnoise(p * 1.7 + vec3(warp * 1.9, t * 0.6, warp * 1.3));
-  cloud = cloud * 0.58 + vnoise(p * 3.2 - vec3(t * 0.45)) * 0.42;
-
-  // Bright milk in the folds of the cloud, deeper cyan between them.
-  float milk = smoothstep(0.16, 0.92, cloud) * 0.78;
-
-  // The limb is the brightest part; blend it against the cloud term so the centre
-  // keeps its structure instead of being washed out by the rim gradient.
-  float limb = pow(fresnel, 0.92);
-  vec3 col = mix(uDeep, uHot, clamp(max(limb, milk), 0.0, 1.0));
-
-  // A little extra density variance so the cloud reads even at the brightest
-  // parts, where the colour mix above saturates.
-  col *= 0.90 + 0.22 * cloud;
-
-  /*
-   * No extra additive limb term: the mix above already reaches pure white at the
-   * silhouette, so a second white term double-counted it and blew the sphere --
-   * and through the glass the whole crystal -- out to flat white.
-   */
+  // Carries the structure into the brightest areas, where the colour mix saturates.
+  col *= 0.82 + 0.36 * density;
 
   gl_FragColor = vec4(col * uIntensity, 1.0);
 }
@@ -705,6 +722,7 @@ function SpatialLayer({
        * them plus the limb -- so the sphere has real internal contrast instead of
        * being one flat pale tone.
        */
+      uRadius: { value: CORE_INNER_RADIUS },
       uDeep: { value: new THREE.Color('#5fbccd') },
       uHot: { value: new THREE.Color('#f2ffff') },
       uIntensity: { value: 1.02 },
@@ -943,7 +961,7 @@ function SpatialLayer({
             <Billboard>
               <mesh renderOrder={1}>
                 <planeGeometry
-                  args={[CORE_INNER_RADIUS * 3.1, CORE_INNER_RADIUS * 3.1]}
+                  args={[CORE_INNER_RADIUS * 3.4, CORE_INNER_RADIUS * 3.4]}
                 />
                 <shaderMaterial
                   transparent
@@ -1928,8 +1946,14 @@ const CORE_GLOW_FRAGMENT = `
     // Tight lift hugging the limb.
     float tight = pow(clamp(1.0 - d * 1.45, 0.0, 1.0), 3.2);
 
-    float glow = wide * 0.42 + tight * 0.5;
-    vec3 col = vec3(0.82, 0.96, 0.99);
+    /*
+     * Levels are higher than before because this quad IS the bloom for this
+     * canvas: the architecture chapter renders without an EffectComposer (it was
+     * removed when it was darkening the scene), so there is no post-process glow to
+     * fall back on. The core's brightness alone has nothing to bleed into.
+     */
+    float glow = wide * 0.85 + tight * 0.95;
+    vec3 col = vec3(0.78, 0.95, 1.0);
 
     /*
      * Alpha MUST track the glow.
