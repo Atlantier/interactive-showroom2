@@ -205,6 +205,21 @@ function InfrastructureLayer({ groupRef }: { groupRef: React.RefObject<THREE.Gro
  * tint; at this size it read as a matte coloured block, which is what the brief
  * asked to replace.
  */
+/**
+ * Global exit weight for the chapter: 1 while it is live, 0 once it has handed
+ * over to the stat cards.
+ *
+ * Shared on purpose. Materials that render through `material.opacity` are faded
+ * by the rig's traversal, but a `ShaderMaterial` computes its own alpha and
+ * ignores that property entirely — which is exactly how the agent links and the
+ * plasma core ended up as the only things still on screen at the end of the
+ * chapter. Anything with a hand-written fragment shader has to multiply this in
+ * itself.
+ */
+function sceneFade(p: number): number {
+  return 1 - ramp(p, PHASE.fadeStart, 0.99)
+}
+
 function OrchestrationLayer({
   groupRef,
   progress,
@@ -227,6 +242,7 @@ function OrchestrationLayer({
     [],
   )
 
+  const linkRef = useRef<THREE.LineSegments>(null)
   const nodeRefs = useRef<Array<THREE.Group | null>>([])
   const coreRefs = useRef<Array<THREE.Mesh | null>>([])
 
@@ -282,7 +298,19 @@ function OrchestrationLayer({
       }
     }
 
-    edgeUniforms.uIntensity.value = 1.15 + focus * 0.7
+    /*
+     * The links carry the global exit weight themselves. This is a ShaderMaterial,
+     * so the rig's `material.opacity` traversal never reaches its alpha: before
+     * this multiplier existed the network was the last thing on screen, and it
+     * kept getting brighter as `focus` rose while everything else faded out.
+     */
+    const fade = sceneFade(p)
+    edgeUniforms.uIntensity.value = (1.15 + focus * 0.7) * fade
+
+    // At zero there is nothing left to see — drop the draw rather than leaving an
+    // invisible line batch submitting work every frame.
+    const links = linkRef.current
+    if (links) links.visible = fade > 0.002
   })
 
   return (
@@ -297,7 +325,7 @@ function OrchestrationLayer({
        * `fract(along - time)`, as a soft gradient rather than hard dashes, which
        * also survives Bloom far better than a dashed line does.
        */}
-      <lineSegments geometry={edgeGeo} renderOrder={2}>
+      <lineSegments ref={linkRef} geometry={edgeGeo} renderOrder={2}>
         <shaderMaterial
           vertexShader={EDGE_VERTEX}
           fragmentShader={EDGE_FRAGMENT}
@@ -1079,7 +1107,7 @@ function ArchitectureRig({
     // Explode ramps in over 0.3→.55 and holds, then retracts at 0.7→.92.
     const explode = ramp(p, PHASE.assembleEnd, 0.55) * (1 - ramp(p, 0.7, 0.92))
     // Fade the whole model out at the very end, handing over to the DOM cards.
-    const fade = 1 - ramp(p, PHASE.fadeStart, 0.99)
+    const fade = sceneFade(p)
 
     /* ── Self-rotation ─────────────────────────────────────────────────────
      * Stops entirely while a layer is focused: a rotating subject under a
