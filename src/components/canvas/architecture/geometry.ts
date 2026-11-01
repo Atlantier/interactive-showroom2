@@ -200,49 +200,6 @@ export function buildEdgeGeometry(): THREE.BufferGeometry {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Layer 3 — Spatial web prism                                              */
-/* -------------------------------------------------------------------------- */
-
-/**
- * A faceted crystal for the top layer.
- *
- * Built as a low-poly icosahedron with a deliberate non-uniform scale so it
- * reads as a cut gem rather than a sphere. Detail 1 keeps the facets large
- * enough to register on the silhouette; detail 2+ adds triangles without adding
- * any perceptible refraction detail.
- *
- * ── Why the normals are normalised positions, not `computeVertexNormals()` ──
- * `IcosahedronGeometry` is NON-INDEXED: every triangle owns its own three
- * vertices, so `computeVertexNormals()` yields FLAT per-face normals. On a
- * transmissive material the normal decides where each facet samples the
- * background, so flat normals make every triangle grab a different piece of the
- * scene — which is precisely the "chaotic high-contrast blotches" this geometry
- * used to produce on screen.
- *
- * Normalising the position instead gives one continuous normal field over the
- * whole solid: refraction now bends smoothly across the silhouette, while the
- * polygonal outline (the thing that makes it read as a crystal) is untouched.
- */
-export function buildPrismGeometry(radius = 1.55): THREE.BufferGeometry {
-  const geo = new THREE.IcosahedronGeometry(radius, 1)
-  // Elongate slightly along Y so it reads as an object placed on the stack.
-  geo.scale(1, 0.72, 1)
-
-  const position = geo.attributes.position
-  const normal = geo.attributes.normal
-  // Build-time scratch only; never touched inside a frame.
-  const scratch = new THREE.Vector3()
-
-  for (let i = 0; i < position.count; i++) {
-    scratch.fromBufferAttribute(position, i).normalize()
-    normal.setXYZ(i, scratch.x, scratch.y, scratch.z)
-  }
-  normal.needsUpdate = true
-
-  return geo
-}
-
-/* -------------------------------------------------------------------------- */
 /*  Inter-layer vertical data conduits                                        */
 /* -------------------------------------------------------------------------- */
 

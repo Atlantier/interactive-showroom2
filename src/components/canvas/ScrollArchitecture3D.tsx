@@ -13,7 +13,6 @@ import {
   buildInterLayerConduits,
   buildKernelGrid,
   buildKernelWireframe,
-  buildPrismGeometry,
 } from '@/components/canvas/architecture/geometry'
 import {
   LAYER_Y,
@@ -44,9 +43,8 @@ import type { ProgressStore } from '@/hooks/useSectionProgress'
  *     pillar heights, drawn solid + wireframe. Reads as silicon under load.
  *  2. MULTI-AGENT ORCHESTRATION —glowing octahedra with shader-driven pulses
  *     travelling along the edges between them.
- *  3. SPATIAL WEB / UI — a faceted crystal using native `MeshPhysicalMaterial`
- *     transmission with an inner light core, so the layers beneath refract
- *     through it and the core's light spills outward.
+ *  3. SPATIAL WEB / UI — a hard-edged geodesic cage (flat-shaded metal with a
+ *     cyan edge lattice) around a glowing inner star that counter-rotates.
  *
  * ── Clock ─────────────────────────────────────────────────────────────────
  * `frameloop="never"`, like every other canvas in this app: the single Lenis RAF
@@ -291,218 +289,180 @@ function OrchestrationLayer({
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Layer 3 — Spatial web crystal                                             */
+/*  Layer 3 — Spatial web core                                                */
 /* -------------------------------------------------------------------------- */
 
+/** Outer cage radius: 1.2x the previous 1.5-unit prism, per the brief. */
+const CORE_SHELL_RADIUS = 1.8
+
+/** Inner sphere radius: 45% of the shell, per the brief. */
+const CORE_INNER_RADIUS = CORE_SHELL_RADIUS * 0.45
+
 /**
- * Fresnel rim shader for the crystal's outer edge.
+ * Concentric "quantum core": a hard-edged metal geodesic cage around a glowing
+ * inner sphere.
  *
- * A separate additive shell rather than a property of the glass material, for
- * two reasons:
+ * ── Why two shells instead of one transmissive solid ──────────────────────
+ * The previous version solved the same brief with a refracting
+ * `MeshPhysicalMaterial` shell. That gave soft, believable glass — but it also
+ * made the silhouette rounded and the interior hazy, the opposite of the hard
+ * technical read this chapter wants. Splitting the object lets each half carry
+ * one job: the cage supplies facets and crisp specular edges, the inner sphere
+ * supplies the light.
  *
- *  1. `MeshPhysicalMaterial` has no rim term. `pow(1 - N·V, p)` is what makes an
- *     edge read as *glass* rather than as a tinted solid, and it has to be added
- *     explicitly.
- *  2. This is the one place per-object chromatic dispersion is cheap. The red,
- *     green and blue rims are raised to slightly different exponents, so the
- *     three channels separate by a pixel or two exactly where a prism would
- *     split light — a real spectral fringe on the silhouette, at the cost of two
- *     extra `pow` calls.
+ * ── Why the cage is translucent even though the brief says metal ──────────
+ * At metalness 0.85 the facets are already highly reflective; at full opacity
+ * they also completely hide the core, which would make the inner sphere pure
+ * cost with nothing to show for it. `opacity` 0.62 with `depthWrite: false`
+ * keeps the sharp per-facet shading and lets the core burn through — the look
+ * the reference actually calls for.
  */
-const RIM_VERTEX = `
-varying vec3 vN;
-varying vec3 vV;
-
-void main() {
-  vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-  vN = normalize(normalMatrix * normal);
-  vV = normalize(-mvPosition.xyz);
-  gl_Position = projectionMatrix * mvPosition;
-}
-`
-
-const RIM_FRAGMENT = `
-uniform vec3 uColor;
-uniform float uIntensity;
-uniform float uPower;
-
-varying vec3 vN;
-varying vec3 vV;
-
-void main() {
-  float facing = abs(dot(normalize(vN), normalize(vV)));
-  float edge = clamp(1.0 - facing, 0.0, 1.0);
-
-  // Dispersion: each channel gets a different falloff exponent, so the rim
-  // separates into a faint spectrum instead of one flat glow.
-  vec3 spectrum = vec3(
-    pow(edge, uPower * 0.86),
-    pow(edge, uPower),
-    pow(edge, uPower * 1.20)
-  );
-
-  gl_FragColor = vec4(uColor * spectrum * uIntensity, spectrum.g);
-}
-`
-
 function SpatialLayer({ groupRef }: { groupRef: React.RefObject<THREE.Group | null> }) {
-  const prism = useMemo(() => buildPrismGeometry(1.5), [])
-  useEffect(() => () => prism.dispose(), [prism])
-
-  const rimMaterial = useMemo(
-    () =>
-      new THREE.ShaderMaterial({
-        uniforms: {
-          uColor: { value: new THREE.Color('#7dd3fc') },
-          uIntensity: { value: 1.35 },
-          uPower: { value: 2.4 },
-        },
-        vertexShader: RIM_VERTEX,
-        fragmentShader: RIM_FRAGMENT,
-        transparent: true,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        toneMapped: false,
-      }),
+  const shellGeo = useMemo(
+    () => new THREE.IcosahedronGeometry(CORE_SHELL_RADIUS, 1),
     [],
   )
-  useEffect(() => () => rimMaterial.dispose(), [rimMaterial])
 
+  /**
+   * Edge lattice.
+   *
+   * `EdgesGeometry` on a subdivided icosahedron keeps every triangle boundary —
+   * the default 1-degree threshold only drops edges between coplanar faces — so
+   * this draws the full geodesic lattice rather than the 30 edges of the base
+   * solid. That density is what produces the "precision instrument" read.
+   */
+  const edgeGeo = useMemo(() => new THREE.EdgesGeometry(shellGeo), [shellGeo])
+
+  useEffect(
+    () => () => {
+      edgeGeo.dispose()
+      shellGeo.dispose()
+    },
+    [shellGeo, edgeGeo],
+  )
+
+  const shellRef = useRef<THREE.Mesh>(null)
   const coreRef = useRef<THREE.Mesh>(null)
-  const haloRef = useRef<THREE.Mesh>(null)
   const lightRef = useRef<THREE.PointLight>(null)
 
   /**
-   * Breathing light core.
+   * Counter-rotation + breathing.
    *
-   * This is what turns a dark glass shell into a lit crystal. Three.js renders
-   * transmissive objects by sampling a render target of everything *behind* the
-   * front surface, so a bright core sitting at the centre is refracted outward
-   * through every facet. Without it the shell can only ever show the near-black
-   * background — which is exactly the "hard black blotches" the previous
-   * transmission setup produced.
+   * The two shells turn on different axes AND in opposite directions, which is
+   * what makes the assembly read as a mechanism rather than as one object
+   * spinning. Rotation is integrated from `delta` rather than from elapsed time,
+   * so the speed is framerate-independent, and it is applied to the child meshes
+   * — never to the group — so it composes with the chapter's scroll
+   * choreography instead of fighting it.
    *
-   * The pulse is slow and shallow (~6 s period, roughly ±25%) so it reads as
-   * breathing crystal rather than a blinking status light.
-   *
-   * Everything here writes refs — no `setState` in a frame loop.
+   * The pulse is deliberately shallow: perceptible at rest, never a blinking
+   * status light.
    */
-  useFrame((state) => {
+  useFrame((state, delta) => {
     const t = state.clock.elapsedTime
-    const breathe = 0.5 + 0.5 * Math.sin(t * 1.05)
+
+    const shell = shellRef.current
+    if (shell) {
+      shell.rotation.y += delta * 0.14
+      shell.rotation.z += delta * 0.08
+    }
 
     const core = coreRef.current
     if (core) {
+      // Opposite direction, Y only: the core stays the calm centre.
+      core.rotation.y -= delta * 0.026
+
+      const breathe = 0.5 + 0.5 * Math.sin(t * 1.35)
+      core.scale.setScalar(0.94 + breathe * 0.09)
+
       const material = core.material as THREE.MeshStandardMaterial
-      material.emissiveIntensity = 2.0 + breathe * 1.5
-      core.scale.setScalar(0.93 + breathe * 0.1)
-    }
+      /*
+       * Range kept inside roughly 0.9–1.5 on purpose. ACES tone mapping is not
+       * linear: below ~1.0 the core keeps its cyan, above ~2.0 every channel
+       * saturates and the sphere turns into a white blob. Measured both ends.
+       */
+      material.emissiveIntensity = 0.95 + breathe * 0.55
 
-    const halo = haloRef.current
-    if (halo) {
-      const material = halo.material as THREE.MeshBasicMaterial
-      material.opacity = 0.11 + breathe * 0.07
-      halo.scale.setScalar(0.95 + breathe * 0.1)
+      if (lightRef.current) lightRef.current.intensity = 2.4 + breathe * 2.0
     }
-
-    if (lightRef.current) lightRef.current.intensity = 3.6 + breathe * 3.0
-    rimMaterial.uniforms.uIntensity.value = 1.15 + breathe * 0.5
   })
 
   return (
     <group ref={groupRef}>
       {/*
-       * The crystal itself.
-       *
-       * Native `MeshPhysicalMaterial` rather than drei's
-       * `MeshTransmissionMaterial`: the latter adds its own FBO with distortion,
-       * anisotropy and temporal noise, and at these settings that noise was a
-       * large part of why the surface looked dirty. The physical material's
-       * transmission is resolved by three.js' own single-pass transmission
-       * target, which is both cleaner and cheaper.
-       *
-       * transmission 0.9 (not 1.0) is deliberate: the remaining 10% gives the
-       * surface its own diffuse/specular presence, so it stops being a pure
-       * window onto the black backdrop.
+       * ── Outer cage ───────────────────────────────────────────────────────
+       * `flatShading` is the whole point: without it the geodesic would smooth
+       * into a ball and lose the per-facet light/dark contrast the reference
+       * depends on.
        */}
-      <mesh geometry={prism}>
-        <meshPhysicalMaterial
-          transmission={0.9}
-          roughness={0.15}
-          ior={1.5}
-          metalness={0}
-          thickness={1.0}
+      <mesh ref={shellRef} geometry={shellGeo}>
+        <meshStandardMaterial
+          color="#051824"
+          metalness={0.85}
+          roughness={0.2}
+          flatShading
+          transparent
+          opacity={0.62}
           /*
-           * Light cyan, NOT near-white.
-           *
-           * `color` multiplies transmitted light as well as diffuse, so it must
-           * be light enough not to darken the glass (a near-black value is what
-           * made the first version read as a black orb) yet not so white that the
-           * solid turns opaque. The teal depth tint is carried by
-           * `attenuationColor`, which only applies with thickness.
+           * `depthWrite: false` is load-bearing. With depth writes on, the cage's
+           * front faces claim the depth buffer and cull the core sitting behind
+           * them, and the inner star disappears.
            */
-          color="#a8e0f0"
-          /*
-           * Clearcoat and iridescence are deliberately LOW.
-           *
-           * Both add a broad specular sheen. At full strength the sheen covers
-           * the refraction completely and the crystal reads as frosted plastic
-           * rather than glass — measured the hard way on the previous pass.
-           */
-          clearcoat={0.35}
-          clearcoatRoughness={0.15}
-          specularIntensity={0.6}
-          specularColor="#dff4ff"
-          iridescence={0.15}
-          iridescenceIOR={1.32}
-          iridescenceThicknessRange={[120, 420]}
-          attenuationColor="#38bdf8"
-          attenuationDistance={4}
-          envMapIntensity={0.85}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+          envMapIntensity={1.4}
         />
-      </mesh>
 
-      {/* Fresnel rim + chromatic dispersion, riding just outside the shell. */}
-      <mesh geometry={prism} scale={1.035} renderOrder={3}>
-        <primitive object={rimMaterial} attach="material" />
+        {/*
+         * ── Geodesic edges ─────────────────────────────────────────────────
+         * Nested inside the cage mesh so it inherits the cage's rotation.
+         *
+         * `linewidth` is ignored by every mainstream WebGL implementation, so
+         * the thin bright line comes from the colour plus `toneMapped={false}`
+         * rather than from stroke width.
+         */}
+        <lineSegments geometry={edgeGeo} renderOrder={4}>
+          <lineBasicMaterial
+            color="#00f0ff"
+            transparent
+            opacity={0.95}
+            toneMapped={false}
+            depthWrite={false}
+          />
+        </lineSegments>
       </mesh>
 
       {/*
-       * The light source itself.
+       * ── Inner star ───────────────────────────────────────────────────────
+       * A standard material rather than `MeshBasicMaterial` because the pulse
+       * animates `emissiveIntensity`, which the basic material does not have.
        *
-       * A refracting solid displaces the image of anything inside it, so the
-       * core is not seen where it actually sits — it reads as a bright glint
-       * rather than a centred glow. The halo below is what actually sells "light
-       * from within"; this sphere exists to be refracted and to seed the halo.
+       * Tone mapping is deliberately LEFT ON here, unlike every other emissive
+       * element in this scene. `toneMapped: false` writes the raw emissive value,
+       * so an intensity above 1.0 clips every pixel to the same colour and the
+       * sphere collapses into a flat cyan disc. Letting ACES roll it off instead
+       * gives the sphere real depth: a blown-out white centre falling away to
+       * saturated cyan at the limb, which is what makes it read as a light
+       * source rather than a painted circle.
        */}
       <mesh ref={coreRef}>
-        <sphereGeometry args={[0.7, 32, 24]} />
+        <sphereGeometry args={[CORE_INNER_RADIUS, 48, 32]} />
         <meshStandardMaterial
-          color="#e0f7ff"
-          emissive="#67e8f9"
-          emissiveIntensity={2.4}
-          toneMapped={false}
-        />
-      </mesh>
-
-      {/* Soft volumetric halo, kept inside the solid so it reads as inner glow. */}
-      <mesh ref={haloRef}>
-        <sphereGeometry args={[0.98, 24, 18]} />
-        <meshBasicMaterial
-          color="#22d3ee"
-          transparent
-          opacity={0.13}
-          blending={THREE.AdditiveBlending}
-          depthWrite={false}
-          toneMapped={false}
+          color="#00f0ff"
+          emissive="#00f0ff"
+          emissiveIntensity={1.2}
+          roughness={0.35}
+          metalness={0}
         />
       </mesh>
 
       {/*
-       * Real illumination from the centre, so the surrounding cubes and the
-       * wireframe floor pick up the core's light instead of floating in a vacuum.
+       * ── Core light ───────────────────────────────────────────────────────
+       * An emissive sphere illuminates nothing by itself. Without a real light
+       * the surrounding cubes and the wireframe floor would stay unlit and the
+       * core would look pasted on; this is what ties it to the matrix below.
        */}
-      <pointLight ref={lightRef} color="#7dd3fc" intensity={4} distance={10} decay={2} />
+      <pointLight ref={lightRef} color="#00f0ff" intensity={3} distance={10} decay={2} />
     </group>
   )
 }
