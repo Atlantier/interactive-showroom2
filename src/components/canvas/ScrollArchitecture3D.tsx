@@ -925,7 +925,6 @@ function SpatialLayer({
                 <shaderMaterial
                   transparent
                   depthWrite={false}
-                  blending={THREE.AdditiveBlending}
                   vertexShader={CONTACT_VERTEX}
                   fragmentShader={CORE_GLOW_FRAGMENT}
                 />
@@ -1909,6 +1908,17 @@ const CORE_GLOW_FRAGMENT = `
     float glow = wide * 0.42 + tight * 0.5;
     vec3 col = vec3(0.82, 0.96, 0.99);
 
-    gl_FragColor = vec4(col * glow, 1.0);
+    /*
+     * Alpha MUST track the glow.
+     *
+     * It was hard-coded to 1.0 on the assumption that additive blending makes the
+     * black corners irrelevant. It does not if the blend mode fails to take effect:
+     * the quad then composites as an OPAQUE square, and its near-black corners were
+     * the two dark rectangles that appeared beside the crystal's upper edges.
+     * Binding alpha to the same value makes the primitive correct under either
+     * blend mode instead of depending on one.
+     */
+    float alpha = clamp(glow, 0.0, 1.0);
+    gl_FragColor = vec4(col * alpha, alpha);
   }
 `
