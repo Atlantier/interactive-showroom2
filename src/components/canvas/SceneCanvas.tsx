@@ -385,8 +385,14 @@ export function SceneCanvas() {
            * large additive gradients show on 8-bit output, and low enough to be
            * invisible on its own. OVERLAY rather than NORMAL so it modulates the
            * existing image instead of veiling it.
+           *
+           * Tier-gated with the rest of the expensive post stack: grain buys a
+           * little polish but costs a full-screen pass, which is the wrong trade
+           * on integrated graphics where the fps target is the thing at risk.
            */}
-          <Noise premultiply opacity={0.025} blendFunction={BlendFunction.OVERLAY} />
+          {highQuality && (
+            <Noise premultiply opacity={0.025} blendFunction={BlendFunction.OVERLAY} />
+          )}
         </EffectComposer>
       </Suspense>
     </Canvas>
