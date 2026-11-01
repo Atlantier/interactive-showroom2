@@ -1523,8 +1523,19 @@ export function ScrollArchitecture3D({
       // `pointer-events-none` so clicks fall through to the canvas.
       style={{ pointerEvents: 'auto', touchAction: 'pan-y' }}
     >
-      {/* Procedural environment for the transmission material. */}
-      <Environment resolution={256} frames={1}>
+      {/*
+        Procedural environment for the metal surfaces.
+        `frames={8}` instead of the usual one-shot bake. The cage (metalness 0.9,
+        roughness 0.1) and the shard shells (metalness 0.9) are near-mirrors: with
+        no environment they render BLACK — which is exactly the reported "the cube
+        is black" bug, and why it only showed at the scroll positions where those
+        surfaces dominate the frame while the emissive cores hid it mid-chapter.
+        A single capture frame is fragile here: the rig sits behind an `awake` gate
+        and mounts later, and this canvas renders through an EffectComposer, so the
+        one-shot bake could land before everything it needs was in the scene. A few
+        extra frames cost milliseconds at mount and make the bake reliable.
+      */}
+      <Environment resolution={256} frames={8}>
         <Lightformer form="rect" intensity={3} position={[0, 4, -6]} scale={[10, 4, 1]} color="#0ea5e9" />
         <Lightformer form="rect" intensity={2.2} position={[-6, 1, 2]} scale={[4, 8, 1]} color="#22d3ee" />
         <Lightformer form="rect" intensity={1.6} position={[6, -1, 1]} scale={[4, 8, 1]} color="#a78bfa" />
