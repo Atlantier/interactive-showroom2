@@ -628,8 +628,8 @@ function SpatialLayer({
       // Desaturated theme cyan. The old #5ff2ff was a saturated neon that read
       // as a glowing moon rather than as light inside glass.
       uDeep: { value: new THREE.Color('#123138') },
-      uHot: { value: new THREE.Color('#a9e6ee') },
-      uIntensity: { value: 1.55 },
+      uHot: { value: new THREE.Color('#d2f3f8') },
+      uIntensity: { value: 2.2 },
     }),
     [],
   )
@@ -707,6 +707,20 @@ function SpatialLayer({
       // 18 s per revolution, inside the 15-20 s the brief asks for.
       shell.rotation.y += delta * ((Math.PI * 2) / 18)
       shell.rotation.z += delta * 0.02
+
+      /*
+       * Mouse parallax, capped at +/-5 degrees. Written every frame rather than
+       * accumulated, so centring the pointer returns the crystal to level. R3F
+       * already maintains `state.pointer` in normalised device coordinates, so
+       * this costs no extra listener, and it drives the rig group rather than
+       * the shell so it never fights the spin.
+       */
+      const tilt = THREE.MathUtils.degToRad(5)
+      const rig = groupRef.current
+      if (rig) {
+        rig.rotation.x = -(state.pointer?.y ?? 0) * tilt
+        rig.rotation.z = (state.pointer?.x ?? 0) * tilt
+      }
     }
 
     const core = coreRef.current
@@ -721,7 +735,7 @@ function SpatialLayer({
 
       // Drives overall plasma brightness; the shader owns the colour mix.
       // 6 s breathing cycle, +/-10%: no flicker, no pulse.
-      plasmaUniforms.uIntensity.value = 1.55 * (1 + 0.1 * Math.sin((t * Math.PI * 2) / 6))
+      plasmaUniforms.uIntensity.value = 2.2 * (1 + 0.1 * Math.sin((t * Math.PI * 2) / 6))
 
       /*
        * The dispersion shell is a ShaderMaterial, so the rig's `material.opacity`
@@ -793,6 +807,22 @@ function SpatialLayer({
             />
           </lineSegments>
 
+          {/*
+           * Fresnel rim. This is what makes the crystal read as lit glass rather
+           * than a grey solid: a hair-larger additive shell whose brightness is
+           * pow(1 - N dot V, 3), so it shows only at grazing angles and leaves
+           * the flat facets alone. No uniforms -- the tint is constant by design.
+           */}
+          <mesh geometry={shellGeo} scale={1.012} renderOrder={6}>
+            <shaderMaterial
+              transparent
+              depthWrite={false}
+              blending={THREE.AdditiveBlending}
+              vertexShader={RIM_VERTEX}
+              fragmentShader={RIM_FRAGMENT}
+            />
+          </mesh>
+
         </group>
 
         {/*
@@ -810,6 +840,25 @@ function SpatialLayer({
          * the surrounding cubes and the wireframe floor stay unlit and the core
          * looks pasted on rather than sitting in the scene.
          */}
+        {/*
+         * Contact shadow and a very faint floor reflection.
+         *
+         * The crystal hovers by design, and without something grounding it that
+         * read as floating in nothing. One plane handles both: a soft dark
+         * ellipse for contact plus a low cyan lift in the middle so the floor
+         * appears to catch some glass. A single extra draw call, no mirror pass.
+         */}
+        <mesh position={[0, -1.32, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={3}>
+          <planeGeometry args={[4.2, 4.2]} />
+          <shaderMaterial
+            transparent
+            depthWrite={false}
+            blending={THREE.NormalBlending}
+            vertexShader={CONTACT_VERTEX}
+            fragmentShader={CONTACT_FRAGMENT}
+          />
+        </mesh>
+
         <pointLight ref={lightRef} color="#00f0ff" intensity={3} distance={10} decay={2} />
       </group>
     </group>
@@ -1517,3 +1566,63 @@ export function ScrollArchitecture3D({
 }
 
 export default ScrollArchitecture3D
+
+/* -------------------------------------------------------------------------- */
+/*  Crystal rim and contact shadow shaders                                     */
+/* -------------------------------------------------------------------------- */
+
+const RIM_VERTEX = `
+  varying vec3 vRimN;
+  varying vec3 vRimV;
+
+  void main() {
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    vRimN = normalize(normalMatrix * normal);
+    vRimV = normalize(-mv.xyz);
+    gl_Position = projectionMatrix * mv;
+  }
+`
+
+const RIM_FRAGMENT = `
+  varying vec3 vRimN;
+  varying vec3 vRimV;
+
+  void main() {
+    float f = 1.0 - clamp(dot(normalize(vRimN), normalize(vRimV)), 0.0, 1.0);
+    f = pow(f, 3.0);
+
+    // Low-saturation pale cyan, matching the edge lattice. Additive, so the
+    // silhouette gains a bright hair with no black outline.
+    vec3 col = vec3(0.62, 0.86, 0.90);
+    gl_FragColor = vec4(col * f * 0.6, 1.0);
+  }
+`
+
+const CONTACT_VERTEX = `
+  varying vec2 vContactUv;
+
+  void main() {
+    vContactUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`
+
+const CONTACT_FRAGMENT = `
+  varying vec2 vContactUv;
+
+  void main() {
+    float d = length(vContactUv - 0.5) * 2.0;
+
+    // Wide and very soft: pow() rather than a hard edge, so no disc boundary
+    // shows on the grid.
+    float shade = smoothstep(1.0, 0.0, d);
+    shade = pow(shade, 2.4) * 0.62;
+
+    // A little cyan caught by the floor, tight to the centre.
+    float caught = smoothstep(0.55, 0.0, d);
+    caught = pow(caught, 3.0) * 0.16;
+
+    vec3 col = mix(vec3(0.0, 0.012, 0.02), vec3(0.10, 0.30, 0.34), clamp(caught / 0.16, 0.0, 1.0));
+    gl_FragColor = vec4(col, max(shade, caught));
+  }
+`
