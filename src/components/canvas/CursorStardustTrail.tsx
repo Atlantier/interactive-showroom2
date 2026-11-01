@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import { getTransient } from '@/store/useAppStore'
+import { reportParticles } from '@/lib/perfMetrics'
+import { getVfxPalette } from '@/lib/vfxPalette'
+import { getTransient, useAppStore } from '@/store/useAppStore'
 import type { PerformanceTier } from '@/types'
 
 /**
@@ -32,6 +34,14 @@ import type { PerformanceTier } from '@/types'
  * ── Allocation discipline (AGENTS.md rule 3) ────────────────────────────────
  * Every `Vector2`/`Vector3`/`Raycaster`/`Plane` used in the frame loop is built
  * once in `useMemo`. There is no `new` inside `useFrame`.
+ *
+ * ── Colour source ──────────────────────────────────────────────────────────
+ * Every hue in this component comes from the active Visual Overdrive palette
+ * (`vfxPreset` in the store → `@/lib/vfxPalette`). The colours are pushed into
+ * the existing `THREE.Color` uniforms by one effect, so switching preset only
+ * mutates twelve colour values: the shader programs, particle pool and ripple
+ * pool all keep their identity, and a plume already in flight keeps animating
+ * while its hue changes.
  */
 
 /* -------------------------------------------------------------------------- */
@@ -188,13 +198,17 @@ const PARTICLE_VERTEX = /* glsl */ `
  *
  * Soft radial core, `I(r) = exp(-k·r²)`, with colour driven by remaining life.
  *
- *   stardust   white at birth → #00f0ff body → deep neon purple as it dies
- *   spark      gold ↔ cyan, flickering per particle (the "闪烁" the brief asks
- *              for), held near full brightness for its whole short life
+ *   stardust   palette core at birth → secondary body → accent as it dies
+ *   spark      primary ↔ secondary, flickering per particle (the "闪烁" the
+ *              brief asks for), held near full brightness for its whole short
+ *              life
  *
- * Emission is pushed above 1.0 on newborn splats. Bloom downstream thresholds on
- * LUMINANCE, so a sprite that never exceeds 1.0 produces almost no glow; the HDR
- * headroom is what turns the leading edge into a real highlight.
+ * The four hues are uniforms rather than literals because the Visual Overdrive
+ * palette can change while this shader is live; the CPU effect below rewrites
+ * them in place. Emission is pushed above 1.0 on newborn splats. Bloom
+ * downstream thresholds on LUMINANCE, so a sprite that never exceeds 1.0
+ * produces almost no glow; the HDR headroom is what turns the leading edge into
+ * a real highlight.
  */
 const PARTICLE_FRAGMENT = /* glsl */ `
   varying float vLife;
@@ -203,10 +217,10 @@ const PARTICLE_FRAGMENT = /* glsl */ `
   varying float vDepth;
 
   uniform float uTime;
-  uniform vec3 uBirth;
-  uniform vec3 uCyan;
-  uniform vec3 uDeath;
-  uniform vec3 uGold;
+  uniform vec3 uCore;
+  uniform vec3 uSecondary;
+  uniform vec3 uEdge;
+  uniform vec3 uPrimary;
   uniform float uFalloff;
 
   void main() {
@@ -222,15 +236,16 @@ const PARTICLE_FRAGMENT = /* glsl */ `
     float emission;
 
     if (vKind > 0.5) {
-      // Burst spark: gold/cyan interleaved, flickering hard.
+      // Burst spark: the palette's two leading hues interleaved, flickering hard.
       float pick = 0.5 + 0.5 * sin(vSeed * 31.7);
-      col = mix(uGold, uCyan, pick);
+      col = mix(uPrimary, uSecondary, pick);
       float flicker = 0.45 + 0.55 * sin(uTime * 42.0 + vSeed * 91.0);
       emission = 2.2 + flicker * 1.9;
     } else {
-      // White -> cyan almost immediately, then a long slide into purple.
-      col = mix(uBirth, uCyan, smoothstep(0.0, 0.28, age));
-      col = mix(col, uDeath, smoothstep(0.42, 1.0, age));
+      // Core yields to the secondary almost immediately, then slides into the
+      // accent for the long tail of its life.
+      col = mix(uCore, uSecondary, smoothstep(0.0, 0.28, age));
+      col = mix(col, uEdge, smoothstep(0.42, 1.0, age));
       emission = mix(3.2, 1.0, age);
     }
 
@@ -270,12 +285,18 @@ const RIBBON_VERTEX = /* glsl */ `
  * `vAlong²` factor makes the head hot and the tail dissolve, and `uFade` kills
  * the whole thing when the cursor stops moving (the history collapses, and a
  * degenerate ribbon must not linger).
+ *
+ * The cold→hot gradient is palette-driven through uniforms (primary at the tail,
+ * secondary at the head) for the same reason as the stardust: the ribbon must
+ * re-tint live without rebuilding its material.
  */
 const RIBBON_FRAGMENT = /* glsl */ `
   varying vec2 vUv;
   varying float vAlong;
 
   uniform float uFade;
+  uniform vec3 uCold;
+  uniform vec3 uHot;
 
   void main() {
     float edge = 1.0 - abs(vUv.y * 2.0 - 1.0);
@@ -287,9 +308,7 @@ const RIBBON_FRAGMENT = /* glsl */ `
     float alpha = core * along * uFade * 1.25;
     if (alpha < 0.004) discard;
 
-    vec3 cold = vec3(0.0, 0.42, 0.95);
-    vec3 hot = vec3(0.72, 1.0, 1.0);
-    vec3 col = mix(cold, hot, vAlong);
+    vec3 col = mix(uCold, uHot, vAlong);
 
     gl_FragColor = vec4(col * (1.0 + vAlong * 2.0), alpha);
   }
@@ -367,6 +386,25 @@ export function CursorStardustTrail({
   const ringRefs = useRef<Array<THREE.Mesh | null>>([])
 
   const count = countProp ?? (tier === 'high' ? BASE_COUNT : Math.round(BASE_COUNT / 2))
+
+  /*
+   * Publish the pool size to the shared perf registry.
+   *
+   * The telemetry HUD sums every registered canvas, so this canvas reports
+   * under its own kind instead of clobbering the nebula's count. The ring
+   * buffer is allocated in full, so the pool size is the contribution this
+   * canvas makes to the live particle total.
+   */
+  useEffect(() => {
+    reportParticles('trail', count)
+  }, [count])
+
+  /* ── Visual Overdrive palette ──────────────────────────────────────────── */
+  // One selector subscription is enough for all three visual layers: stardust,
+  // ribbon and ripple ring are siblings in this component, so a single render on
+  // a preset change re-syncs every colour uniform in one effect below.
+  const vfxPreset = useAppStore((state) => state.vfxPreset)
+  const palette = getVfxPalette(vfxPreset)
 
   /* ── Particle pool + scratch, allocated exactly once ───────────────────── */
   const sim = useMemo(() => {
@@ -461,10 +499,16 @@ export function CursorStardustTrail({
       uPixelRatio: { value: Math.min(window.devicePixelRatio || 1, 2) },
       uRise: { value: RISE },
       uTurbulence: { value: TURBULENCE },
-      uBirth: { value: new THREE.Color('#ffffff') },
-      uCyan: { value: new THREE.Color('#00f0ff') },
-      uDeath: { value: new THREE.Color('#7c3aed') },
-      uGold: { value: new THREE.Color('#ffcf5c') },
+      /*
+       * Palette colours are seeded from the live preset at mount and then kept
+       * in sync by the colour effect below. They are intentionally NOT useMemo
+       * dependencies: rebuilding the uniforms would rebuild the material and
+       * recompile the program, and a palette switch only changes four colours.
+       */
+      uCore: { value: new THREE.Color(palette.particleCore) },
+      uSecondary: { value: new THREE.Color(palette.secondary) },
+      uEdge: { value: new THREE.Color(palette.accent) },
+      uPrimary: { value: new THREE.Color(palette.primary) },
       uFalloff: { value: FALLOFF },
     }),
     [],
@@ -523,7 +567,21 @@ export function CursorStardustTrail({
     return { history, positions, geo, posAttr, filled: 0 }
   }, [])
 
-  const ribbonUniforms = useMemo(() => ({ uFade: { value: 0 } }), [])
+  /**
+   * Ribbon uniforms.
+   *
+   * `uCold`/`uHot` are the palette gradient endpoints; they are seeded here and
+   * mutated in place by the palette effect below, so the ribbon keeps one
+   * material identity across a preset switch.
+   */
+  const ribbonUniforms = useMemo(
+    () => ({
+      uFade: { value: 0 },
+      uCold: { value: new THREE.Color(palette.primary) },
+      uHot: { value: new THREE.Color(palette.secondary) },
+    }),
+    [],
+  )
 
   const ribbonMaterial = useMemo(
     () =>
@@ -549,8 +607,9 @@ export function CursorStardustTrail({
         position: new THREE.Vector3(),
         uniforms: {
           uLife: { value: 0 },
-          uColorCold: { value: new THREE.Color('#1e6bff') },
-          uColorHot: { value: new THREE.Color('#c8fbff') },
+          // Palette-seeded, then synced in place by the colour effect below.
+          uColorCold: { value: new THREE.Color(palette.primary) },
+          uColorHot: { value: new THREE.Color(palette.secondary) },
         },
       })),
     [],
@@ -574,6 +633,32 @@ export function CursorStardustTrail({
       ),
     [rings],
   )
+
+  /* ── Palette → every colour uniform, in place ───────────────────────────── */
+  /**
+   * One effect re-tints all three layers at once.
+   *
+   * WHY mutate instead of rebuilding: these materials, their shader programs and
+   * the ripple ring pool are created once for the whole session. Recreating them
+   * on a preset change would dispose/recompile programs, and any plume or ripple
+   * currently in flight would lose its uniforms mid-animation. `THREE.Color.set`
+   * only rewrites the RGB values the uniforms already point at, so the visual
+   * change lands on the very next frame with no rebuild at all.
+   */
+  useEffect(() => {
+    particleUniforms.uCore.value.set(palette.particleCore)
+    particleUniforms.uSecondary.value.set(palette.secondary)
+    particleUniforms.uEdge.value.set(palette.accent)
+    particleUniforms.uPrimary.value.set(palette.primary)
+
+    ribbonUniforms.uCold.value.set(palette.primary)
+    ribbonUniforms.uHot.value.set(palette.secondary)
+
+    for (const ring of rings) {
+      ring.uniforms.uColorCold.value.set(palette.primary)
+      ring.uniforms.uColorHot.value.set(palette.secondary)
+    }
+  }, [palette, particleUniforms, ribbonUniforms, rings])
 
   /* ── Keep sprite size correct across DPR changes ───────────────────────── */
   useEffect(() => {

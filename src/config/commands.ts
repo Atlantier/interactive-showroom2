@@ -6,11 +6,13 @@ import {
   Moon,
   Orbit,
   Palette,
+  Sparkles,
   Weight,
   type LucideIcon,
 } from 'lucide-react'
 import { SHOWROOM_SECTIONS } from '@/config/sections'
 import { startScroll, scrollToTarget } from '@/lib/scrollEngine'
+import { VFX_PRESET_ORDER, getVfxPalette } from '@/lib/vfxPalette'
 import {
   ACCENT_SWATCH,
   GRAVITY_LABELS,
@@ -36,10 +38,16 @@ import {
  * searching "violet" finds 赛博紫 without showing a confusing match highlight.
  */
 
-export type CommandGroup = '跳转章节' | '物理沙盒' | '主题强调色' | '操作'
+export type CommandGroup = '跳转章节' | '物理沙盒' | '主题强调色' | '视觉调色' | '操作'
 
 /** Order the groups appear in the list, regardless of query score. */
-export const GROUP_ORDER: CommandGroup[] = ['跳转章节', '物理沙盒', '主题强调色', '操作']
+export const GROUP_ORDER: CommandGroup[] = [
+  '跳转章节',
+  '物理沙盒',
+  '主题强调色',
+  '视觉调色',
+  '操作',
+]
 
 export interface Command {
   id: string
@@ -252,6 +260,35 @@ export function buildCommands(): Command[] {
     run: () => useAppStore.getState().setAccentTheme(option.theme),
   }))
 
+  /**
+   * Visual Overdrive spectral palettes.
+   *
+   * Same row shape as the accent commands on purpose — swatch dot, live `active`
+   * tick, a subtitle that names the signature hues — because they are sibling
+   * colour controls and should read as one pattern in the palette. The two are
+   * separate groups, though: 主题强调色 re-tints the DOM accents while 视觉调色
+   * recolours the rendered world, and conflating them would hide that.
+   *
+   * `run` re-reads the store with `getState()` rather than closing over the
+   * `state` snapshot captured above, matching every other command here: the
+   * catalogue object can outlive the state it was built from.
+   */
+  const vfxCommands: Command[] = VFX_PRESET_ORDER.map((preset) => {
+    const vfxPalette = getVfxPalette(preset)
+    return {
+      id: `vfx-${preset}`,
+      title: vfxPalette.label,
+      subtitle: `Visual Overdrive · ${vfxPalette.primary.toUpperCase()} / ${vfxPalette.secondary.toUpperCase()}`,
+      group: '视觉调色',
+      keywords:
+        'vfx visual overdrive palette spectral colour color shader particles 视觉 调色 光谱 粒子 配色',
+      icon: Sparkles,
+      swatch: vfxPalette.primary,
+      active: state.vfxPreset === preset,
+      run: () => useAppStore.getState().setVfxPreset(preset),
+    }
+  })
+
   const actionCommands: Command[] = [
     {
       id: 'copy-email',
@@ -276,5 +313,11 @@ export function buildCommands(): Command[] {
     },
   ]
 
-  return [...sectionCommands, ...gravityCommands, ...accentCommands, ...actionCommands]
+  return [
+    ...sectionCommands,
+    ...gravityCommands,
+    ...accentCommands,
+    ...vfxCommands,
+    ...actionCommands,
+  ]
 }

@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { PerformanceTier, TransientState } from '@/types'
+import type { VfxPreset } from '@/lib/vfxPalette'
 import { clamp, safeNumber } from '@/lib/math'
 import { detectPerformanceTier } from '@/lib/device'
 
@@ -86,6 +87,19 @@ export interface AppState {
   autoDowngradeArmed: boolean
   /** Accent colour theme (翡翠绿 / 赛博紫 / 钛金橙). */
   accentTheme: AccentTheme
+  /**
+   * Site-wide Visual Overdrive palette (翡翠赛博绿 / 黑金超新星 / 量子幻影紫).
+   *
+   * Separate from `accentTheme` on purpose. The accent theme is a DOM/CSS
+   * concern that re-tints the interface through the cascade; this preset is the
+   * spectral recipe for the *rendered* world — WebGL particle colours, stage
+   * beams, the aurora and the bento glow. Coupling them would mean a UI accent
+   * change also recolouring eight thousand particles, which is not what either
+   * control promises. The palette values themselves live in
+   * `@/lib/vfxPalette`; the store only tracks which one is active so every
+   * consumer re-reads the same source of truth.
+   */
+  vfxPreset: VfxPreset
   /** Gravity preset for the Verlet lanyard sandbox. */
   gravityMode: GravityMode
   /** Whether the Cmd/Ctrl+K command palette is open. */
@@ -105,6 +119,7 @@ export interface AppState {
   showPerfNotice: (title: string, detail: string) => void
   clearPerfNotice: () => void
   setAccentTheme: (theme: AccentTheme) => void
+  setVfxPreset: (preset: VfxPreset) => void
   setGravityMode: (mode: GravityMode) => void
   setCommandPaletteOpen: (open: boolean) => void
   toggleCommandPalette: () => void
@@ -228,6 +243,7 @@ export const useAppStore = create<AppState>()(
       perfNotice: null,
       autoDowngradeArmed: true,
       accentTheme: 'cyan',
+      vfxPreset: 'emerald-cyber',
       gravityMode: 'earth',
       commandPaletteOpen: false,
 
@@ -287,6 +303,7 @@ export const useAppStore = create<AppState>()(
       },
 
       setAccentTheme: (theme) => set({ accentTheme: theme }),
+      setVfxPreset: (preset) => set({ vfxPreset: preset }),
       setGravityMode: (mode) => set({ gravityMode: mode }),
       setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
       toggleCommandPalette: () =>
@@ -302,6 +319,7 @@ export const useAppStore = create<AppState>()(
           perfNotice: null,
           autoDowngradeArmed: true,
           accentTheme: 'cyan',
+          vfxPreset: 'emerald-cyber',
           gravityMode: 'earth',
           commandPaletteOpen: false,
         }),
@@ -312,11 +330,18 @@ export const useAppStore = create<AppState>()(
       // Transient data must never be serialized — only durable UI preferences.
       // The command palette's open state is deliberately absent: restoring a
       // panel over the page on reload would be a bug, not a preference.
+      //
+      // `vfxPreset` is additive to the v1 payload. zustand's persist merges the
+      // stored object over the initial state, so an older payload simply keeps
+      // the boot default ('emerald-cyber') and no version bump / migration is
+      // needed — bumping without a `migrate` would only discard the other saved
+      // preferences for no benefit.
       partialize: (state) => ({
         soundEnabled: state.soundEnabled,
         fpsMonitorEnabled: state.fpsMonitorEnabled,
         performanceTier: state.performanceTier,
         accentTheme: state.accentTheme,
+        vfxPreset: state.vfxPreset,
         gravityMode: state.gravityMode,
       }),
     },

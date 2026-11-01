@@ -4,6 +4,8 @@ import { SpotlightCard } from '@/components/bento/SpotlightCard'
 import { TokenThroughputChart } from '@/components/bento/micro/TokenThroughputChart'
 import { TopologyMini } from '@/components/bento/micro/TopologyMini'
 import { TerminalTyper } from '@/components/bento/micro/TerminalTyper'
+import { getVfxPalette, type VfxPalette } from '@/lib/vfxPalette'
+import { useAppStore } from '@/store/useAppStore'
 import { cn } from '@/lib/cn'
 
 /**
@@ -13,6 +15,14 @@ import { cn } from '@/lib/cn'
  * mobile. Sizes are deliberately uneven (2x2 hero, 2x1 wide, 1x2 tall, and two
  * 1x1) so the grid reads as an editorial composition rather than a uniform
  * product grid.
+ *
+ * ── Colour source ──────────────────────────────────────────────────────────
+ * Every card's glow / ember field takes the active Visual Overdrive palette's
+ * `glowRgb` triple, threaded down as a prop from the section. `SpotlightCard`
+ * and `CardParticleCanvas` consume that triple as `rgba(<triple>, <alpha>)` on
+ * the JS side, which is exactly why the palette pre-splits it instead of handing
+ * them a hex string. One subscription here keeps all five cards in lockstep, and
+ * the cards themselves stay palette-agnostic (they already accept the triple).
  */
 
 /* -------------------------------------------------------------------------- */
@@ -54,13 +64,13 @@ function CardFooter({ note, title }: { note: string; title: string }) {
 /* -------------------------------------------------------------------------- */
 /*  1. Hero card — 2x2                                                        */
 /* -------------------------------------------------------------------------- */
-function ThroughputCard() {
+function ThroughputCard({ palette }: { palette: VfxPalette }) {
   return (
     <SpotlightCard
       spanClassName="md:col-span-2 md:row-span-2"
       label="实时推理吞吐"
       className="p-4"
-      glowColor="16, 185, 129"
+      glowColor={palette.glowRgb}
     >
       <CardHeader icon={<Radio className="size-3.5" aria-hidden />} eyebrow="live telemetry" />
 
@@ -80,13 +90,13 @@ function ThroughputCard() {
 /* -------------------------------------------------------------------------- */
 /*  2. Wide card — 2x1: topology                                              */
 /* -------------------------------------------------------------------------- */
-function TopologyCard() {
+function TopologyCard({ palette }: { palette: VfxPalette }) {
   return (
     <SpotlightCard
       spanClassName="md:col-span-2"
       label="架构拓扑"
       className="p-4"
-      glowColor="167, 139, 250"
+      glowColor={palette.glowRgb}
     >
       <CardHeader
         icon={<Boxes className="size-3.5" aria-hidden />}
@@ -106,13 +116,13 @@ function TopologyCard() {
 /* -------------------------------------------------------------------------- */
 /*  3. Tall card — 1x2: terminal                                              */
 /* -------------------------------------------------------------------------- */
-function TerminalCard() {
+function TerminalCard({ palette }: { palette: VfxPalette }) {
   return (
     <SpotlightCard
       spanClassName="md:row-span-2"
       label="部署终端"
       className="p-4"
-      glowColor="34, 211, 238"
+      glowColor={palette.glowRgb}
     >
       <CardHeader icon={<Terminal className="size-3.5" aria-hidden />} eyebrow="terminal" />
 
@@ -128,7 +138,7 @@ function TerminalCard() {
 /* -------------------------------------------------------------------------- */
 /*  4. Small card — 1x1: render stats                                         */
 /* -------------------------------------------------------------------------- */
-function ShaderCard() {
+function ShaderCard({ palette }: { palette: VfxPalette }) {
   const stats = [
     { label: 'draw calls', value: '1' },
     { label: 'particles', value: '8 000' },
@@ -136,7 +146,7 @@ function ShaderCard() {
   ]
 
   return (
-    <SpotlightCard label="渲染管线" className="p-4" glowColor="94, 234, 212">
+    <SpotlightCard label="渲染管线" className="p-4" glowColor={palette.glowRgb}>
       <CardHeader
         icon={<Cpu className="size-3.5" aria-hidden />}
         eyebrow="render"
@@ -174,13 +184,13 @@ function ShaderCard() {
 /* -------------------------------------------------------------------------- */
 /*  5. Small card — 1x1: uptime                                               */
 /* -------------------------------------------------------------------------- */
-function UptimeCard() {
+function UptimeCard({ palette }: { palette: VfxPalette }) {
   // Deterministic bar heights: a random block would re-render on every pass and
   // carries no semantic meaning.
   const bars = [38, 52, 44, 61, 55, 70, 64, 78, 72, 86, 80, 92, 88, 96]
 
   return (
-    <SpotlightCard label="在线时长" className="p-4" glowColor="251, 191, 36">
+    <SpotlightCard label="在线时长" className="p-4" glowColor={palette.glowRgb}>
       <CardHeader
         icon={<Radio className="size-3.5" aria-hidden />}
         eyebrow="uptime"
@@ -210,13 +220,20 @@ function UptimeCard() {
 /*  Section                                                                   */
 /* -------------------------------------------------------------------------- */
 export function BentoShowcase() {
+  // One subscription for the whole section: a preset change re-renders this
+  // component once and each card receives the new `glowRgb` triple as a prop.
+  // Threading the palette down (rather than subscribing inside all five cards)
+  // keeps a preset switch to a single store notification.
+  const vfxPreset = useAppStore((state) => state.vfxPreset)
+  const palette = getVfxPalette(vfxPreset)
+
   return (
     <BentoGrid className="mt-14">
-      <ThroughputCard />
-      <TopologyCard />
-      <TerminalCard />
-      <ShaderCard />
-      <UptimeCard />
+      <ThroughputCard palette={palette} />
+      <TopologyCard palette={palette} />
+      <TerminalCard palette={palette} />
+      <ShaderCard palette={palette} />
+      <UptimeCard palette={palette} />
     </BentoGrid>
   )
 }

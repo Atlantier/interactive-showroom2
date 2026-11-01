@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import { getTransient } from '@/store/useAppStore'
+import { getVfxPalette } from '@/lib/vfxPalette'
+import { getTransient, useAppStore } from '@/store/useAppStore'
 import type { PerformanceTier } from '@/types'
 
 /**
@@ -55,9 +56,12 @@ const DUST_BOUND = 7.5
 /*  Beam definitions                                                          */
 /* -------------------------------------------------------------------------- */
 
+/** Which spectral role of the active palette a beam takes. */
+type BeamColorSlot = 'primary' | 'secondary' | 'accent'
+
 interface BeamSpec {
-  /** Beam colour. */
-  color: string
+  /** Palette slot supplying the beam colour; resolved at render time. */
+  colorSlot: BeamColorSlot
   /** X offset of the emitter. */
   offsetX: number
   /** Base tilt around X (the beams lean toward the viewer). */
@@ -71,14 +75,16 @@ interface BeamSpec {
 }
 
 /**
- * Main beam is emerald cold, secondaries are deep-space indigo and cyber violet,
- * per the brief. The tilt and offset differences are what make the three read as
- * a raked stage rig rather than as one beam repeated.
+ * The three beams take the palette's primary / secondary / accent slots — one
+ * hero shaft plus two counter-lit shafts. The tilt and offset differences are
+ * what make the three read as a raked stage rig rather than as one beam
+ * repeated; the palette supplies the hues, so switching preset re-racks the
+ * lighting without touching the geometry or the choreography.
  */
 const BEAMS: BeamSpec[] = [
-  { color: '#10b981', offsetX: -1.9, tiltX: 0.14, tiltZ: 0.2, scrollDrift: 1.6, opacity: 0.95 },
-  { color: '#3b82f6', offsetX: 0.7, tiltX: -0.1, tiltZ: -0.12, scrollDrift: -1.1, opacity: 0.7 },
-  { color: '#8b5cf6', offsetX: 2.6, tiltX: 0.2, tiltZ: 0.26, scrollDrift: 1.0, opacity: 0.55 },
+  { colorSlot: 'primary', offsetX: -1.9, tiltX: 0.14, tiltZ: 0.2, scrollDrift: 1.6, opacity: 0.95 },
+  { colorSlot: 'secondary', offsetX: 0.7, tiltX: -0.1, tiltZ: -0.12, scrollDrift: -1.1, opacity: 0.7 },
+  { colorSlot: 'accent', offsetX: 2.6, tiltX: 0.2, tiltZ: 0.26, scrollDrift: 1.0, opacity: 0.55 },
 ]
 
 /**
@@ -311,6 +317,11 @@ const DUST_FRAGMENT = /* glsl */ `
   varying float vSeed;
   varying float vDepth;
 
+  // Palette hue the illuminated motes take. Uniform rather than a literal: the
+  // dust is lit BY the beams, so it must follow the same spectral palette the
+  // beams do, or a gold preset would still show cold blue dust.
+  uniform vec3 uDustTint;
+
   void main() {
     vec2 uv = gl_PointCoord - 0.5;
     float r = length(uv) * 2.0;
@@ -323,7 +334,7 @@ const DUST_FRAGMENT = /* glsl */ `
 
     // Motes inside a beam pick up a slightly warmer white at their centre, which
     // is what sells them as illuminated by light rather than as self-lit.
-    vec3 tint = mix(vec3(0.55, 0.85, 1.0), vec3(1.0), core * 0.6);
+    vec3 tint = mix(uDustTint, vec3(1.0), core * 0.6);
     gl_FragColor = vec4(tint * (1.0 + vLight * 0.8), alpha);
   }
 `
@@ -363,6 +374,10 @@ export function VolumetricStageLights({
   const coneRefs = useRef<Array<THREE.Mesh | null>>([])
   const dustRef = useRef<THREE.Points>(null)
 
+  /* ── Visual Overdrive palette ──────────────────────────────────────────── */
+  const vfxPreset = useAppStore((state) => state.vfxPreset)
+  const palette = getVfxPalette(vfxPreset)
+
   const dustCount = tier === 'high' ? BASE_DUST : Math.round(BASE_DUST / 2)
   const beams = useMemo(() => (tier === 'high' ? BEAMS : BEAMS.slice(0, 2)), [tier])
 
@@ -374,10 +389,19 @@ export function VolumetricStageLights({
     [],
   )
 
+  /**
+   * Per-beam uniform blocks.
+   *
+   * `palette` is read here only to seed the colour uniforms: it is deliberately
+   * absent from the dependency list. Rebuilding these objects (and therefore the
+   * `ShaderMaterial`s below) on a preset change would recompile the cone
+   * programs and discard the live uniform state; a hue swap must stay a
+   * four-value write. The sync effect below does exactly that.
+   */
   const coneUniforms = useMemo(
     () =>
       beams.map((beam) => ({
-        uColor: { value: new THREE.Color(beam.color) },
+        uColor: { value: new THREE.Color(palette[beam.colorSlot]) },
         uTime: { value: 0 },
         uOpacity: { value: beam.opacity },
         uEdgePower: { value: 1.9 },
@@ -461,6 +485,8 @@ export function VolumetricStageLights({
       uTanHalf1: { value: 0 },
       uTanHalf2: { value: 0 },
       uConeHeight: { value: CONE_HEIGHT * scale },
+      /** Palette hue for the lit motes; synced in place by the effect below. */
+      uDustTint: { value: new THREE.Color(palette.secondary) },
     }),
     [scale],
   )
@@ -479,6 +505,24 @@ export function VolumetricStageLights({
       }),
     [dustUniforms],
   )
+
+  /**
+   * Palette → beam and dust colours, in place.
+   *
+   * WHY `Color.set` and not a rebuild: the beam rig's geometry, opacity
+   * choreography and shader programs are created once for the whole session. A
+   * preset change is a hue change, so it only needs to rewrite the RGB triples
+   * the existing uniforms already point at — the next rendered frame picks them
+   * up with no recompile and no visual pop. The dust takes the secondary hue
+   * because it is lit BY the beams: the white centre blend above still supplies
+   * the "lit" highlight.
+   */
+  useEffect(() => {
+    for (let i = 0; i < beams.length; i++) {
+      coneUniforms[i].uColor.value.set(palette[beams[i].colorSlot])
+    }
+    dustUniforms.uDustTint.value.set(palette.secondary)
+  }, [beams, coneUniforms, dustUniforms, palette])
 
   /* ── Scratch, allocated once ───────────────────────────────────────────── */
   const scratch = useMemo(
@@ -623,7 +667,7 @@ export function VolumetricStageLights({
     <group scale={scale}>
       {beams.map((beam, i) => (
         <mesh
-          key={beam.color}
+          key={beam.colorSlot}
           ref={(el) => {
             coneRefs.current[i] = el
           }}

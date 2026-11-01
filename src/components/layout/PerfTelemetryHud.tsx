@@ -5,6 +5,8 @@ import { useAppStore } from '@/store/useAppStore'
 import { getActiveCanvasCount } from '@/lib/frameBridge'
 import {
   HEAP_HISTORY_SIZE,
+  getActiveParticleCount,
+  getShaderPassCount,
   performanceCounters,
   readHeapHistory,
   sampleHeap,
@@ -22,8 +24,15 @@ import {
  * ── What is measured, and how ─────────────────────────────────────────────
  *   FPS / frame time   sampled in this panel's own rAF, so it reflects the
  *                      browser's compositor cadence rather than any one module.
- *   Particles          reported by `FlowFieldParticles`, which knows the live
- *                      count after any tier change.
+ *   Particles          summed from every canvas that registers a count with
+ *                      `lib/perfMetrics` (the nebula, and the stardust trail
+ *                      once its canvas reports). The total is the app-wide live
+ *                      count, not whichever producer ran last.
+ *   Shader passes      published by `SceneCanvas`, which owns the
+ *                      `EffectComposer`; it reads 0 until that composer mounts.
+ *   VFX preset         the store's palette selection, read defensively: on a
+ *                      build where the preset field does not exist yet the row
+ *                      shows "—" instead of failing to type-check.
  *   Physics solve      reported by the Verlet sandbox, timed around the
  *                      constraint-relaxation batch — the part that actually
  *                      scales with iteration count.
@@ -43,15 +52,34 @@ const HEAP_SAMPLE_INTERVAL = 250
 const SPARK_W = 216
 const SPARK_H = 40
 
+/** Shown for a reading whose source has not landed in this build yet. */
+const NO_VALUE = '—'
+
+/**
+ * Optional view of the store's VFX palette preset.
+ *
+ * The preset field is owned by another module and may not exist on `AppState`
+ * yet. Reading it through this shape keeps the HUD type-checking and rendering
+ * (as a placeholder) both before and after that field lands, without weakening
+ * the type of any other store access.
+ */
+interface MaybeVfxPreset {
+  vfxPreset?: string
+}
+
 export function PerfTelemetryHud() {
   const open = useAppStore((state) => state.perfHudOpen)
   const setOpen = useAppStore((state) => state.setPerfHudOpen)
   const tier = useAppStore((state) => state.performanceTier)
+  const vfxPreset = useAppStore(
+    (state) => (state as unknown as MaybeVfxPreset).vfxPreset,
+  )
 
   const fpsRef = useRef<HTMLSpanElement>(null)
   const frameMsRef = useRef<HTMLSpanElement>(null)
   const worstMsRef = useRef<HTMLSpanElement>(null)
   const particlesRef = useRef<HTMLSpanElement>(null)
+  const shaderPassRef = useRef<HTMLSpanElement>(null)
   const solveRef = useRef<HTMLSpanElement>(null)
   const solveAvgRef = useRef<HTMLSpanElement>(null)
   const ikRef = useRef<HTMLSpanElement>(null)
@@ -197,7 +225,12 @@ export function PerfTelemetryHud() {
       /* Counters the producers write; cheap enough to read every frame. */
       const c = performanceCounters
       if (particlesRef.current) {
-        particlesRef.current.textContent = c.particles.toLocaleString('en-US')
+        // Sum of every registered canvas, not one producer's number.
+        particlesRef.current.textContent = getActiveParticleCount().toLocaleString('en-US')
+      }
+      if (shaderPassRef.current) {
+        // Published by the component that owns the EffectComposer.
+        shaderPassRef.current.textContent = String(getShaderPassCount())
       }
       if (solveRef.current) solveRef.current.textContent = c.physicsSolveMs.toFixed(2)
       if (solveAvgRef.current) solveAvgRef.current.textContent = c.physicsSolveAvgMs.toFixed(2)
@@ -300,6 +333,11 @@ export function PerfTelemetryHud() {
             0
           </span>
         </Row>
+        <Row label="SHADER PASS">
+          <span ref={shaderPassRef} className="tabular-nums text-signal-cyan">
+            0
+          </span>
+        </Row>
         <Row label="PHYS SOLVE">
           <span ref={solveRef} className="tabular-nums text-ink-100">
             0.00
@@ -328,6 +366,23 @@ export function PerfTelemetryHud() {
             )}
           >
             {tier}
+          </span>
+        </Row>
+        <Row label="VFX PRESET">
+          {/*
+           * Defensive read: the palette preset is owned by another module and
+           * may not exist on a given build yet. `vfxPreset` is `undefined`
+           * until it lands, and the row then shows a placeholder rather than
+           * calling `.toUpperCase()` on nothing.
+           */}
+          <span
+            className={cn(
+              'uppercase',
+              vfxPreset ? 'text-signal-violet' : 'text-ink-500',
+            )}
+            title={vfxPreset}
+          >
+            {vfxPreset ?? NO_VALUE}
           </span>
         </Row>
       </dl>

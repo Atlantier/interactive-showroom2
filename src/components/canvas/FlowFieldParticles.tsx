@@ -3,7 +3,8 @@ import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { buildCurlVolume, sampleCurl, type CurlVolume } from '@/lib/curlNoise'
 import { createSpring, stepSpring } from '@/lib/math'
-import { getTransient } from '@/store/useAppStore'
+import { DEFAULT_VFX_PRESET, getVfxPalette } from '@/lib/vfxPalette'
+import { getTransient, useAppStore } from '@/store/useAppStore'
 import { reportParticles } from '@/lib/perfMetrics'
 import { soundEngine } from '@/utils/soundEngine'
 import type { PerformanceTier } from '@/types'
@@ -32,9 +33,16 @@ import type { PerformanceTier } from '@/types'
  * a single `BufferAttribute` with `needsUpdate` — no reallocation, ever.
  *
  * ── Colours ─────────────────────────────────────────────────────────────────
- * Emerald #10b981 (at rest) → electric violet #8b5cf6 (moderate push) →
- * pure white (hard/fast push). Interpolation happens per particle from its
- * current speed, written into a second `BufferAttribute`.
+ * The nebula's three colours come from the active Visual Overdrive palette
+ * (`vfxPreset` in the store → `@/lib/vfxPalette`): palette core at rest →
+ * palette edge under a moderate cursor push → pure white on a hard/fast push.
+ * Interpolation happens per particle from its current speed, written into a
+ * second `BufferAttribute`.
+ *
+ * The live colours are held in mutable `THREE.Color` instances and refreshed by
+ * an effect when the preset changes, so a palette switch never touches the
+ * geometry, the typed arrays or the shader program — the frame loop simply
+ * starts lerping toward the new hues on its next pass.
  *
  * ── Allocation discipline (AGENTS.md rule 3) ────────────────────────────────
  * Every `Vector3`, `Color`, `Matrix4`, `Raycaster` and scratch array used in the
@@ -198,12 +206,27 @@ const SPRING_DAMPING_RATIO = 0.42
 /** Cap on the per-frame integration step (seconds). */
 const MAX_DT = 1 / 30
 
-/** Rest / mid / hot colours. */
-const COLOR_REST = new THREE.Color('#10b981') // emerald
-const COLOR_MID = new THREE.Color('#8b5cf6') // electric violet
+/**
+ * Seed colour for the per-particle colour buffer.
+ *
+ * The buffer is completely rewritten on the first frame (every particle is
+ * coloured from its live speed/state), so this only prevents a one-frame flash
+ * of black. It is derived from the DEFAULT preset rather than the active one on
+ * purpose: `sim` must never be rebuilt when the palette changes, because that
+ * would reallocate the 8 000-particle typed arrays and geometry for a hue swap.
+ */
+const SEED_PARTICLE_COLOR = new THREE.Color(getVfxPalette(DEFAULT_VFX_PRESET).particleCore)
+
+/**
+ * Specular white for the hottest particles.
+ *
+ * Palette-independent on purpose: this is the highlight term, not a spectral
+ * hue. Every preset wants the same white-hot core the instant the cursor flings
+ * a particle, and tinting it would mute the impact response.
+ */
 const COLOR_HOT = new THREE.Color('#ffffff') // specular white
 
-/** Speed at which a particle is fully violet / fully white. */
+/** Speed at which a particle is fully at the edge hue / fully white. */
 const SPEED_VIOLET = 3.2
 const SPEED_WHITE = 7.5
 
@@ -494,6 +517,28 @@ export function FlowFieldParticles({
     reportParticles(count)
   }, [count])
 
+  /* ── Visual Overdrive palette ──────────────────────────────────────────── */
+  // Subscribing (rather than polling the store inside the frame loop) means the
+  // component renders exactly once per preset change; the render is cheap because
+  // every heavy allocation below is memoised on `count`/`tier`, not on palette.
+  const vfxPreset = useAppStore((state) => state.vfxPreset)
+  const palette = getVfxPalette(vfxPreset)
+
+  /**
+   * Live rest → edge colours.
+   *
+   * A new pair of `THREE.Color` instances per preset, never per frame: the frame
+   * loop only reads their channels, and allocating colour objects inside
+   * `useFrame` would churn the GC 60–120 times a second.
+   */
+  const paletteColors = useMemo(
+    () => ({
+      core: new THREE.Color(palette.particleCore),
+      edge: new THREE.Color(palette.particleEdge),
+    }),
+    [palette],
+  )
+
   /* ── Baked flow field (built once, ~15 ms on mount, never in a frame) ──── */
   const curlVolume = useMemo<CurlVolume>(
     () =>
@@ -532,12 +577,12 @@ export function FlowFieldParticles({
       aSize[i] = 0.45 + Math.pow(rand(), 2.2) * 1.35
     }
 
-    // Seed every particle at rest, at home, emerald.
+    // Seed every particle at rest, at home, in the default palette's core hue.
     for (let i = 0; i < count; i++) {
       const i3 = i * 3
-      color[i3] = COLOR_REST.r
-      color[i3 + 1] = COLOR_REST.g
-      color[i3 + 2] = COLOR_REST.b
+      color[i3] = SEED_PARTICLE_COLOR.r
+      color[i3 + 1] = SEED_PARTICLE_COLOR.g
+      color[i3 + 2] = SEED_PARTICLE_COLOR.b
     }
 
     // ── Scratch buffers: reused every frame, never reallocated ──────────────
@@ -964,24 +1009,24 @@ export function FlowFieldParticles({
       velocity[i3 + 2] = vz
 
       // ── Colour ────────────────────────────────────────────────────────
-      // Graduated response to the CURSOR, exactly as specified:
-      //   untouched / far        → emerald #10b981
-      //   inside the push radius → electric violet #8b5cf6
-      //   fast or hard push      → pure white highlight
+      // Graduated response to the CURSOR, using the active spectral palette:
+      //   untouched / far        → palette.particleCore
+      //   inside the push radius → palette.particleEdge
+      //   fast or hard push      → pure white highlight (palette-independent)
       //
       // Colour is driven by mouse influence (pushMag) rather than by total
       // displacement from home. Displacement seemed like a natural proxy, but
       // the curl flow constantly nudges particles off their home positions, so
-      // displacement alone painted large regions violet even with no cursor
-      // anywhere near — the field lost its emerald base and the whole
-      // green→violet transition stopped reading as an interaction.
+      // displacement alone painted large regions in the edge hue even with no
+      // cursor anywhere near — the field lost its core-colour base and the whole
+      // interaction transition stopped reading as an interaction.
       const speed = Math.sqrt(speedSq)
 
-      // `pushMag` is 0 outside the radius, so neutral particles stay emerald.
+      // `pushMag` is 0 outside the radius, so neutral particles keep the core hue.
       let influence = pushMag > 0 ? pushMag * 2.6 : 0
       if (influence > 1) influence = 1
 
-      // Speed adds a secondary violet push, so a fast flick still registers
+      // Speed adds a secondary edge-hue push, so a fast flick still registers
       // even for a particle just outside the radius.
       const speedInfluence = (speed - 1.2) / SPEED_VIOLET
       if (speedInfluence > influence) {
@@ -997,8 +1042,8 @@ export function FlowFieldParticles({
         hot += near > 1 ? 1 - hot : near * (1 - hot)
       }
 
-      // emerald → violet → white, lerped in linear RGB.
-      colorOut.copy(COLOR_REST).lerp(COLOR_MID, influence).lerp(COLOR_HOT, hot)
+      // core → edge → white, lerped in linear RGB.
+      colorOut.copy(paletteColors.core).lerp(paletteColors.edge, influence).lerp(COLOR_HOT, hot)
 
       color[i3] = colorOut.r
       color[i3 + 1] = colorOut.g

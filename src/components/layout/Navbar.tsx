@@ -1,12 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Activity, Command, Cpu, Gauge, Menu, Terminal, Volume2, VolumeX, X } from 'lucide-react'
+import {
+  Activity,
+  Command,
+  Cpu,
+  Gauge,
+  Menu,
+  Palette,
+  Terminal,
+  Volume2,
+  VolumeX,
+  X,
+} from 'lucide-react'
 import { useAppStore } from '@/store/useAppStore'
 import { useFpsMonitor } from '@/hooks/useFpsMonitor'
 import { scrollToTarget } from '@/lib/scrollEngine'
+import { DEFAULT_VFX_PRESET, getNextVfxPreset, getVfxPalette } from '@/lib/vfxPalette'
 import { cn } from '@/lib/cn'
 import { IconButton, StatusDot } from '@/components/ui/primitives'
 import { ScrollProgressRing } from '@/components/ui/ScrollProgressRing'
 import { AudioSpectrumMeter } from '@/components/layout/AudioSpectrumMeter'
+import { VfxSweepTransition } from '@/components/layout/VfxSweepTransition'
 import { SHOWROOM_SECTIONS } from '@/config/sections'
 import {
   ActiveSectionBadge,
@@ -161,6 +174,13 @@ export function Navbar() {
   const togglePerfHud = useAppStore((state) => state.togglePerfHud)
   const toggleCommandPalette = useAppStore((state) => state.toggleCommandPalette)
   const activeSection = useAppStore((state) => state.activeSection)
+  const vfxPreset = useAppStore((state) => state.vfxPreset)
+  const setVfxPreset = useAppStore((state) => state.setVfxPreset)
+
+  // Resolved once per preset change; both the button swatch and the sweep
+  // overlay read the same palette, so the button always previews the next state
+  // with the colour that is currently active.
+  const vfxPalette = getVfxPalette(vfxPreset)
 
   const [scrolled, setScrolled] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -200,6 +220,19 @@ export function Navbar() {
   return (
     <>
       <ScrollProgressRail />
+
+      {/*
+       * Visual Overdrive sweep overlay.
+       *
+       * Mounted here, as a SIBLING of the fixed <header>, for a concrete reason:
+       * the header carries a backdrop-filter in its condensed state, and a
+       * nested full-screen fixed layer would be clipped / re-contained by it.
+       * As a sibling with its own stacking context it reliably covers the true
+       * viewport, and it keeps the header itself free of page-wide overlays.
+       * The component renders nothing when idle and tears its own DOM down after
+       * each wave, so this adds no permanent layer.
+       */}
+      <VfxSweepTransition />
 
       <header
         className={cn(
@@ -273,6 +306,27 @@ export function Navbar() {
               onClick={toggleCommandPalette}
             >
               <Command className="size-4" aria-hidden />
+            </IconButton>
+
+            {/* ── Visual Overdrive spectral palette ────────────────────
+                A single cycle button rather than a three-way segmented control:
+                the navbar is a fixed-height row with no spare width, and one
+                IconButton keeps exactly the existing 36 px button rhythm. The
+                corner dot previews the ACTIVE palette's primary hue, so the
+                control reads as "the current colour" at a glance; the command
+                palette exposes direct per-preset selection for anyone who does
+                not want to cycle. */}
+            <IconButton
+              label={`切换视觉调色（当前：${vfxPalette.label}）`}
+              active={vfxPreset !== DEFAULT_VFX_PRESET}
+              onClick={() => setVfxPreset(getNextVfxPreset(vfxPreset))}
+            >
+              <Palette className="size-4" aria-hidden />
+              <span
+                aria-hidden
+                className="pointer-events-none absolute top-1 right-1 size-1.5 rounded-full ring-1 ring-void-950/80"
+                style={{ backgroundColor: vfxPalette.primary }}
+              />
             </IconButton>
 
             {/* ── Sound toggle + live spectrum meter ─────────────────── */}

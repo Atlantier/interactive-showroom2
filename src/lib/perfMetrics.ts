@@ -15,9 +15,41 @@
 /** Number of samples in the memory sparkline ring buffer. */
 export const HEAP_HISTORY_SIZE = 96
 
+/**
+ * Every canvas that can register a live particle count.
+ *
+ * Add a kind here when a new canvas starts reporting; `reportParticles` and
+ * `getActiveParticleCount` iterate this list, so the HUD's total automatically
+ * includes it without any change on the reading side.
+ */
+export const PARTICLE_SYSTEM_KINDS = ['nebula', 'trail'] as const
+
+/** Identifier of one particle-producing canvas. */
+export type ParticleSystemKind = (typeof PARTICLE_SYSTEM_KINDS)[number]
+
 export interface PerformanceCounters {
-  /** Active GPU particles across every canvas. */
+  /**
+   * Active GPU particles across every canvas: the running sum of
+   * `particleCounts`, maintained by `reportParticles`.
+   *
+   * Kept as a flat field (rather than only exposing the per-kind record) so
+   * existing readers — the perf audit script and older HUD code — keep working.
+   */
   particles: number
+  /**
+   * Live count per reporting canvas. Never replaced, only mutated, so the HUD
+   * can hold a reference to it without allocating.
+   */
+  particleCounts: Record<ParticleSystemKind, number>
+  /**
+   * Post-processing shader passes the renderer currently has mounted.
+   *
+   * Published by the renderer that owns the `EffectComposer` (SceneCanvas);
+   * zero until it mounts. Deliberately a plain counter rather than a
+   * tier -> count lookup: a duplicated constant is how the old DEV probe's
+   * effect list drifted out of sync with the composer.
+   */
+  shaderPasses: number
   /** Duration of the last physics constraint solve, in milliseconds. */
   physicsSolveMs: number
   /** Exponential average of the physics solve, in milliseconds. */
@@ -45,6 +77,8 @@ export interface PerformanceCounters {
 /** The single shared instance. Import and read/mutate directly. */
 export const performanceCounters: PerformanceCounters = {
   particles: 0,
+  particleCounts: { nebula: 0, trail: 0 },
+  shaderPasses: 0,
   physicsSolveMs: 0,
   physicsSolveAvgMs: 0,
   constraintIterations: 0,
@@ -82,9 +116,69 @@ export function reportIkSolve(milliseconds: number, chains: number): void {
   performanceCounters.ikChains = chains
 }
 
-/** Report the live GPU particle count. */
-export function reportParticles(count: number): void {
-  performanceCounters.particles = count
+/**
+ * Report the live particle count for one canvas.
+ *
+ * Every particle producer registers under its own `kind`, so one canvas can no
+ * longer overwrite another's reading; the HUD sums the registry instead of
+ * showing whichever reporter happened to run last.
+ */
+export function reportParticles(kind: ParticleSystemKind, count: number): void
+/**
+ * Legacy un-kinded form.
+ *
+ * The only caller that predates the kinded registry is `FlowFieldParticles`
+ * (the background nebula), so `reportParticles(n)` registers as `'nebula'`.
+ * Kept so an un-migrated reporter cannot silently zero the app-wide total.
+ */
+export function reportParticles(count: number): void
+export function reportParticles(
+  kindOrCount: ParticleSystemKind | number,
+  count?: number,
+): void {
+  const kind: ParticleSystemKind =
+    typeof kindOrCount === 'number' ? 'nebula' : kindOrCount
+  const raw = typeof kindOrCount === 'number' ? kindOrCount : (count ?? 0)
+  // A broken producer must not poison the shared sum with NaN or Infinity.
+  const value = Number.isFinite(raw) ? Math.max(0, Math.round(raw)) : 0
+  const previous = performanceCounters.particleCounts[kind]
+
+  performanceCounters.particleCounts[kind] = value
+  // Incremental total: no per-frame allocation, and cheap enough that every
+  // canvas can report on mount/tier change without a second pass.
+  performanceCounters.particles += value - previous
+}
+
+/**
+ * Sum of every registered particle system's live count.
+ *
+ * Recomputed from the per-kind registry rather than trusting the cached
+ * `particles` field, so the HUD stays correct even if a producer has not
+ * reported yet (the trail reports 0 until its canvas mounts).
+ */
+export function getActiveParticleCount(): number {
+  const counts = performanceCounters.particleCounts
+  let total = 0
+  for (const kind of PARTICLE_SYSTEM_KINDS) total += counts[kind]
+  return total
+}
+
+/**
+ * Publish how many post-processing passes the renderer currently mounts.
+ *
+ * Called by the component that owns the `EffectComposer` — the number is the
+ * length of the effect stack it actually rendered, not a value duplicated in
+ * this module. Zero means "no composer mounted".
+ */
+export function setShaderPassCount(count: number): void {
+  performanceCounters.shaderPasses = Number.isFinite(count)
+    ? Math.max(0, Math.round(count))
+    : 0
+}
+
+/** Number of post-processing shader passes currently mounted (0 = none). */
+export function getShaderPassCount(): number {
+  return performanceCounters.shaderPasses
 }
 
 /**

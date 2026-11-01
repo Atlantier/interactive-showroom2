@@ -1,6 +1,8 @@
 import { useEffect, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
+import { getVfxPalette } from '@/lib/vfxPalette'
+import { useAppStore } from '@/store/useAppStore'
 import { soundEngine } from '@/utils/soundEngine'
 import type { PerformanceTier } from '@/types'
 
@@ -48,10 +50,11 @@ import type { PerformanceTier } from '@/types'
  *                          uneven length and brightness (woven, not combed).
  *   6. ENVELOPE            smoothstep mesh-edge falloff plus a top fade, so the
  *                          curtain dissolves at both ends of the geometry.
- *   7. COLOUR              emerald body, teal in the filament cores, violet
- *                          from the hem down through the tail; emission is
- *                          pushed above 1.0 only in the thin cores so Bloom
- *                          gets a halo without the whole sheet turning to fog.
+ *   7. COLOUR              palette primary as the body, secondary in the
+ *                          filament cores, accent from the hem down through the
+ *                          tail; emission is pushed above 1.0 only in the thin
+ *                          cores so Bloom gets a halo without the whole sheet
+ *                          turning to fog.
  *
  * ── Audio reactivity ─────────────────────────────────────────────────────────
  * `uAudioEnergy` is the SoundEngine's RMS envelope, smoothed asymmetrically on
@@ -147,10 +150,13 @@ const FLOW_AUDIO_SPEED = 1.15
 /*  Palette                                                                   */
 /* -------------------------------------------------------------------------- */
 
-/** Emerald body, cyan highlights, violet lower fringe — the showroom palette. */
-const COLOR_EMERALD = '#10b981'
-const COLOR_TEAL = '#22d3ee'
-const COLOR_VIOLET = '#8b5cf6'
+/**
+ * The curtain's three hues — body, filament core and lower fringe — come from
+ * the active Visual Overdrive palette (`vfxPreset` in the store →
+ * `@/lib/vfxPalette`). There are no colour literals in this file: the uniforms
+ * are seeded from the live palette at mount and re-synced in place whenever the
+ * preset changes, so the sky re-tints while its wave animation keeps running.
+ */
 
 /* -------------------------------------------------------------------------- */
 /*  Shaders                                                                   */
@@ -195,9 +201,9 @@ const FRAGMENT_SHADER = /* glsl */ `
   /** 1.0 on the high tier, 0.0 on medium: drops the finest octave and wave. */
   uniform float uDetail;
 
-  uniform vec3 uColorEmerald;
-  uniform vec3 uColorTeal;
-  uniform vec3 uColorViolet;
+  uniform vec3 uColorPrimary;
+  uniform vec3 uColorSecondary;
+  uniform vec3 uColorAccent;
 
   // ── Hash ─────────────────────────────────────────────────────────────────
   // Sin-based 2D hash. The brief allows a cheap sin hash; at the scales the
@@ -312,7 +318,7 @@ const FRAGMENT_SHADER = /* glsl */ `
     // A thin, bright bead of light exactly on the hem — the curtain's edge,
     // and the line the eye follows to read the folds as depth.
     float hemLine = exp(-abs(aboveHem) * 90.0);
-    // Below the hem a short violet tail leaks out before the curtain ends.
+    // Below the hem a short accent-coloured tail leaks out before the curtain ends.
     float underHem = (1.0 - smoothstep(-0.07, 0.0, aboveHem)) * 0.45;
 
     // Mesh-edge falloff. The shell is taller than the frame, so these terms
@@ -361,12 +367,13 @@ const FRAGMENT_SHADER = /* glsl */ `
     if (alpha < 0.004) discard;
 
     // ── 9. Colour ─────────────────────────────────────────────────────────
-    // Emerald body, cyan in the brightest filament cores, violet from the hem
-    // down through the tail. The violet is pinned to aboveHem rather than to
-    // raw height so it follows the folds instead of sitting on a level band.
+    // Palette primary as the body, secondary in the brightest filament cores,
+    // accent from the hem down through the tail. The accent is pinned to
+    // aboveHem rather than to raw height so it follows the folds instead of
+    // sitting on a level band.
     float hemMix = 1.0 - smoothstep(-0.02, 0.16, aboveHem);
-    vec3 color = mix(uColorEmerald, uColorTeal, smoothstep(0.35, 1.0, filament));
-    color = mix(color, uColorViolet, clamp(hemMix * 0.92, 0.0, 1.0));
+    vec3 color = mix(uColorPrimary, uColorSecondary, smoothstep(0.35, 1.0, filament));
+    color = mix(color, uColorAccent, clamp(hemMix * 0.92, 0.0, 1.0));
 
     // ── 10. Emission ──────────────────────────────────────────────────────
     // Above 1.0 in the ribbon cores so the Bloom threshold (0.15 luminance)
@@ -395,6 +402,12 @@ export interface AuroraCurtainProps {
 }
 
 export function AuroraCurtain({ tier = 'high' }: AuroraCurtainProps) {
+  /* ── Visual Overdrive palette ──────────────────────────────────────────── */
+  // One selector subscription; a preset change re-renders this component once
+  // and the effect below rewrites the three colour uniforms in place.
+  const vfxPreset = useAppStore((state) => state.vfxPreset)
+  const palette = getVfxPalette(vfxPreset)
+
   /* ── Geometry: an open-ended, vertically straight cylinder segment ─────── */
   const geometry = useMemo(
     () =>
@@ -432,10 +445,16 @@ export function AuroraCurtain({ tier = 'high' }: AuroraCurtainProps) {
        * conversion (there is no colourspace include here), so the palette is
        * written to the framebuffer as-is; the emission multiplier above 1 is
        * what makes it read as light rather than paint.
+       *
+       * They are seeded from the live preset here but `palette` is deliberately
+       * NOT a memo dependency: rebuilding the uniforms would rebuild the
+       * material (and reset uTime/uFlow/uAudioEnergy, snapping the sky back to
+       * its first frame). The sync effect below handles a preset change by
+       * mutating these three colours only.
        */
-      uColorEmerald: { value: new THREE.Color(COLOR_EMERALD) },
-      uColorTeal: { value: new THREE.Color(COLOR_TEAL) },
-      uColorViolet: { value: new THREE.Color(COLOR_VIOLET) },
+      uColorPrimary: { value: new THREE.Color(palette.primary) },
+      uColorSecondary: { value: new THREE.Color(palette.secondary) },
+      uColorAccent: { value: new THREE.Color(palette.accent) },
     }),
     [],
   )
@@ -474,6 +493,17 @@ export function AuroraCurtain({ tier = 'high' }: AuroraCurtainProps) {
   useEffect(() => {
     uniforms.uDetail.value = tier === 'high' ? 1 : 0
   }, [tier, uniforms])
+
+  /* ── Keep the palette in sync without rebuilding the material ──────────── */
+  // Same reasoning as the tier sync above: a preset change is three RGB writes,
+  // not a material rebuild. `Color.set` mutates the objects the uniforms already
+  // reference, so the very next frame samples the new palette while uTime, uFlow
+  // and the smoothed audio envelope continue uninterrupted.
+  useEffect(() => {
+    uniforms.uColorPrimary.value.set(palette.primary)
+    uniforms.uColorSecondary.value.set(palette.secondary)
+    uniforms.uColorAccent.value.set(palette.accent)
+  }, [palette, uniforms])
 
   /* ── Dispose GPU resources ─────────────────────────────────────────────── */
   useEffect(

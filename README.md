@@ -47,10 +47,10 @@
 | **主时钟** | 全站 **1 个** `requestAnimationFrame`，所有动画向其对齐 |
 | **滚动** | Lenis 惯性滚动，`autoRaf: false`，由主时钟手动驱动 |
 | **热路径** | 鼠标 / 滚动写入**可变对象**，React 渲染数为 **0** |
-| **粒子** | 8 000 个点，单 `draw call`，手写 curl-noise GLSL |
+| **粒子** | 8 000 点星云（单 `draw call`）+ 4 000 颗光标尾迹，手写 curl-noise GLSL |
 | **物理** | 手写 Verlet 绳索引擎 + 手写 FABRIK 逆运动学，**零物理库** |
 | **音频** | 纯代码合成器，5 个程序化音色，**零音频文件** |
-| **自适应** | 2 秒滚动均值 < 45 FPS → 自动降档（粒子减半 / DPR 1.0 / 关后处理） |
+| **自适应** | 2 秒滚动均值 < 45 FPS → 自动降档（粒子减半 / DPR 1.0 / 关 Bloom 与色差） |
 | **可访问性** | 全键盘可达 · ⌘K 命令面板 · `prefers-reduced-motion` 适配 |
 
 > 没有一张贴图、没有一个视频、没有一段音频文件。
@@ -79,10 +79,25 @@ NVIDIA / Linear 式卡片矩阵，**两层**独立聚光：`1px` 边框环（400
 纯代码合成，**零音频文件**。信号链：母总线 → 压缩器 → 分析器 → 输出。悬停滴答、卡片激活、物理碰撞、绳索断裂、激光脉冲五个音色全部实时合成，高频触发 40 ms 节流。导航栏 5 段实时频谱由 `AnalyserNode` 驱动。
 
 ### ⌘ 命令面板
-`⌘ / Ctrl + K`，Raycast / Linear 手感。模糊匹配按「连续子串 > 子序列」分级、词边界与连续段加权，16 条命令分 4 组：章节跳转 · 重力模式 · 主题配色 · 复制邮箱 / 下载简历 JSON。
+`⌘ / Ctrl + K`，Raycast / Linear 手感。模糊匹配按「连续子串 > 子序列」分级、词边界与连续段加权，19 条命令分 5 组：章节跳转 · 重力模式 · 主题配色 · 视觉调色 · 复制邮箱 / 下载简历 JSON。
 
 ### ⚡ 单主时钟与自适应画质
 全站唯一 `requestAnimationFrame`，R3F 以 `frameloop="never"` 手动推进。视口外**三层休眠**（物理循环 / GPU 提交 / 重型子树卸载）。2 秒滚动均值 < 45 FPS 自动降档：粒子 8000 → 4000、DPR → 1.0、关闭 Bloom 与色差。
+
+### 🌠 3D 旋度星尘尾迹
+4 000 粒子环形缓冲池，线段插值发射 + 旋度涡流 + 生命周期尺寸曲线。
+
+### 🔦 丁达尔体积光与焦散
+三道锥体光幕 + 3 倍频 Perlin 雾气 + Voronoi 干涉地面焦散 + 1 500 颗受光微尘。
+
+### 🎇 Bento 双彗星流光与萤火
+SVG `pathLength` 归一化的边框流光 + 2D 画布余烬 + `data-card-action` 引力坍缩。
+
+### 🌩️ 物理碰撞切向火花与分形电弧
+速度拉伸火花 + 中点位移分形闪电 + 粒子质心驱动的环境光照。
+
+### 🎞️ 电影级动态色散与数字极光
+运动驱动的 `ChromaticAberration` + fBm 极光天幕 + 声光共振。
 
 ---
 
@@ -129,7 +144,7 @@ graph TB
     subgraph SHELL["DOM 外壳 · 立即交互"]
         APP[App]
         NAV[Navbar<br/>FPS / 音效 / 频谱 / ⌘K]
-        CMD[CommandPalette<br/>模糊搜索 · 16 条命令]
+        CMD[CommandPalette<br/>模糊搜索 · 19 条命令]
         HUD[PerfTelemetryHud<br/>Shift + D]
         SEC[Sections<br/>六章节叙事]
     end
@@ -403,9 +418,10 @@ stride > S_threshold(=22)  ⟹  抬起该腿
 
 | | `high`（默认） | `medium`（降档后） |
 | :--- | :--- | :--- |
-| 粒子数 | **8 000** | **4 000** |
+| 星云粒子数 | **8 000** | **4 000** |
+| 星尘尾迹粒子数 | **4 000** | **2 000** |
 | 设备像素比 | `≤ 2.0` | **`1.0`** |
-| 后处理 | Bloom + ChromaticAberration + Vignette | Vignette |
+| 后处理 | Bloom + ChromaticAberration + Vignette + Noise | Vignette |
 | 触发条件 | — | 2 秒滚动均值 **< 45 FPS** |
 
 降档判据来自 drei `PerformanceMonitor`：`ms=250 × iterations=8 = 2 000 ms` 窗口。
@@ -474,12 +490,13 @@ bg.geometries    Δ 0    bg.programs    Δ 0
 
 ### 命令面板
 
-复刻 Raycast / Linear 手感，**16 条命令 · 4 个分组**：
+复刻 Raycast / Linear 手感，**19 条命令 · 5 个分组**：
 
 ```
 跳转章节     入口 · 展厅 · 架构 · 沙盒 · 档案 · 通讯
 物理沙盒     零重力 · 月球重力 · 超重模式 · 地球重力
 主题强调色   翡翠绿 · 赛博紫 · 钛金橙 · 信号青
+视觉调色     翡翠赛博绿 · 黑金超新星 · 量子幻影紫
 操作         复制邮箱 · 下载简历 JSON
 ```
 
@@ -487,9 +504,13 @@ bg.geometries    Δ 0    bg.programs    Δ 0
 并带隐藏英文别名——输入 `violet` 可命中 `赛博紫`。
 中文输入法 `isComposing` 期间不拦截 <kbd>Enter</kbd>。
 
-> 主题切换只做一件事：覆盖 `--color-signal-cyan` 一个 CSS 变量。
+> 主题强调色只做一件事：覆盖 `--color-signal-cyan` 一个 CSS 变量。
 > Tailwind v4 把 `text-signal-cyan` 编译成 `var()` 引用，于是全站瞬时换色，
 > **切换成本 = 一次属性写入，而非一次 React 渲染**。
+>
+> 视觉调色是另一套独立的频谱配方：它不改 CSS，而是把主色 / 副色 / 强调色
+> 推进 WebGL 材质与着色器 uniform，重新染色星云、光幕、极光与 Bento 辉光。
+> 导航栏调色按钮循环切换三种预设，切换瞬间播放一次全屏光波。
 
 ### 移动端
 

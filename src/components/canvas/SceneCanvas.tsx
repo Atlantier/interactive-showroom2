@@ -10,6 +10,7 @@ import {
 } from '@react-three/postprocessing'
 import { BlendFunction, type ChromaticAberrationEffect } from 'postprocessing'
 import { preloadR3FAdvance, setCanvasActive } from '@/lib/frameBridge'
+import { setShaderPassCount } from '@/lib/perfMetrics'
 import { supportsWebGL } from '@/lib/device'
 import { getTransient, useAppStore } from '@/store/useAppStore'
 import { CameraRig } from '@/components/canvas/CameraRig'
@@ -58,6 +59,21 @@ const PARTICLE_COUNT = { high: 8000, medium: 4000 } as const
  * of emission, so it is roughly half the size at every tier.
  */
 const TRAIL_COUNT = { high: 4000, medium: 2000 } as const
+
+/**
+ * Post-processing passes the EffectComposer mounts, per tier.
+ *
+ * Single source of truth for both the telemetry HUD's shader-pass counter and
+ * the DEV quality probe's `effects` array — they used to be duplicated, which
+ * is exactly how the probe's old list drifted out of sync with the composer
+ * (it omitted `Noise`, which IS mounted on 'high'). Keep this in step with the
+ * JSX below: 'high' = Bloom + ChromaticAberration + Vignette + Noise (4
+ * passes), 'medium' = Vignette only (1 pass).
+ */
+const POST_EFFECTS = {
+  high: ['Bloom', 'ChromaticAberration', 'Vignette', 'Noise'],
+  medium: ['Vignette'],
+} as const satisfies Record<'high' | 'medium', readonly string[]>
 
 /** Average fps below which the monitor steps the tier down. */
 const DEGRADE_FPS = 45
@@ -233,15 +249,24 @@ export function SceneCanvas() {
   const trailCount = TRAIL_COUNT[tier]
   const highQuality = tier === 'high'
 
+  /** The effect stack this render actually mounts — see `POST_EFFECTS`. */
+  const mountedEffects = POST_EFFECTS[highQuality ? 'high' : 'medium']
+
   /**
-   * Dev-only quality probe.
+   * Quality publication.
    *
-   * Publishes what the tier actually changed so verification can assert on the
-   * renderer's real configuration — particle count, pixel ratio and which post
-   * effects are mounted — instead of inferring them from a screenshot or trusting
-   * that the conditional rendered. Assignment goes onto the same
-   * `__showroomScene` handle the other canvases already expose; stripped from
-   * production by the DEV guard.
+   * Two consumers read this:
+   *
+   *   `perfMetrics`  the telemetry HUD's shader-pass counter, published in
+   *                  EVERY build. It is a plain module counter rather than a
+   *                  window global precisely so the production HUD can report
+   *                  the real mounted stack.
+   *   `__showroomScene.quality`  the DEV-only probe used by the headless
+   *                  verification scripts (particle count, pixel ratio, which
+   *                  effects are mounted).
+   *
+   * Both are fed from `mountedEffects`, so the HUD's count and the probe's list
+   * cannot disagree with each other or with the composer below.
    *
    * Registered ABOVE the `if (!webgl)` early return. Putting a hook after a
    * conditional return changes the hook count between the first render (webgl
@@ -249,19 +274,26 @@ export function SceneCanvas() {
    * than during the previous render" — which took the whole tree down.
    */
   useEffect(() => {
-    if (!import.meta.env.DEV) return
-    const host = window as unknown as { __showroomScene?: Record<string, unknown> }
-    if (!host.__showroomScene) return
-    host.__showroomScene.quality = {
-      tier,
-      particleCount,
-      trailCount,
-      highQuality,
-      effects: highQuality
-        ? ['Bloom', 'ChromaticAberration', 'Vignette']
-        : ['Vignette'],
+    // The composer only exists once the canvas has passed the WebGL probe.
+    setShaderPassCount(webgl ? mountedEffects.length : 0)
+
+    if (import.meta.env.DEV) {
+      const host = window as unknown as { __showroomScene?: Record<string, unknown> }
+      if (host.__showroomScene) {
+        host.__showroomScene.quality = {
+          tier,
+          particleCount,
+          trailCount,
+          highQuality,
+          effects: [...mountedEffects],
+        }
+      }
     }
-  })
+
+    // The count describes a mounted composer; when this canvas goes away there
+    // are no passes to report.
+    return () => setShaderPassCount(0)
+  }, [highQuality, mountedEffects, particleCount, tier, trailCount, webgl])
 
   if (!webgl) return null
 
@@ -288,6 +320,11 @@ export function SceneCanvas() {
 
         setCanvasActive(true)
 
+        // Mirror the mounted pass count into the perf registry here too: this
+        // closure can run before the quality-publication effect above, and the
+        // HUD must never read a stale zero for a composer that is already live.
+        setShaderPassCount(mountedEffects.length)
+
         // Dev-only inspection handle. R3F v9 no longer hangs its root store off
         // the canvas element, which makes the scene graph unreachable from the
         // console and from headless verification scripts. Exposing it here costs
@@ -300,22 +337,19 @@ export function SceneCanvas() {
             gl,
             size,
             /**
-             * Seeded here as well as from the effect below.
+             * Seeded here as well as from the effect above.
              *
-             * The effect only runs when `SceneCanvas` re-renders, and this handle
-             * does not exist until `onCreated` — so on a page that never changes
-             * tier the effect's first (and only) run would fire before the handle
-             * exists, bail on the guard, and never write anything. Writing the
-             * initial value here guarantees it is present regardless.
+             * The effect's first run fires around mount, when this handle may
+             * not exist yet — so on a page that never changes tier it could bail
+             * on the guard and never write anything. Writing the initial value
+             * here guarantees it is present regardless.
              */
             quality: {
               tier,
               particleCount,
               trailCount,
               highQuality,
-              effects: highQuality
-                ? ['Bloom', 'ChromaticAberration', 'Vignette']
-                : ['Vignette'],
+              effects: [...mountedEffects],
             },
           }
         }
