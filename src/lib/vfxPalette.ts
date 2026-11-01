@@ -179,3 +179,16 @@ export function vfxLabelKey(preset: VfxPreset): 'emerald' | 'supernova' | 'phant
       return 'phantom'
   }
 }
+
+
+/**
+ * Narrow an arbitrary string to a preset id.
+ *
+ * The store keeps `vfxPreset` as a plain string so it can be persisted and
+ * restored without trusting stored data. Consumers that need the compile-time
+ * union (the dictionary lookup for a display name, for instance) narrow through
+ * this guard instead of casting.
+ */
+export function isVfxPreset(value: string | null | undefined): value is VfxPreset {
+  return value !== null && value !== undefined && (VFX_PRESET_ORDER as readonly string[]).includes(value)
+}

@@ -4,6 +4,7 @@ import { cn } from '@/lib/cn'
 import { useAppStore } from '@/store/useAppStore'
 import { getActiveCanvasCount } from '@/lib/frameBridge'
 import { useI18n } from '@/i18n/useI18n'
+import { isVfxPreset, vfxLabelKey } from '@/lib/vfxPalette'
 import {
   HEAP_HISTORY_SIZE,
   getActiveParticleCount,
@@ -300,7 +301,7 @@ export function PerfTelemetryHud() {
       {/* Frame budget bar */}
       <div className="mt-2.5">
         <div className="flex items-baseline justify-between">
-          <span className="text-ink-700">FRAME BUDGET</span>
+          <span className="text-ink-700">{t.hud.frameBudget}</span>
           <span className="text-ink-700">{FRAME_BUDGET_MS.toFixed(1)}ms</span>
         </div>
         <div className="mt-1 h-1 overflow-hidden rounded-full bg-void-700">
@@ -313,54 +314,54 @@ export function PerfTelemetryHud() {
       </div>
 
       <dl className="mt-2.5 space-y-1">
-        <Row label="FPS">
+        <Row label={t.hud.fps}>
           <span ref={fpsRef} className="tabular-nums text-signal-teal">
             --
           </span>
         </Row>
-        <Row label="FRAME">
+        <Row label={t.hud.frame}>
           <span ref={frameMsRef} className="tabular-nums text-ink-100">
             --
           </span>
           <span className="text-ink-700">ms</span>
         </Row>
-        <Row label="WORST">
+        <Row label={t.hud.worst}>
           <span ref={worstMsRef} className="tabular-nums text-signal-amber">
             --
           </span>
           <span className="text-ink-700">ms</span>
         </Row>
-        <Row label="PARTICLES">
+        <Row label={t.hud.particles}>
           <span ref={particlesRef} className="tabular-nums text-signal-violet">
             0
           </span>
         </Row>
-        <Row label="SHADER PASS">
+        <Row label={t.hud.shaderPass}>
           <span ref={shaderPassRef} className="tabular-nums text-signal-cyan">
             0
           </span>
         </Row>
-        <Row label="PHYS SOLVE">
+        <Row label={t.hud.physSolve}>
           <span ref={solveRef} className="tabular-nums text-ink-100">
             0.00
           </span>
-          <span className="text-ink-700">/ avg</span>
+          <span className="text-ink-700">/ {t.hud.avg}</span>
           <span ref={solveAvgRef} className="tabular-nums text-ink-500">
             0.00
           </span>
         </Row>
-        <Row label="IK SOLVE">
+        <Row label={t.hud.ikSolve}>
           <span ref={ikRef} className="tabular-nums text-ink-100">
             0.00
           </span>
           <span className="text-ink-700">ms</span>
         </Row>
-        <Row label="CANVAS a/s">
+        <Row label={t.hud.canvases}>
           <span ref={canvasCountRef} className="tabular-nums text-ink-500">
             0 / 0
           </span>
         </Row>
-        <Row label="TIER">
+        <Row label={t.hud.tier}>
           <span
             className={cn(
               'uppercase',
@@ -370,7 +371,7 @@ export function PerfTelemetryHud() {
             {tier}
           </span>
         </Row>
-        <Row label="VFX PRESET">
+        <Row label={t.hud.vfxPreset}>
           {/*
            * Defensive read: the palette preset is owned by another module and
            * may not exist on a given build yet. `vfxPreset` is `undefined`
@@ -384,7 +385,7 @@ export function PerfTelemetryHud() {
             )}
             title={vfxPreset}
           >
-            {vfxPreset ?? NO_VALUE}
+            {isVfxPreset(vfxPreset) ? t.palette[vfxLabelKey(vfxPreset)] : NO_VALUE}
           </span>
         </Row>
       </dl>
@@ -392,7 +393,7 @@ export function PerfTelemetryHud() {
       {/* Memory curve */}
       <div className="mt-2.5 border-t border-void-600/60 pt-2">
         <div className="flex items-baseline justify-between">
-          <span className="text-ink-700">HEAP</span>
+          <span className="text-ink-700">{t.hud.heap}</span>
           <span className="tabular-nums text-signal-cyan">
             <span ref={heapRef}>n/a</span>
             <span className="ml-1 text-ink-700">
@@ -432,6 +433,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
  * still surfaces; it renders nothing until the store carries a notice.
  */
 export function PerfNoticeToast() {
+  const { t } = useI18n()
   const notice = useAppStore((state) => state.perfNotice)
   const clear = useAppStore((state) => state.clearPerfNotice)
 
@@ -458,7 +460,7 @@ export function PerfNoticeToast() {
     >
       <div className="flex items-center gap-1.5 tracking-[0.18em] text-signal-amber uppercase">
         <span className="size-1 rounded-full bg-signal-amber" aria-hidden />
-        adaptive quality
+        {t.hud.adaptiveQuality}
       </div>
       <p className="mt-1.5 text-ink-100">{notice.title}</p>
       <p className="mt-1 leading-relaxed text-ink-500">{notice.detail}</p>

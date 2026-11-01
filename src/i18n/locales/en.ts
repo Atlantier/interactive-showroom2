@@ -274,6 +274,9 @@ export const en = {
     heap: 'JS heap',
     noticeTitle: 'Performance mode engaged',
     degradeReason: 'Averaged {fps} FPS over the last {seconds}s — below the {threshold} FPS threshold',
+    frameBudget: 'Frame budget',
+    avg: 'avg',
+    adaptiveQuality: 'adaptive quality',
   },
 
   /** Archive rows. `type` stays a technical proper noun in both locales. */

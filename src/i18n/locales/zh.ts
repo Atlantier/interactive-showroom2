@@ -258,6 +258,9 @@ export const zh: Dictionary = {
     heap: 'JS 堆',
     noticeTitle: '已切换至性能模式',
     degradeReason: '最近 {seconds} 秒平均 {fps} FPS，低于 {threshold} FPS 阈值',
+    frameBudget: '帧预算',
+    avg: '均值',
+    adaptiveQuality: '自适应画质',
   },
 
   archive: {
