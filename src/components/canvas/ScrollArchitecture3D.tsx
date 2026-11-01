@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { Environment, Lightformer } from '@react-three/drei'
+import { Bloom, EffectComposer } from '@react-three/postprocessing'
 import * as THREE from 'three'
 import { preloadR3FAdvance, setCanvasActive } from '@/lib/frameBridge'
 import { supportsWebGL } from '@/lib/device'
@@ -21,7 +22,6 @@ import {
   ramp,
 } from '@/components/canvas/architecture/cameraPath'
 import { findLayer, focusPoseFor } from '@/components/canvas/architecture/layers'
-import { RenderGate } from '@/components/canvas/RenderGate'
 import { soundEngine } from '@/utils/soundEngine'
 import type { InViewRef } from '@/hooks/useInViewAnimation'
 import type { ProgressStore } from '@/hooks/useSectionProgress'
@@ -292,46 +292,201 @@ function OrchestrationLayer({
 /*  Layer 3 — Spatial web core                                                */
 /* -------------------------------------------------------------------------- */
 
-/** Outer cage radius: 1.2x the previous 1.5-unit prism, per the brief. */
-const CORE_SHELL_RADIUS = 1.8
+/**
+ * Outer cage radius. Detail 0, so this is also the centre-to-vertex distance.
+ *
+ * Sized together with `CORE_HOVER_LIFT` so the requested hover gap (0.8x the
+ * radius) can be met without pushing the top of the cage out of frame — at 1.8
+ * the same gap lifted the cage past the top edge.
+ */
+const CORE_SHELL_RADIUS = 1.5
 
-/** Inner sphere radius: 45% of the shell, per the brief. */
+/** Inner plasma sphere: 45% of the cage, per the brief. */
 const CORE_INNER_RADIUS = CORE_SHELL_RADIUS * 0.45
 
 /**
- * Concentric "quantum core": a hard-edged metal geodesic cage around a glowing
- * inner sphere.
+ * Hover gap above the infrastructure matrix.
  *
- * ── Why two shells instead of one transmissive solid ──────────────────────
- * The previous version solved the same brief with a refracting
- * `MeshPhysicalMaterial` shell. That gave soft, believable glass — but it also
- * made the silhouette rounded and the interior hazy, the opposite of the hard
- * technical read this chapter wants. Splitting the object lets each half carry
- * one job: the cage supplies facets and crisp specular edges, the inner sphere
- * supplies the light.
+ * `LAYER_Y.rest` parks this layer almost on top of the grid, so the cage reads
+ * as sitting on it. The contents get their own raised parent group instead of
+ * moving `LAYER_Y` itself — the camera path and the layer registry both read
+ * that constant, and shifting it would desync the framing along the chapter.
  *
- * ── Why the cage is translucent even though the brief says metal ──────────
- * At metalness 0.85 the facets are already highly reflective; at full opacity
- * they also completely hide the core, which would make the inner sphere pure
- * cost with nothing to show for it. `opacity` 0.62 with `depthWrite: false`
- * keeps the sharp per-facet shading and lets the core burn through — the look
- * the reference actually calls for.
+ * 0.8 x radius is exactly the gap the brief asks for: the grid sits at
+ * `LAYER_Y.rest[0]`, so the clearance works out to `LIFT + 0.1`, which is 1.2
+ * units for a 1.5-unit cage.
+ */
+const CORE_HOVER_LIFT = 0.8
+
+/**
+ * Plasma core shaders.
+ *
+ * The inner sphere is a live noise field rather than a lit surface: a solid
+ * emissive ball reads as a sticker no matter how bright it is, because its
+ * shading carries no information. Three octaves of 3D simplex noise scrolling at
+ * different rates produce a surface that visibly churns, and the limb term keeps
+ * the silhouette brighter than the centre — the signature of a volume glowing
+ * edge-on rather than a flat disc.
+ */
+const PLASMA_VERTEX = `
+varying vec3 vPos;
+varying vec3 vNormalW;
+varying vec3 vViewDir;
+
+void main() {
+  vPos = position;
+  vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+  vNormalW = normalize(normalMatrix * normal);
+  vViewDir = normalize(-mvPosition.xyz);
+  gl_Position = projectionMatrix * mvPosition;
+}
+`
+
+/**
+ * Ashima Arts / Stefan Gustavson 3D simplex noise (MIT).
+ *
+ * Included rather than sampled from a texture: a noise texture would need a
+ * loader, a UV unwrap and ~1 MB of assets, and this project ships no assets at
+ * all. Roughly 60 lines of maths is the cheaper trade.
+ */
+const PLASMA_NOISE = `
+vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec4 permute(vec4 x) { return mod289(((x * 34.0) + 1.0) * x); }
+vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+
+float snoise(vec3 v) {
+  const vec2 C = vec2(1.0 / 6.0, 1.0 / 3.0);
+  const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+
+  vec3 i = floor(v + dot(v, C.yyy));
+  vec3 x0 = v - i + dot(i, C.xxx);
+
+  vec3 g = step(x0.yzx, x0.xyz);
+  vec3 l = 1.0 - g;
+  vec3 i1 = min(g.xyz, l.zxy);
+  vec3 i2 = max(g.xyz, l.zxy);
+
+  vec3 x1 = x0 - i1 + C.xxx;
+  vec3 x2 = x0 - i2 + C.yyy;
+  vec3 x3 = x0 - D.yyy;
+
+  i = mod289(i);
+  vec4 p = permute(permute(permute(
+             i.z + vec4(0.0, i1.z, i2.z, 1.0))
+           + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+           + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+
+  float n_ = 0.142857142857;
+  vec3 ns = n_ * D.wyz - D.xzx;
+
+  vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+
+  vec4 x_ = floor(j * ns.z);
+  vec4 y_ = floor(j - 7.0 * x_);
+
+  vec4 x = x_ * ns.x + ns.yyyy;
+  vec4 y = y_ * ns.x + ns.yyyy;
+  vec4 h = 1.0 - abs(x) - abs(y);
+
+  vec4 b0 = vec4(x.xy, y.xy);
+  vec4 b1 = vec4(x.zw, y.zw);
+
+  vec4 s0 = floor(b0) * 2.0 + 1.0;
+  vec4 s1 = floor(b1) * 2.0 + 1.0;
+  vec4 sh = -step(h, vec4(0.0));
+
+  vec4 a0 = b0.xzyw + s0.xzyw * sh.xxyy;
+  vec4 a1 = b1.xzyw + s1.xzyw * sh.zzww;
+
+  vec3 p0 = vec3(a0.xy, h.x);
+  vec3 p1 = vec3(a0.zw, h.y);
+  vec3 p2 = vec3(a1.xy, h.z);
+  vec3 p3 = vec3(a1.zw, h.w);
+
+  vec4 norm = taylorInvSqrt(vec4(dot(p0, p0), dot(p1, p1), dot(p2, p2), dot(p3, p3)));
+  p0 *= norm.x;
+  p1 *= norm.y;
+  p2 *= norm.z;
+  p3 *= norm.w;
+
+  vec4 m = max(0.6 - vec4(dot(x0, x0), dot(x1, x1), dot(x2, x2), dot(x3, x3)), 0.0);
+  m = m * m;
+  return 42.0 * dot(m * m, vec4(dot(p0, x0), dot(p1, x1), dot(p2, x2), dot(p3, x3)));
+}
+`
+
+const PLASMA_FRAGMENT = `
+uniform float uTime;
+uniform vec3 uDeep;
+uniform vec3 uHot;
+uniform float uIntensity;
+
+varying vec3 vPos;
+varying vec3 vNormalW;
+varying vec3 vViewDir;
+
+${PLASMA_NOISE}
+
+void main() {
+  vec3 p = vPos * 2.4;
+  float t = uTime * 0.32;
+
+  // Three octaves scrolling at different rates and directions: a single octave
+  // pulses in place instead of churning.
+  float n1 = snoise(p + vec3(0.0, t, 0.0));
+  float n2 = snoise(p * 2.1 + vec3(-t * 1.3, 0.0, t * 0.9));
+  float n3 = snoise(p * 4.3 + vec3(t * 2.0, t * 1.1, 0.0));
+
+  float plasma = n1 * 0.55 + n2 * 0.30 + n3 * 0.15;
+  plasma = plasma * 0.5 + 0.5;
+
+  // Limb brightening: a glowing volume is brighter edge-on than face-on.
+  float facing = max(dot(normalize(vNormalW), normalize(vViewDir)), 0.0);
+  float limb = pow(1.0 - facing, 1.8);
+
+  // Bias the ramp so most of the surface is hot and only the noise troughs stay
+  // deep. The first pass used a 0.32-0.82 ramp, which left the sphere reading as
+  // a black marble with cyan blotches.
+  vec3 col = mix(uDeep, uHot, smoothstep(0.18, 0.68, plasma));
+  col += uHot * limb * 1.1;
+
+  // Gamma lift on the midtones, then a white-hot term for the few cells that
+  // clip above 1.0 — that is what gives Bloom something to grab onto.
+  col = pow(col, vec3(0.82));
+  col += uHot * pow(plasma, 4.0) * 0.9;
+  col *= (0.95 + plasma * 0.6) * uIntensity;
+
+  gl_FragColor = vec4(col, 1.0);
+}
+`
+
+/**
+ * Concentric "quantum core": a translucent titanium cage around a plasma sphere.
+ *
+ * ── Geometry is detail 0 on purpose ──────────────────────────────────────
+ * An icosahedron at detail 0 is exactly twenty triangles. Subdividing it (detail
+ * 1 is eighty, detail 2 is three hundred and twenty) turns the silhouette into a
+ * ball and the edge lattice into visual noise — the exact failure mode of the
+ * previous revision. Twenty large planes are what make it read as a machined
+ * component.
  */
 function SpatialLayer({ groupRef }: { groupRef: React.RefObject<THREE.Group | null> }) {
   const shellGeo = useMemo(
-    () => new THREE.IcosahedronGeometry(CORE_SHELL_RADIUS, 1),
+    () => new THREE.IcosahedronGeometry(CORE_SHELL_RADIUS, 0),
     [],
   )
 
   /**
-   * Edge lattice.
+   * Feature edges only.
    *
-   * `EdgesGeometry` on a subdivided icosahedron keeps every triangle boundary —
-   * the default 1-degree threshold only drops edges between coplanar faces — so
-   * this draws the full geodesic lattice rather than the 30 edges of the base
-   * solid. That density is what produces the "precision instrument" read.
+   * A 15-degree threshold keeps every real crease on a detail-0 icosahedron (the
+   * 30 edges all meet at roughly 138 degrees) and drops anything coplanar. No
+   * `wireframe: true` anywhere: that flag draws triangle edges through the
+   * rasteriser without depth-correct thickness, which is why it always looks
+   * like graph paper rather than like an edge highlight.
    */
-  const edgeGeo = useMemo(() => new THREE.EdgesGeometry(shellGeo), [shellGeo])
+  const edgeGeo = useMemo(() => new THREE.EdgesGeometry(shellGeo, 15), [shellGeo])
 
   useEffect(
     () => () => {
@@ -341,128 +496,139 @@ function SpatialLayer({ groupRef }: { groupRef: React.RefObject<THREE.Group | nu
     [shellGeo, edgeGeo],
   )
 
-  const shellRef = useRef<THREE.Mesh>(null)
+  const plasmaUniforms = useMemo(
+    () => ({
+      uTime: { value: 0 },
+      // Troughs are a lit blue, not near-black: a very dark `uDeep` made the
+      // whole sphere read as a black marble with cyan blotches on it.
+      uDeep: { value: new THREE.Color('#0a3f66') },
+      uHot: { value: new THREE.Color('#5ff2ff') },
+      uIntensity: { value: 1.5 },
+    }),
+    [],
+  )
+
+  /**
+   * Owned here rather than declared as `<shaderMaterial uniforms={...}>`.
+   * R3F re-applies props on every render and `uniforms` is only honoured at
+   * construction, which detaches the objects this component mutates in
+   * `useFrame` from the ones the shader reads — the pulse then silently freezes.
+   */
+  const plasmaMaterial = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        uniforms: plasmaUniforms,
+        vertexShader: PLASMA_VERTEX,
+        fragmentShader: PLASMA_FRAGMENT,
+        toneMapped: false,
+      }),
+    [plasmaUniforms],
+  )
+  useEffect(() => () => plasmaMaterial.dispose(), [plasmaMaterial])
+
+  const shellRef = useRef<THREE.Group>(null)
   const coreRef = useRef<THREE.Mesh>(null)
   const lightRef = useRef<THREE.PointLight>(null)
 
   /**
    * Counter-rotation + breathing.
    *
-   * The two shells turn on different axes AND in opposite directions, which is
-   * what makes the assembly read as a mechanism rather than as one object
-   * spinning. Rotation is integrated from `delta` rather than from elapsed time,
-   * so the speed is framerate-independent, and it is applied to the child meshes
-   * — never to the group — so it composes with the chapter's scroll
-   * choreography instead of fighting it.
-   *
-   * The pulse is deliberately shallow: perceptible at rest, never a blinking
-   * status light.
+   * The cage and the core turn on different axes in opposite directions, which
+   * is what makes the assembly read as a mechanism rather than as one object
+   * spinning. Rotation is integrated from `delta` so the speed stays
+   * framerate-independent, and it is applied to child nodes — never to the group
+   * — so it composes with the chapter's scroll choreography instead of fighting
+   * it.
    */
   useFrame((state, delta) => {
     const t = state.clock.elapsedTime
+    plasmaUniforms.uTime.value = t
 
     const shell = shellRef.current
     if (shell) {
-      shell.rotation.y += delta * 0.14
-      shell.rotation.z += delta * 0.08
+      shell.rotation.y += delta * 0.16
+      shell.rotation.z += delta * 0.07
     }
 
     const core = coreRef.current
     if (core) {
-      // Opposite direction, Y only: the core stays the calm centre.
-      core.rotation.y -= delta * 0.026
+      // Different axis, opposite direction: the core stays the calm centre.
+      core.rotation.x -= delta * 0.05
+      core.rotation.y -= delta * 0.09
 
-      const breathe = 0.5 + 0.5 * Math.sin(t * 1.35)
-      core.scale.setScalar(0.94 + breathe * 0.09)
+      const breathe = 0.5 + 0.5 * Math.sin(t * 1.4)
+      // 0.95 .. 1.05, per the brief.
+      core.scale.setScalar(0.95 + breathe * 0.1)
 
-      const material = core.material as THREE.MeshStandardMaterial
-      /*
-       * Range kept inside roughly 0.9–1.5 on purpose. ACES tone mapping is not
-       * linear: below ~1.0 the core keeps its cyan, above ~2.0 every channel
-       * saturates and the sphere turns into a white blob. Measured both ends.
-       */
-      material.emissiveIntensity = 0.95 + breathe * 0.55
+      // Drives overall plasma brightness; the shader owns the colour mix.
+      plasmaUniforms.uIntensity.value = 1.35 + breathe * 0.45
 
-      if (lightRef.current) lightRef.current.intensity = 2.4 + breathe * 2.0
+      if (lightRef.current) lightRef.current.intensity = 2.6 + breathe * 1.8
     }
   })
 
   return (
     <group ref={groupRef}>
-      {/*
-       * ── Outer cage ───────────────────────────────────────────────────────
-       * `flatShading` is the whole point: without it the geodesic would smooth
-       * into a ball and lose the per-facet light/dark contrast the reference
-       * depends on.
-       */}
-      <mesh ref={shellRef} geometry={shellGeo}>
-        <meshStandardMaterial
-          color="#051824"
-          metalness={0.85}
-          roughness={0.2}
-          flatShading
-          transparent
-          opacity={0.62}
-          /*
-           * `depthWrite: false` is load-bearing. With depth writes on, the cage's
-           * front faces claim the depth buffer and cull the core sitting behind
-           * them, and the inner star disappears.
-           */
-          depthWrite={false}
-          side={THREE.DoubleSide}
-          envMapIntensity={1.4}
-        />
+      {/* Hover gap above the infrastructure matrix. */}
+      <group position={[0, CORE_HOVER_LIFT, 0]}>
+        {/*
+         * ── Outer cage ─────────────────────────────────────────────────────
+         * Twenty large translucent facets, highly metallic and very smooth so
+         * that each plane throws one hard specular streak.
+         *
+         * `transparent` + `opacity 0.25` is what lets the plasma read through
+         * the shell. `depthWrite: false` is load-bearing: with depth writes on,
+         * the front faces claim the depth buffer and cull the core behind them.
+         */}
+        <group ref={shellRef}>
+          <mesh geometry={shellGeo}>
+            <meshPhysicalMaterial
+              color="#031525"
+              metalness={0.9}
+              roughness={0.1}
+              transparent
+              opacity={0.25}
+              side={THREE.DoubleSide}
+              depthWrite={false}
+              envMapIntensity={1.6}
+            />
+          </mesh>
+
+          {/*
+           * Feature edges, nested so they inherit the cage's rotation.
+           *
+           * `toneMapped={false}` keeps the cyan above the bloom threshold, and
+           * `linewidth` is ignored by every mainstream WebGL implementation — so
+           * the glow has to come from Bloom, not from stroke thickness.
+           */}
+          <lineSegments geometry={edgeGeo} renderOrder={4}>
+            <lineBasicMaterial
+              color="#00f0ff"
+              toneMapped={false}
+              transparent
+              opacity={0.95}
+              depthWrite={false}
+            />
+          </lineSegments>
+        </group>
 
         {/*
-         * ── Geodesic edges ─────────────────────────────────────────────────
-         * Nested inside the cage mesh so it inherits the cage's rotation.
-         *
-         * `linewidth` is ignored by every mainstream WebGL implementation, so
-         * the thin bright line comes from the colour plus `toneMapped={false}`
-         * rather than from stroke width.
+         * ── Plasma core ────────────────────────────────────────────────────
+         * Opaque, so it lands in the opaque pass and the translucent cage blends
+         * over it. Bloom then lifts the hot noise cells and the limb.
          */}
-        <lineSegments geometry={edgeGeo} renderOrder={4}>
-          <lineBasicMaterial
-            color="#00f0ff"
-            transparent
-            opacity={0.95}
-            toneMapped={false}
-            depthWrite={false}
-          />
-        </lineSegments>
-      </mesh>
+        <mesh ref={coreRef} material={plasmaMaterial}>
+          <sphereGeometry args={[CORE_INNER_RADIUS, 64, 48]} />
+        </mesh>
 
-      {/*
-       * ── Inner star ───────────────────────────────────────────────────────
-       * A standard material rather than `MeshBasicMaterial` because the pulse
-       * animates `emissiveIntensity`, which the basic material does not have.
-       *
-       * Tone mapping is deliberately LEFT ON here, unlike every other emissive
-       * element in this scene. `toneMapped: false` writes the raw emissive value,
-       * so an intensity above 1.0 clips every pixel to the same colour and the
-       * sphere collapses into a flat cyan disc. Letting ACES roll it off instead
-       * gives the sphere real depth: a blown-out white centre falling away to
-       * saturated cyan at the limb, which is what makes it read as a light
-       * source rather than a painted circle.
-       */}
-      <mesh ref={coreRef}>
-        <sphereGeometry args={[CORE_INNER_RADIUS, 48, 32]} />
-        <meshStandardMaterial
-          color="#00f0ff"
-          emissive="#00f0ff"
-          emissiveIntensity={1.2}
-          roughness={0.35}
-          metalness={0}
-        />
-      </mesh>
-
-      {/*
-       * ── Core light ───────────────────────────────────────────────────────
-       * An emissive sphere illuminates nothing by itself. Without a real light
-       * the surrounding cubes and the wireframe floor would stay unlit and the
-       * core would look pasted on; this is what ties it to the matrix below.
-       */}
-      <pointLight ref={lightRef} color="#00f0ff" intensity={3} distance={10} decay={2} />
+        {/*
+         * ── Core light ─────────────────────────────────────────────────────
+         * An emissive surface illuminates nothing by itself. Without a real light
+         * the surrounding cubes and the wireframe floor stay unlit and the core
+         * looks pasted on rather than sitting in the scene.
+         */}
+        <pointLight ref={lightRef} color="#00f0ff" intensity={3} distance={10} decay={2} />
+      </group>
     </group>
   )
 }
@@ -813,8 +979,8 @@ function ArchitectureRig({
     // returning to it costs nothing, but an invisible model should not burn
     // frames —this section alone has ~40 objects, 10 animated edges and 900
     // stream particles.
-    // Sleep while off screen: the RenderGate skips the GPU work, this skips
-    // the CPU work. Both read the same flag.
+    // Sleep while off screen: the rig is unmounted, so this callback only
+    // guards the frames between observation and unmount.
     if (!inViewRef.current) return
 
     const t = state.clock.elapsedTime
@@ -1005,23 +1171,44 @@ export interface ScrollArchitecture3DProps {
    *
    * Distinct from `inViewRef`: the ref gates RENDERING, this gates MOUNTING.
    *
-   * This gate was introduced when the prism used drei's
+   * This gate began as a workaround: the prism used drei's
    * `MeshTransmissionMaterial`, which ran its own FBO render inside a `useFrame`
-   * callback — that pass escaped `internal.priority` (measured: the frame
-   * counter kept advancing at roughly half the on-screen rate while off screen).
-   * The prism now uses three.js' native transmission, which is resolved inside
-   * `gl.render()` and is therefore fully covered by `RenderGate`.
+   * callback that escaped `internal.priority` (measured: the frame counter kept
+   * advancing at roughly half the on-screen rate while off screen).
    *
-   * The mount gate is kept anyway, as defence in depth and for a real saving of
-   * its own: it takes the whole rig out of the reconciler and stops its
-   * `useFrame` callbacks from running at all, rather than relying on each of them
-   * to early-return.
+   * The prism is now a flat-shaded cage drawn through an EffectComposer, so the
+   * gate serves a different purpose: it takes the whole subtree out of the
+   * reconciler, stops its `useFrame` callbacks, and keeps the composer itself
+   * out of the tree so an off-screen chapter never blooms an empty scene.
    */
   awake: boolean
   /** Currently focused layer id, or null for the overview. */
   selectedLayer: string | null
   /** Called when a layer is clicked (or re-clicked to clear). */
   onSelectLayer: (id: string | null) => void
+}
+
+/**
+ * Suppresses R3F's own draw for this root while the chapter is off screen.
+ *
+ * Only mounted when the composer is NOT: while the chapter is awake the
+ * `EffectComposer` registers a positive render priority and owns the render
+ * pass entirely, so writing the priority here as well would make R3F draw the
+ * scene a second time. Keeping the two mechanisms mutually exclusive is what
+ * makes this safe.
+ *
+ * Without it, an off-screen chapter still pays one `gl.render()` per frame for
+ * an empty scene — no draw calls, but a full clear plus a redundant submission.
+ */
+function OffscreenRenderGate() {
+  const get = useThree((state) => state.get)
+
+  useFrame(() => {
+    const state = get()
+    if (state.internal.priority !== 1) state.internal.priority = 1
+  })
+
+  return null
 }
 
 export function ScrollArchitecture3D({
@@ -1049,7 +1236,11 @@ export function ScrollArchitecture3D({
       dpr={tier === 'high' ? [1, 2] : [1, 1.5]}
       camera={{ position: [0, 1.1, 11.5], fov: 42, near: 0.1, far: 80 }}
       gl={{
-        antialias: true,
+        // The default framebuffer's MSAA is bypassed the moment the composer
+        // renders into its own target, so leaving this on would pay for
+        // multisampling twice and use neither. AA is handled by
+        // `multisampling` on the EffectComposer instead.
+        antialias: false,
         alpha: true,
         powerPreference: 'high-performance',
         stencil: false,
@@ -1088,21 +1279,56 @@ export function ScrollArchitecture3D({
       <directionalLight position={[-5, -3, -4]} intensity={0.7} color="#a78bfa" />
 
       {/*
-       * Two layers of sleep, because one is not enough:
-       *   RenderGate  stops R3F's own draw while keeping the GL context alive.
-       *   {awake && …}  unmounts the rig, which is the only way to stop the
-       *                 transmission material's own FBO render. The canvas
-       *                 itself stays mounted, so there is no context teardown.
+       * Sleep strategy.
+       *
+       * The rig AND the composer are mounted only while the chapter is on
+       * screen. With a composer present R3F's own draw is already suppressed —
+       * the composer registers a positive render priority and takes over — so
+       * the old `RenderGate` had to go: it would have written priority back to
+       * 0 while awake and produced a double render (R3F's plus the composer's).
+       *
+       * Unmounting the rig as well is still worth it: it takes the whole subtree
+       * out of the reconciler rather than relying on every `useFrame` callback to
+       * early-return. Waking happens 60% of a viewport early, so the rebuild is
+       * never visible.
        */}
-      <RenderGate inViewRef={inViewRef} />
+      {/*
+       * Mutually exclusive with the composer below: exactly one of them is in the
+       * tree at any moment, so R3F's own draw and the post-processing pass can
+       * never both run.
+       */}
+      {!awake && <OffscreenRenderGate />}
 
       {awake && (
-        <ArchitectureRig
-          progress={progress}
-          inViewRef={inViewRef}
-          selectedLayer={selectedLayer}
-          onSelectLayer={onSelectLayer}
-        />
+        <>
+          <ArchitectureRig
+            progress={progress}
+            inViewRef={inViewRef}
+            selectedLayer={selectedLayer}
+            onSelectLayer={onSelectLayer}
+          />
+
+          {/*
+           * Bloom is what makes the cyan read as neon instead of as coloured
+           * geometry: the edge lattice and the hot plasma cells sit above the
+           * 0.15 threshold, so they bleed into everything around them.
+           *
+           * The parameters map one-to-one onto UnrealBloomPass (intensity is
+           * strength, radius is spread, luminanceThreshold is the cutoff);
+           * `postprocessing` implements the same unified bloom internally, so
+           * this is the pass the brief asks for, wired the way R3F expects.
+           *
+           * multisampling is tier-gated: this canvas draws thin wireframe lines
+           * that alias badly without MSAA, but the composer's MSAA buffer is the
+           * most expensive thing in the pipeline on an integrated GPU.
+           */}
+          <EffectComposer
+            multisampling={tier === 'high' ? 4 : 0}
+            enableNormalPass={false}
+          >
+            <Bloom luminanceThreshold={0.15} intensity={1.6} radius={0.5} mipmapBlur />
+          </EffectComposer>
+        </>
       )}
 
       {/* Fog pulls the far edges of the grid into the void. */}

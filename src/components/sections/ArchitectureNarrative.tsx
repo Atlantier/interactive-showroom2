@@ -261,13 +261,11 @@ export function ArchitectureNarrative() {
    * before the pin begins or the visitor would watch it start up mid-scroll.
    *
    * `canvasAwake` mirrors the ref as React state. The ref alone is not enough
-   * here: `RenderGate` stops R3F's own draw, but the prism's
-   * `MeshTransmissionMaterial` issues its own `gl.render()` from a `useFrame`
-   * callback to capture the transmission buffer, and that pass is not subject to
-   * `internal.priority`. Measured while off screen, the frame counter still
-   * advanced at almost exactly half its on-screen rate — one of the two renders
-   * per frame. Unmounting the rig removes that pass entirely, and doing it 60%
-   * early means the procedural geometry rebuilds while still off screen.
+   * here: the rig AND the EffectComposer that renders it have to leave the
+   * tree, not merely stop drawing. A composer owns the render pass for its
+   * canvas, so unmounting the rig without it would leave an empty scene being
+   * bloomed every frame. Doing this 60% early means the procedural geometry
+   * rebuilds while still off screen.
    *
    * `initial: false` on both means a chapter that starts off screen never mounts
    * its rig at all; the observer flips it on the first crossing.

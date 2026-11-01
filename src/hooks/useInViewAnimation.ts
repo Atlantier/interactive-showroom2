@@ -39,8 +39,8 @@ export interface UseInViewAnimationOptions {
  * ── What "pause" means per module ─────────────────────────────────────────
  *   · 2D sandboxes (Verlet, FABRIK) — stop scheduling their rAF loop. The loops
  *     read `.current` at the top of each frame and return early.
- *   · R3F canvases — skip `gl.render()` for that root (see `RenderGate`), and
- *     their `useFrame` callbacks already early-return on the same flag.
+ *   · R3F canvases — the rig and its post-processing composer are mounted
+ *     only while visible, so an off-screen section renders nothing at all.
  *
  * ── Why one shared hook ───────────────────────────────────────────────────
  * Three modules previously each hand-rolled the same observer with slightly
