@@ -147,7 +147,9 @@ const DEFAULT_SECTION = 'hero'
  *   - NEVER use these values as React state; read them inside an animation loop.
  */
 export const transient: TransientState = {
-  mouse: { x: 0, y: 0, px: 0, py: 0, active: false },
+  mouse: { x: 0, y: 0, px: 0, py: 0, active: false,
+    // Eased by the scroll engine; 0 while no pointer is over the viewport.
+    strength: 0 },
   scroll: { progress: 0, velocity: 0 },
 }
 
@@ -200,6 +202,9 @@ export function writePointer(clientX: number, clientY: number): void {
   writeNormalizedMouse((localX / width) * 2 - 1, -((localY / height) * 2 - 1))
   writePixelMouse(clientX, clientY)
   transient.mouse.active = true
+  // Any real pointer input re-arms the influence target immediately; the ease is
+  // only ever used to release it.
+  transient.mouse.strength = Math.max(transient.mouse.strength, 1)
 }
 
 /** Write the smoothed scroll progress (p ∈ [0,1]) and its velocity. */
@@ -214,8 +219,15 @@ export function writeScroll(progress: number, velocity: number): void {
  * must never be clobbered by pointer activity.
  */
 export function resetMouseTransient(): void {
-  transient.mouse.x = 0
-  transient.mouse.y = 0
+  /*
+   * Position is deliberately NOT zeroed here any more.
+   *
+   * Zeroing it is what produced the teleport: the cursor influence lives in the
+   * same object, so resetting x/y to the centre while consumers were still
+   * reading them moved every effect half a viewport in one frame. The scroll
+   * engine now eases x/y (and `strength`) back to rest over a few hundred
+   * milliseconds, so this only has to drop the flag.
+   */
   transient.mouse.px = 0
   transient.mouse.py = 0
   transient.mouse.active = false

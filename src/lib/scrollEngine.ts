@@ -1,7 +1,7 @@
 import Lenis from 'lenis'
 import { clamp, createSpring, resetSpring, safeNumber, stepSpring } from '@/lib/math'
 import { advanceR3F } from '@/lib/frameBridge'
-import { writeScroll } from '@/store/useAppStore'
+import { writeScroll, transient } from '@/store/useAppStore'
 
 /**
  * Scroll engine — the single clock of the application.
@@ -117,6 +117,30 @@ export function createScrollEngine(): () => void {
     smoothedVelocity = Math.abs(velocitySpring.value) < 1e-4 ? 0 : velocitySpring.value
 
     lastProgress = progress
+
+    /*
+     * 3b. Ease the pointer influence.
+     *
+     * `active` is a hard boolean, so leaving the window used to collapse every
+     * cursor-driven effect in one frame -- the "teleport" the brief reports.
+     * Driving an exponential ease here rather than in each consumer keeps the
+     * single-clock rule and fixes all of them at once. The rate is expressed as
+     * a time constant (7/s), not a per-frame fraction, so it behaves the same at
+     * any frame rate.
+     */
+    const mouseTarget = transient.mouse.active ? 1 : 0
+    const mouseEase = 1 - Math.exp(-dt * 7)
+    transient.mouse.strength += (mouseTarget - transient.mouse.strength) * mouseEase
+    if (Math.abs(mouseTarget - transient.mouse.strength) < 1e-4) {
+      transient.mouse.strength = mouseTarget
+    }
+
+    // While releasing, walk the stored position back toward the centre with the
+    // same curve so no consumer sees a jump in x/y either.
+    if (transient.mouse.strength < 1) {
+      transient.mouse.x *= 1 - mouseEase
+      transient.mouse.y *= 1 - mouseEase
+    }
 
     // 4. Publish to the transient store + imperative DOM consumers.
     publish(progress, smoothedVelocity)

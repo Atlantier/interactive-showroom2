@@ -18,6 +18,16 @@ export type PerformanceTier = 'high' | 'medium'
  *                from a cursor resting exactly at the screen centre.
  */
 export interface MouseState {
+  /**
+   * Eased pointer influence in [0, 1].
+   *
+   * `active` is a hard boolean: the instant a pointer leaves the window it goes
+   * false, and every consumer that gates on it drops its influence in a single
+   * frame -- which is what made leaving and re-entering the window look like a
+   * teleport. This eases between 1 and 0 on the master clock instead, and the
+   * stored x/y are eased back toward centre alongside it.
+   */
+  strength: number
   x: number
   y: number
   px: number

@@ -875,7 +875,9 @@ export function FlowFieldParticles({
     /* 2. Project the cursor onto the z = 0 plane via a Raycaster. */
     let mouseValid = false
 
-    if (transient.mouse.active) {
+    // Gated on the eased strength rather than `active`: with the raw boolean the
+    // repulsion switched off in a single frame and the nebula snapped back.
+    if (transient.mouse.strength > 0.001) {
       // Normalized device coordinates straight from the transient store: it is
       // already in [-1, 1] with +y up, which is exactly NDC.
       ndc.set(transient.mouse.x, transient.mouse.y)
