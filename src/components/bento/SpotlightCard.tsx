@@ -3,6 +3,10 @@ import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion'
 import { cn } from '@/lib/cn'
 import { soundEngine } from '@/utils/soundEngine'
 import { useSpotlightRegistry } from '@/components/bento/spotlightRegistry'
+import {
+  CardParticleCanvas,
+  type CardParticleHandle,
+} from '@/components/bento/CardParticleCanvas'
 
 /**
  * SpotlightCard — a glass panel with a cursor-following spotlight, a border glow
@@ -157,6 +161,53 @@ export function SpotlightCard({
     offsetY.set(0)
   }, [offsetX, offsetY])
 
+  /* ── Ember field ────────────────────────────────────────────────────────── */
+  const emberRef = useRef<CardParticleHandle>(null)
+
+  /**
+   * Action buttons opt into the gravity-collapse effect by carrying
+   * `data-card-action`. Looking them up by attribute rather than by prop keeps
+   * `children` opaque — the card never needs to know which controls its content
+   * renders, and any future button gets the treatment for free.
+   */
+  const actionCentre = (
+    target: Element,
+  ): { x: number; y: number } | null => {
+    const card = cardRef.current
+    if (!card) return null
+    const cardRect = card.getBoundingClientRect()
+    const rect = target.getBoundingClientRect()
+    return {
+      x: rect.left - cardRect.left + rect.width / 2,
+      y: rect.top - cardRect.top + rect.height / 2,
+    }
+  }
+
+  const handleEmberOver = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const target = (event.target as HTMLElement).closest('[data-card-action]')
+    if (!target) return
+    const centre = actionCentre(target)
+    if (centre) emberRef.current?.setAttractor(centre.x, centre.y)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const handleEmberOut = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const target = (event.target as HTMLElement).closest('[data-card-action]')
+    if (!target) return
+    // Travelling between the button's own children is not a leave.
+    const next = event.relatedTarget as Node | null
+    if (next && target.contains(next)) return
+    emberRef.current?.setAttractor(null, null)
+  }, [])
+
+  const handleEmberBurst = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    const target = (event.target as HTMLElement).closest('[data-card-action]')
+    if (!target) return
+    const centre = actionCentre(target)
+    if (centre) emberRef.current?.burst(centre.x, centre.y)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   /* ── Publish the handle to the grid ─────────────────────────────────────── */
   useEffect(() => {
     const card = cardRef.current
@@ -207,7 +258,12 @@ export function SpotlightCard({
        * genuinely need to swallow the event (the terminal's input) already call
        * `stopPropagation`.
        */
-      onClick={() => soundEngine.playCardActivate()}
+      onClick={(event) => {
+        // Burst first: this is the visual consequence of the click, and the
+        // chime is queued behind it.
+        handleEmberBurst(event)
+        soundEngine.playCardActivate()
+      }}
     >
       {/*
        * INNER: the clipping surface.
@@ -235,6 +291,13 @@ export function SpotlightCard({
           '[perspective:1000px]',
           className,
         )}
+        onPointerEnter={() => emberRef.current?.setHovered(true)}
+        onPointerLeave={() => {
+          emberRef.current?.setHovered(false)
+          emberRef.current?.setAttractor(null, null)
+        }}
+        onPointerOver={handleEmberOver}
+        onPointerOut={handleEmberOut}
       >
         {/* ── Layer 1: border glow ────────────────────────────────────────────
             A 1px ring whose radial gradient is centred on the cursor. The mask
@@ -274,6 +337,68 @@ export function SpotlightCard({
             background: `radial-gradient(500px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(${glowColor}, 0.1), transparent 45%)`,
           }}
         />
+
+        {/* ── Layer 3: rising embers ──────────────────────────────────────────
+            Its own canvas rather than DOM nodes: a few hundred soft dots with
+            trails composite far faster on one 2D surface than as separate
+            elements, and the loop is gated by an IntersectionObserver inside the
+            renderer so an off-screen card costs nothing.
+
+            Sits under the content and over the spotlight fills, so embers read as
+            light inside the glass rather than as paint on top of it. */}
+        <div aria-hidden className="pointer-events-none absolute inset-0 z-0">
+          <CardParticleCanvas
+            ref={emberRef}
+            glowColor={glowColor}
+            className="h-full w-full"
+          />
+        </div>
+
+        {/* ── Layer 4: perimeter comets ───────────────────────────────────────
+            Inset by 1px so the 1.5px stroke lands on the border ring instead of
+            straddling the card's outer edge. `pathLength={100}` normalises the
+            outline, and the dash/walk timing lives in index.css. */}
+        <svg
+          aria-hidden
+          className="pointer-events-none absolute"
+          style={{ inset: 1, overflow: 'visible' }}
+        >
+          <rect
+            className="comet-beam"
+            style={{ '--comet-glow': '#10b981' } as React.CSSProperties}
+            x="0"
+            y="0"
+            width="100%"
+            height="100%"
+            rx="13"
+            fill="none"
+            stroke="#10b981"
+            strokeWidth={1.5}
+            pathLength={100}
+            strokeDasharray="7 93"
+            strokeLinecap="round"
+          />
+          <rect
+            className="comet-beam comet-beam--reverse"
+            style={
+              {
+                '--comet-glow': '#22d3ee',
+                '--comet-duration': '23s',
+              } as React.CSSProperties
+            }
+            x="0"
+            y="0"
+            width="100%"
+            height="100%"
+            rx="13"
+            fill="none"
+            stroke="#22d3ee"
+            strokeWidth={1}
+            pathLength={100}
+            strokeDasharray="4 96"
+            strokeLinecap="round"
+          />
+        </svg>
 
         {/* ── Content, lifted in Z for parallax ──────────────────────────────
             `translateZ(30px)` only has an effect because the ancestor chain now

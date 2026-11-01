@@ -361,3 +361,53 @@
     display: none;
   }
 }
+
+/* ── Perimeter comet beams ───────────────────────────────────────────────────
+ * Two stroked rects riding the card's border ring.
+ *
+ * `pathLength="100"` normalises the outline to 100 units, so a dasharray of
+ * `7 93` is one comet occupying 7% of the perimeter regardless of how large the
+ * card actually is, and a dashoffset of -100 walks it exactly one lap. Doing the
+ * same thing with a conic-gradient mask would need a second element per beam and
+ * a rotation transform, which cannot follow a rounded rect.
+ *
+ * The hover state switches the DURATION rather than tweening it: CSS animations
+ * have no way to interpolate timing, so the lap restarts at the faster rate. At
+ * the resting opacity that kick is invisible; at hover it reads as the beam
+ * spinning up.
+ */
+@keyframes comet-lap {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -100;
+  }
+}
+
+.comet-beam {
+  opacity: 0.16;
+  animation: comet-lap var(--comet-duration, 16s) linear infinite;
+  transition: opacity 420ms ease-out;
+  will-change: stroke-dashoffset, opacity;
+}
+
+/* The second beam runs the other way so the pair reads as head-to-tail. */
+.comet-beam--reverse {
+  animation-direction: reverse;
+}
+
+.group:hover .comet-beam {
+  opacity: 1;
+  animation-duration: 3.4s;
+  filter: drop-shadow(0 0 8px var(--comet-glow, #10b981));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .comet-beam,
+  .group:hover .comet-beam {
+    animation: none;
+    opacity: 0.1;
+    filter: none;
+  }
+}

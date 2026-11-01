@@ -153,6 +153,20 @@ function ShaderCard() {
       </dl>
 
       <CardFooter note="单 draw call 渲染 8000 粒子" title="渲染管线" />
+
+      {/*
+       * Action target for the card's ember field. Anything carrying
+       * `data-card-action` becomes a gravity well — the rising embers abandon
+       * their sway and collapse into it on hover, then burst outward on click.
+       * The card does the lookup by attribute, so this is the only wiring needed.
+       */}
+      <button
+        type="button"
+        data-card-action="true"
+        className="mt-2.5 inline-flex items-center gap-1.5 self-start rounded-full border border-signal-teal/30 bg-signal-teal/10 px-2.5 py-1 font-mono text-[0.6rem] tracking-wide text-signal-teal transition-colors duration-300 hover:border-signal-teal/70 hover:bg-signal-teal/20"
+      >
+        Inspect Architecture
+      </button>
     </SpotlightCard>
   )
 }
