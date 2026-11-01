@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
-import { Environment, Lightformer, MeshTransmissionMaterial } from '@react-three/drei'
+import { Environment, Lightformer } from '@react-three/drei'
 import * as THREE from 'three'
 import { preloadR3FAdvance, setCanvasActive } from '@/lib/frameBridge'
 import { supportsWebGL } from '@/lib/device'
@@ -44,8 +44,9 @@ import type { ProgressStore } from '@/hooks/useSectionProgress'
  *     pillar heights, drawn solid + wireframe. Reads as silicon under load.
  *  2. MULTI-AGENT ORCHESTRATION —glowing octahedra with shader-driven pulses
  *     travelling along the edges between them.
- *  3. SPATIAL WEB / UI —a faceted prism using `MeshTransmissionMaterial` so the
- *     layers beneath genuinely refract through it.
+ *  3. SPATIAL WEB / UI — a faceted crystal using native `MeshPhysicalMaterial`
+ *     transmission with an inner light core, so the layers beneath refract
+ *     through it and the core's light spills outward.
  *
  * ── Clock ─────────────────────────────────────────────────────────────────
  * `frameloop="never"`, like every other canvas in this app: the single Lenis RAF
@@ -290,51 +291,218 @@ function OrchestrationLayer({
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Layer 3 —Spatial web prism                                               */
+/*  Layer 3 — Spatial web crystal                                             */
 /* -------------------------------------------------------------------------- */
+
+/**
+ * Fresnel rim shader for the crystal's outer edge.
+ *
+ * A separate additive shell rather than a property of the glass material, for
+ * two reasons:
+ *
+ *  1. `MeshPhysicalMaterial` has no rim term. `pow(1 - N·V, p)` is what makes an
+ *     edge read as *glass* rather than as a tinted solid, and it has to be added
+ *     explicitly.
+ *  2. This is the one place per-object chromatic dispersion is cheap. The red,
+ *     green and blue rims are raised to slightly different exponents, so the
+ *     three channels separate by a pixel or two exactly where a prism would
+ *     split light — a real spectral fringe on the silhouette, at the cost of two
+ *     extra `pow` calls.
+ */
+const RIM_VERTEX = `
+varying vec3 vN;
+varying vec3 vV;
+
+void main() {
+  vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+  vN = normalize(normalMatrix * normal);
+  vV = normalize(-mvPosition.xyz);
+  gl_Position = projectionMatrix * mvPosition;
+}
+`
+
+const RIM_FRAGMENT = `
+uniform vec3 uColor;
+uniform float uIntensity;
+uniform float uPower;
+
+varying vec3 vN;
+varying vec3 vV;
+
+void main() {
+  float facing = abs(dot(normalize(vN), normalize(vV)));
+  float edge = clamp(1.0 - facing, 0.0, 1.0);
+
+  // Dispersion: each channel gets a different falloff exponent, so the rim
+  // separates into a faint spectrum instead of one flat glow.
+  vec3 spectrum = vec3(
+    pow(edge, uPower * 0.86),
+    pow(edge, uPower),
+    pow(edge, uPower * 1.20)
+  );
+
+  gl_FragColor = vec4(uColor * spectrum * uIntensity, spectrum.g);
+}
+`
 
 function SpatialLayer({ groupRef }: { groupRef: React.RefObject<THREE.Group | null> }) {
   const prism = useMemo(() => buildPrismGeometry(1.5), [])
-
   useEffect(() => () => prism.dispose(), [prism])
+
+  const rimMaterial = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        uniforms: {
+          uColor: { value: new THREE.Color('#7dd3fc') },
+          uIntensity: { value: 1.35 },
+          uPower: { value: 2.4 },
+        },
+        vertexShader: RIM_VERTEX,
+        fragmentShader: RIM_FRAGMENT,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        toneMapped: false,
+      }),
+    [],
+  )
+  useEffect(() => () => rimMaterial.dispose(), [rimMaterial])
+
+  const coreRef = useRef<THREE.Mesh>(null)
+  const haloRef = useRef<THREE.Mesh>(null)
+  const lightRef = useRef<THREE.PointLight>(null)
+
+  /**
+   * Breathing light core.
+   *
+   * This is what turns a dark glass shell into a lit crystal. Three.js renders
+   * transmissive objects by sampling a render target of everything *behind* the
+   * front surface, so a bright core sitting at the centre is refracted outward
+   * through every facet. Without it the shell can only ever show the near-black
+   * background — which is exactly the "hard black blotches" the previous
+   * transmission setup produced.
+   *
+   * The pulse is slow and shallow (~6 s period, roughly ±25%) so it reads as
+   * breathing crystal rather than a blinking status light.
+   *
+   * Everything here writes refs — no `setState` in a frame loop.
+   */
+  useFrame((state) => {
+    const t = state.clock.elapsedTime
+    const breathe = 0.5 + 0.5 * Math.sin(t * 1.05)
+
+    const core = coreRef.current
+    if (core) {
+      const material = core.material as THREE.MeshStandardMaterial
+      material.emissiveIntensity = 2.0 + breathe * 1.5
+      core.scale.setScalar(0.93 + breathe * 0.1)
+    }
+
+    const halo = haloRef.current
+    if (halo) {
+      const material = halo.material as THREE.MeshBasicMaterial
+      material.opacity = 0.11 + breathe * 0.07
+      halo.scale.setScalar(0.95 + breathe * 0.1)
+    }
+
+    if (lightRef.current) lightRef.current.intensity = 3.6 + breathe * 3.0
+    rimMaterial.uniforms.uIntensity.value = 1.15 + breathe * 0.5
+  })
 
   return (
     <group ref={groupRef}>
       {/*
-       * MeshTransmissionMaterial needs an environment to refract. A procedural
-       * Lightformer environment is used instead of an HDRI preset: it keeps the
-       * bundle free of a multi-hundred-kB texture and matches the palette.
+       * The crystal itself.
+       *
+       * Native `MeshPhysicalMaterial` rather than drei's
+       * `MeshTransmissionMaterial`: the latter adds its own FBO with distortion,
+       * anisotropy and temporal noise, and at these settings that noise was a
+       * large part of why the surface looked dirty. The physical material's
+       * transmission is resolved by three.js' own single-pass transmission
+       * target, which is both cleaner and cheaper.
+       *
+       * transmission 0.9 (not 1.0) is deliberate: the remaining 10% gives the
+       * surface its own diffuse/specular presence, so it stops being a pure
+       * window onto the black backdrop.
        */}
       <mesh geometry={prism}>
-        <MeshTransmissionMaterial
-          samples={6}
-          resolution={256}
-          thickness={1.1}
-          roughness={0.12}
-          transmission={1}
-          ior={1.42}
-          chromaticAberration={0.06}
-          anisotropy={0.2}
-          distortion={0.25}
-          distortionScale={0.35}
-          temporalDistortion={0.06}
-          color="#bae6fd"
-          attenuationColor="#22d3ee"
-          attenuationDistance={2.2}
-          background={undefined}
+        <meshPhysicalMaterial
+          transmission={0.9}
+          roughness={0.15}
+          ior={1.5}
+          metalness={0}
+          thickness={1.0}
+          /*
+           * Light cyan, NOT near-white.
+           *
+           * `color` multiplies transmitted light as well as diffuse, so it must
+           * be light enough not to darken the glass (a near-black value is what
+           * made the first version read as a black orb) yet not so white that the
+           * solid turns opaque. The teal depth tint is carried by
+           * `attenuationColor`, which only applies with thickness.
+           */
+          color="#a8e0f0"
+          /*
+           * Clearcoat and iridescence are deliberately LOW.
+           *
+           * Both add a broad specular sheen. At full strength the sheen covers
+           * the refraction completely and the crystal reads as frosted plastic
+           * rather than glass — measured the hard way on the previous pass.
+           */
+          clearcoat={0.35}
+          clearcoatRoughness={0.15}
+          specularIntensity={0.6}
+          specularColor="#dff4ff"
+          iridescence={0.15}
+          iridescenceIOR={1.32}
+          iridescenceThicknessRange={[120, 420]}
+          attenuationColor="#38bdf8"
+          attenuationDistance={4}
+          envMapIntensity={0.85}
         />
       </mesh>
 
-      {/* Inner core: a small emissive octahedron visible through the prism. */}
-      <mesh>
-        <octahedronGeometry args={[0.42, 0]} />
+      {/* Fresnel rim + chromatic dispersion, riding just outside the shell. */}
+      <mesh geometry={prism} scale={1.035} renderOrder={3}>
+        <primitive object={rimMaterial} attach="material" />
+      </mesh>
+
+      {/*
+       * The light source itself.
+       *
+       * A refracting solid displaces the image of anything inside it, so the
+       * core is not seen where it actually sits — it reads as a bright glint
+       * rather than a centred glow. The halo below is what actually sells "light
+       * from within"; this sphere exists to be refracted and to seed the halo.
+       */}
+      <mesh ref={coreRef}>
+        <sphereGeometry args={[0.7, 32, 24]} />
         <meshStandardMaterial
-          color="#a5f3fc"
-          emissive="#22d3ee"
-          emissiveIntensity={3}
+          color="#e0f7ff"
+          emissive="#67e8f9"
+          emissiveIntensity={2.4}
           toneMapped={false}
         />
       </mesh>
+
+      {/* Soft volumetric halo, kept inside the solid so it reads as inner glow. */}
+      <mesh ref={haloRef}>
+        <sphereGeometry args={[0.98, 24, 18]} />
+        <meshBasicMaterial
+          color="#22d3ee"
+          transparent
+          opacity={0.13}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+          toneMapped={false}
+        />
+      </mesh>
+
+      {/*
+       * Real illumination from the centre, so the surrounding cubes and the
+       * wireframe floor pick up the core's light instead of floating in a vacuum.
+       */}
+      <pointLight ref={lightRef} color="#7dd3fc" intensity={4} distance={10} decay={2} />
     </group>
   )
 }
@@ -876,11 +1044,18 @@ export interface ScrollArchitecture3DProps {
    * Whether the rig should be mounted at all.
    *
    * Distinct from `inViewRef`: the ref gates RENDERING, this gates MOUNTING.
-   * The prism's `MeshTransmissionMaterial` renders the scene into an FBO from its
-   * own `useFrame` callback, and that pass is not subject to `internal.priority`.
-   * Measured off screen, the frame counter still advanced at almost exactly half
-   * its on-screen rate — one of the two renders per frame was still running.
-   * Unmounting is the only way to stop it.
+   *
+   * This gate was introduced when the prism used drei's
+   * `MeshTransmissionMaterial`, which ran its own FBO render inside a `useFrame`
+   * callback — that pass escaped `internal.priority` (measured: the frame
+   * counter kept advancing at roughly half the on-screen rate while off screen).
+   * The prism now uses three.js' native transmission, which is resolved inside
+   * `gl.render()` and is therefore fully covered by `RenderGate`.
+   *
+   * The mount gate is kept anyway, as defence in depth and for a real saving of
+   * its own: it takes the whole rig out of the reconciler and stops its
+   * `useFrame` callbacks from running at all, rather than relying on each of them
+   * to early-return.
    */
   awake: boolean
   /** Currently focused layer id, or null for the overview. */
