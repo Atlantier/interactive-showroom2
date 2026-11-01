@@ -139,7 +139,18 @@ const RIBBON_POINTS = 24
 /** Half-width of the ribbon at its head, in world units. At the hero camera's
  *  z = 7.4 this is roughly 27 px each side — wide enough to read as a band
  *  rather than as a second trail. */
-const RIBBON_WIDTH = 0.17
+const RIBBON_WIDTH = 0.19
+
+/**
+ * Cross-sections along the band.
+ *
+ * The band is no longer drawn through the 24 history points directly -- that gave
+ * one straight segment per frame sample, which is what made fast flicks look
+ * faceted and "blocky". The history now feeds a Catmull-Rom spline that is
+ * resampled at this many cross-sections, so the curvature is smooth regardless of
+ * how fast the pointer moved.
+ */
+const RIBBON_SEGMENTS = RIBBON_POINTS * 3
 
 /* -------------------------------------------------------------------------- */
 /*  Particle shaders                                                          */
@@ -316,18 +327,29 @@ const RIBBON_FRAGMENT = /* glsl */ `
   uniform vec3 uHot;
 
   void main() {
-    float edge = 1.0 - abs(vUv.y * 2.0 - 1.0);
-    float core = pow(max(edge, 0.0), 1.6);
+    /*
+     * Lateral feather.
+     *
+     * abs(vUv.y - 0.5) is 0 on the centreline and 0.5 at either edge, so
+     * smoothstep(0.5, 0.0, ..) gives a full-strength centre falling to nothing
+     * exactly at the edge. Squaring it keeps the bright core narrow and the
+     * falloff long, which is what removes the hard polygon edge the flat
+     * pow(edge, 1.6) band still showed at speed.
+     */
+    float edge = smoothstep(0.5, 0.0, abs(vUv.y - 0.5));
+    float core = edge * edge;
 
-    // Soft along-axis taper: the head is solid, the tail dissolves into the
-    // stardust. A plain squared falloff read as a hard cut, so it is eased.
+    // Along-axis: solid at the head, dissolving into the stardust at the tail.
     float along = pow(vAlong, 1.35);
-    float alpha = core * along * uFade * 1.25;
+
+    float alpha = core * along * uFade * 1.6;
     if (alpha < 0.004) discard;
 
     vec3 col = mix(uCold, uHot, vAlong);
 
-    gl_FragColor = vec4(col * (1.0 + vAlong * 2.0), alpha);
+    // The head is driven hotter so the leading edge reads as energy rather than
+    // as a coloured strip.
+    gl_FragColor = vec4(col * (1.0 + vAlong * 1.9), alpha);
   }
 `
 
@@ -549,14 +571,28 @@ export function CursorStardustTrail({
 
   /* ── Ribbon geometry, rebuilt in place every frame ─────────────────────── */
   const ribbon = useMemo(() => {
-    /** Cursor history, oldest first. */
+    /** Cursor history, oldest first. The spline reads these by reference. */
     const history = Array.from({ length: RIBBON_POINTS }, () => new THREE.Vector3())
-    const positions = new Float32Array(RIBBON_POINTS * 2 * 3)
-    const uvs = new Float32Array(RIBBON_POINTS * 2 * 2)
-    const along = new Float32Array(RIBBON_POINTS * 2)
 
-    for (let i = 0; i < RIBBON_POINTS; i++) {
-      const t = i / (RIBBON_POINTS - 1)
+    /*
+     * The spline is built ONCE over the history array.
+     *
+     * CatmullRomCurve3 holds references to those Vector3s rather than copies, so
+     * shifting the history in place moves the curve with it -- no per-frame
+     * allocation, no rebuild.
+     *
+     * 'centripetal' parameterisation instead of the default: uniform
+     * parameterisation produces loops and cusps when consecutive samples bunch up,
+     * which is exactly what a fast flick interrupted by a slow frame looks like.
+     */
+    const curve = new THREE.CatmullRomCurve3(history, false, 'centripetal')
+
+    const positions = new Float32Array(RIBBON_SEGMENTS * 2 * 3)
+    const uvs = new Float32Array(RIBBON_SEGMENTS * 2 * 2)
+    const along = new Float32Array(RIBBON_SEGMENTS * 2)
+
+    for (let i = 0; i < RIBBON_SEGMENTS; i++) {
+      const t = i / (RIBBON_SEGMENTS - 1)
       along[i * 2] = t
       along[i * 2 + 1] = t
       uvs[i * 4] = t
@@ -565,9 +601,9 @@ export function CursorStardustTrail({
       uvs[i * 4 + 3] = 1
     }
 
-    // Two triangles per quad between consecutive history points.
+    // Two triangles per quad between consecutive cross-sections.
     const indices: number[] = []
-    for (let i = 0; i < RIBBON_POINTS - 1; i++) {
+    for (let i = 0; i < RIBBON_SEGMENTS - 1; i++) {
       const a = i * 2
       indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3)
     }
@@ -581,7 +617,11 @@ export function CursorStardustTrail({
     geo.setIndex(indices)
     geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 48)
 
-    return { history, positions, geo, posAttr, filled: 0 }
+    // Scratch for the sampling loop, allocated once.
+    const samplePoint = new THREE.Vector3()
+    const sampleTangent = new THREE.Vector3()
+
+    return { history, curve, positions, geo, posAttr, samplePoint, sampleTangent }
   }, [])
 
   /**
@@ -859,14 +899,16 @@ export function CursorStardustTrail({
     ribbonUniforms.uFade.value = fade
 
     if (fade > 0.002) {
-      for (let i = 0; i < RIBBON_POINTS; i++) {
-        const p = history[i]
-        // Tangent from the neighbouring points; the very ends use a one-sided
-        // difference.
-        const a = history[i === 0 ? 0 : i - 1]
-        const b = history[i === RIBBON_POINTS - 1 ? i : i + 1]
-        let tx = b.x - a.x
-        let ty = b.y - a.y
+      const { curve, samplePoint, sampleTangent } = ribbon
+
+      for (let i = 0; i < RIBBON_SEGMENTS; i++) {
+        const t = i / (RIBBON_SEGMENTS - 1)
+
+        curve.getPoint(t, samplePoint)
+        curve.getTangent(t, sampleTangent)
+
+        let tx = sampleTangent.x
+        let ty = sampleTangent.y
         const len = Math.sqrt(tx * tx + ty * ty)
 
         // Degenerate (cursor stationary): fall back to a fixed direction so the
@@ -883,18 +925,20 @@ export function CursorStardustTrail({
         const px = -ty
         const py = tx
 
-        // Taper: thin at the tail, full width at the head.
-        const t = i / (RIBBON_POINTS - 1)
-        const half = RIBBON_WIDTH * t * t
+        // Width taper: full at the head, converging to a point at the tail. The
+        // 1.5 exponent is what makes the band read as a contracting ribbon rather
+        // than a strip with two parallel edges.
+        const half = RIBBON_WIDTH * Math.pow(t, 1.5)
 
         const o = i * 6
-        positions[o] = p.x + px * half
-        positions[o + 1] = p.y + py * half
-        positions[o + 2] = p.z
-        positions[o + 3] = p.x - px * half
-        positions[o + 4] = p.y - py * half
-        positions[o + 5] = p.z
+        positions[o] = samplePoint.x + px * half
+        positions[o + 1] = samplePoint.y + py * half
+        positions[o + 2] = samplePoint.z
+        positions[o + 3] = samplePoint.x - px * half
+        positions[o + 4] = samplePoint.y - py * half
+        positions[o + 5] = samplePoint.z
       }
+
       posAttr.needsUpdate = true
     }
     if (ribbonRef.current) ribbonRef.current.visible = fade > 0.002

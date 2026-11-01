@@ -539,15 +539,33 @@ void main() {
   float fresnel = pow(1.0 - facing, 2.5);
 
   float t = uTime * 0.11;
-  float n = vnoise(vNormalW * 1.5 + vec3(t, t * 0.6, -t * 0.4));
-  n = n * 0.65 + vnoise(vNormalW * 2.9 - vec3(t * 0.7)) * 0.35;
 
-  // Milky interior: pale cyan in the middle, drifting toward the near-white rim.
-  vec3 col = mix(uDeep, uHot, fresnel);
+  /*
+   * Domain-warped cloud field.
+   *
+   * The previous version modulated brightness by +/-7%, which at this scale is
+   * invisible -- the sphere rendered as a flat gradient, which is the "looks like
+   * plastic" note. This is a proper warp: a low-frequency field displaces the
+   * lookup of a second one, which is what produces wisps and folds instead of
+   * uniform fBm mush. Two octaves, and the amplitude is large enough to actually
+   * read as structure.
+   */
+  vec3 p = vNormalW * 2.2;
+  float warp = vnoise(p + vec3(0.0, t, 0.0));
+  float cloud = vnoise(p * 1.7 + vec3(warp * 1.9, t * 0.6, warp * 1.3));
+  cloud = cloud * 0.58 + vnoise(p * 3.2 - vec3(t * 0.45)) * 0.42;
 
-  // Cloud structure modulates BRIGHTNESS only, and by a small amount. Modulating
-  // colour instead is what previously produced the cratered, lunar look.
-  col *= 0.86 + 0.14 * n;
+  // Bright milk in the folds of the cloud, deeper cyan between them.
+  float milk = smoothstep(0.16, 0.92, cloud) * 0.78;
+
+  // The limb is the brightest part; blend it against the cloud term so the centre
+  // keeps its structure instead of being washed out by the rim gradient.
+  float limb = pow(fresnel, 0.92);
+  vec3 col = mix(uDeep, uHot, clamp(max(limb, milk), 0.0, 1.0));
+
+  // A little extra density variance so the cloud reads even at the brightest
+  // parts, where the colour mix above saturates.
+  col *= 0.90 + 0.22 * cloud;
 
   /*
    * No extra additive limb term: the mix above already reaches pure white at the
@@ -682,8 +700,13 @@ function SpatialLayer({
        * saturated colour anywhere on the sphere is a desaturated cyan: the limb is
        * pure white, which is what the reference shows at the silhouette.
        */
-      uDeep: { value: new THREE.Color('#b9e9f2') },
-      uHot: { value: new THREE.Color('#ffffff') },
+      /*
+       * `uDeep` is the cyan BETWEEN the cloud folds and `uHot` the milk inside
+       * them plus the limb -- so the sphere has real internal contrast instead of
+       * being one flat pale tone.
+       */
+      uDeep: { value: new THREE.Color('#5fbccd') },
+      uHot: { value: new THREE.Color('#f2ffff') },
       uIntensity: { value: 1.02 },
     }),
     [],
