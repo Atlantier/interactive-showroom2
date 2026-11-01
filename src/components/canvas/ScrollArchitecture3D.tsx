@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { Environment, Lightformer } from '@react-three/drei'
-import { Bloom, EffectComposer } from '@react-three/postprocessing'
 import { VolumetricStageLights } from '@/components/canvas/VolumetricStageLights'
 import { FloorCaustics } from '@/components/canvas/architecture/FloorCaustics'
 import * as THREE from 'three'
@@ -1552,27 +1551,6 @@ export function ScrollArchitecture3D({
            * `fadeWithScroll`, because the gate already owns its visibility.
            */}
           <VolumetricStageLights tier={tier} height={9} scale={0.85} intensity={0.85} />
-
-          {/*
-           * Bloom is what makes the cyan read as neon instead of as coloured
-           * geometry: the edge lattice and the hot plasma cells sit above the
-           * 0.15 threshold, so they bleed into everything around them.
-           *
-           * The parameters map one-to-one onto UnrealBloomPass (intensity is
-           * strength, radius is spread, luminanceThreshold is the cutoff);
-           * `postprocessing` implements the same unified bloom internally, so
-           * this is the pass the brief asks for, wired the way R3F expects.
-           *
-           * multisampling is tier-gated: this canvas draws thin wireframe lines
-           * that alias badly without MSAA, but the composer's MSAA buffer is the
-           * most expensive thing in the pipeline on an integrated GPU.
-           */}
-          <EffectComposer
-            multisampling={tier === 'high' ? 4 : 0}
-            enableNormalPass={false}
-          >
-            <Bloom luminanceThreshold={0.15} intensity={1.6} radius={0.5} mipmapBlur />
-          </EffectComposer>
         </>
       )}
 
