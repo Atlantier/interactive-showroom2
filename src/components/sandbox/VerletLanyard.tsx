@@ -12,8 +12,21 @@ import {
   traceBezierPath,
   type LanyardSpec,
   type LanyardState,
+  type Obb,
+  type ObbHit,
   type TagState,
 } from '@/utils/mathPhysics'
+import {
+  VfxParticleEngine,
+  drawIllumination,
+  drawRadialFlash,
+  fractalLightning,
+  strokePolyline,
+  type VfxBounds,
+  type VfxBurstOptions,
+  type VfxIllumination,
+  type VfxSpawnOptions,
+} from '@/utils/vfxParticleEngine'
 import { useInViewAnimation } from '@/hooks/useInViewAnimation'
 import { reportPhysicsSolve } from '@/lib/perfMetrics'
 import { GRAVITY_SCALE, useAppStore } from '@/store/useAppStore'
@@ -51,10 +64,227 @@ const LANYARD_SPECS: LanyardSpec[] = [
 /** Max simulation steps per frame (protects against tab-switch catch-up). */
 const MAX_STEPS_PER_FRAME = 4
 
+/* -------------------------------------------------------------------------- */
+/*  VFX layer — tuning, module-level scratch, snap-effect pool                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The spark layer for the lanyard sandbox.
+ *
+ * ── Why almost nothing here allocates ─────────────────────────────────────
+ * `engine.burst()` and `engine.spawn()` take an options object. Building that
+ * object at the call site would allocate on every collision — a GC pause at
+ * exactly the moment the scene is busiest. The option records below are written
+ * once at module load and mutated in place; a frame only writes numbers into
+ * them. The one deliberate exception is the snap bolt, whose `fractalLightning`
+ * polyline has to be built once per break (see `SnapArc`).
+ *
+ * ── Why the engine is stepped here and nowhere else ───────────────────────
+ * `VfxParticleEngine` owns no clock and never calls `requestAnimationFrame`. The
+ * sandbox already has exactly one gated loop; the engine is advanced from inside
+ * it, so the single-animation-loop rule stays intact.
+ */
+
+/** Pool size for the shared particle engine. */
+const VFX_PARTICLE_CAPACITY = 512
+
+/**
+ * Impact-speed range mapped onto the 15–40 spark count, in px/s.
+ *
+ * 110 px/s is about the slowest contact that still reads as a hit rather than two
+ * badges resting against each other; 950 is a hard drag slam. Speed and count are
+ * both linearly ramped across this band.
+ */
+const IMPACT_MIN_SPEED = 110
+const IMPACT_MAX_SPEED = 950
+
+/** Minimum gap between two bursts for the same contact, in seconds. */
+const IMPACT_SPARK_COOLDOWN = 0.09
+const WALL_SPARK_COOLDOWN = 0.12
+
+/** The lightning arc and its flash live this long. */
+const SNAP_ARC_LIFE = 0.25
+/** Stray sparks keep dribbling from the break for this long. */
+const SNAP_STRAY_LIFE = 1
+/** One arc slot per lanyard: a full four-lanyard break must fit in the pool. */
+const SNAP_ARC_POOL = 4
+
+/** Collision sparks: velocity-stretched streaks that bounce and split. */
+const COLLISION_SPARK_OPTIONS: VfxBurstOptions = {
+  count: 15,
+  x: 0,
+  y: 0,
+  speedMin: 40,
+  speedMax: 420,
+  lifeMin: 0.22,
+  lifeMax: 0.62,
+  sizeMin: 0.8,
+  sizeMax: 2,
+  color: [255, 210, 132],
+  gravity: 900,
+  drag: 0.7,
+  restitution: 0.6,
+  bounce: true,
+  stretch: 0.022,
+  splits: 1,
+}
+
+/** The pop at the instant the cord tears. Colour is overwritten per lanyard. */
+const SNAP_BURST_OPTIONS: VfxBurstOptions = {
+  count: 18,
+  x: 0,
+  y: 0,
+  speedMin: 80,
+  speedMax: 340,
+  lifeMin: 0.24,
+  lifeMax: 0.7,
+  sizeMin: 0.7,
+  sizeMax: 1.7,
+  color: [34, 211, 238],
+  gravity: 620,
+  drag: 0.55,
+  restitution: 0.6,
+  bounce: true,
+  stretch: 0.018,
+  splits: 1,
+}
+
+/** The fading after-dribble from a break: a handful of sparks per second. */
+const STRAY_SPARK_OPTIONS: VfxSpawnOptions = {
+  x: 0,
+  y: 0,
+  speedMin: 40,
+  speedMax: 150,
+  lifeMin: 0.2,
+  lifeMax: 0.65,
+  sizeMin: 0.6,
+  sizeMax: 1.5,
+  color: [34, 211, 238],
+  gravity: 820,
+  drag: 0.5,
+  restitution: 0.6,
+  bounce: true,
+  stretch: 0.014,
+  splits: 0,
+}
+
+/** Reused bounds record: `engine.step` reads it, the frame loop refills it. */
+const VFX_BOUNDS: VfxBounds = { left: 0, right: 0, bottom: 0 }
+
+/**
+ * Module-level illumination record.
+ *
+ * Written and read every frame, so it must not be an object literal in the loop.
+ * One record is enough even if two sandboxes are mounted: each computes and
+ * consumes it inside its own frame, synchronously.
+ */
+const ILLUMINATION: VfxIllumination = { x: 0, y: 0, intensity: 0 }
+
+/** Cool white-blue light the spark clouds cast on the scene. */
+const VFX_LIGHT_RGB: [number, number, number] = [150, 235, 255]
+
+/** Radii of the two illumination passes; see `drawSandbox`. */
+const AMBIENT_LIGHT_RADIUS = 280
+const BADGE_LIGHT_RADIUS = 130
+
+/** Scratch OBBs / hit for the contact test (allocated once, mutated per pair). */
+const VFX_OBB_A: Obb = { cx: 0, cy: 0, hw: 0, hh: 0, angle: 0 }
+const VFX_OBB_B: Obb = { cx: 0, cy: 0, hw: 0, hh: 0, angle: 0 }
+const VFX_HIT: ObbHit = { hit: false, nx: 0, ny: 0, depth: 0 }
+/** Scratch colour tuple for the break flash, so it is never an array literal. */
+const SNAP_FLASH_RGB: [number, number, number] = [0, 0, 0]
+const SNAP_CORE_STYLE = 'rgba(244, 252, 255, 0.92)'
+
+/* ── Fibre-optic pulse tuning ────────────────────────────────────────────── */
+/** Seconds for one photon to travel the whole cord. */
+const PULSE_CYCLE = 2.8
+/** Half-width of the travelling light band, as a fraction of the cord. */
+const PULSE_BAND = 0.16
+/** Constant style strings: assigning these per segment allocates nothing. */
+const PULSE_GLOW_STYLE = '#22d3ee'
+const PULSE_CORE_STYLE = '#e8feff'
+
+/**
+ * Resolve each lanyard's accent to channel numbers ONCE.
+ *
+ * `l.accent` is a CSS string, but `drawRadialFlash` and the engine's colour field
+ * need `[r, g, b]`. Parsing the hex on every break would be waste, so the table is
+ * built at module load and indexed by lanyard position.
+ */
+const ACCENT_RGB: [number, number, number][] = LANYARD_SPECS.map((spec) =>
+  hexToRgb(spec.accent),
+)
+
+/** `#rrggbb` → `[r, g, b]`. Module-load only. */
+function hexToRgb(hex: string): [number, number, number] {
+  const value = Number.parseInt(hex.slice(1), 16)
+  return [(value >> 16) & 0xff, (value >> 8) & 0xff, value & 0xff]
+}
+
+/**
+ * One live break effect.
+ *
+ * The polylines are generated once when the rope snaps — `fractalLightning`
+ * allocates a fresh array — and only re-stroked while the arc decays. Rebuilding
+ * the bolt every frame would put an allocation burst inside the render loop for
+ * the 250 ms the arc is alive; a cached zig-zag with a flickering alpha reads just
+ * as electrical, and the flash is what the eye actually tracks.
+ */
+interface SnapArc {
+  active: boolean
+  /** Break node, in sandbox pixels. */
+  x: number
+  y: number
+  /** Seconds since the break; the arc and flash use its first 0.25 s. */
+  age: number
+  /** Seconds of after-dribble, which outlives the arc itself. */
+  strayAge: number
+  /** Fractional spark owed by the dribble, drained one whole spark at a time. */
+  spawnAccumulator: number
+  /** Accent channels of the lanyard that broke. */
+  r: number
+  g: number
+  b: number
+  /** Cached fractal bolt plus two branches. */
+  bolt: number[]
+  branchA: number[]
+  branchB: number[]
+  /** `rgba(...)` string built once at break time, not per frame. */
+  glowStyle: string
+}
+
+/**
+ * Per-instance state for the vfx layer.
+ *
+ * Off module scope (except `ILLUMINATION`, which the brief pins there) so two
+ * mounted sandboxes can never draw each other's sparks. Created once per effect.
+ */
+interface LanyardVfx {
+  engine: VfxParticleEngine
+  snaps: SnapArc[]
+  snapCursor: number
+  /**
+   * Tag velocities as of the END of the previous substep.
+   *
+   * That is the pre-impact state for the next substep: by the time a contact is
+   * visible in the post-step pose, the solver has already reversed the relative
+   * velocity, so the impulse has to be measured against these instead.
+   */
+  prevVx: number[]
+  prevVy: number[]
+  /** Broken flag as of the previous substep, so the break edge is detectable. */
+  wasBroken: boolean[]
+  /** Per-pair and per-lanyard spark cooldowns, in seconds. */
+  pairCooldown: number[]
+  wallCooldown: number[]
+}
+
 export function VerletLanyard({ className }: { className?: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const simRef = useRef<LanyardSimulation | null>(null)
+  /** Live vfx bundle, so "Re-forge" can retire sparks along with the ropes. */
+  const vfxRef = useRef<LanyardVfx | null>(null)
 
   /** Elapsed simulation time, for the wind field. */
   const timeRef = useRef(0)
@@ -102,6 +332,13 @@ export function VerletLanyard({ className }: { className?: string }) {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
+    /* ── VFX state ──────────────────────────────────────────────────────── */
+    // One engine per mounted sandbox. The pool is a few hundred mutable slots;
+    // sharing it between instances would leak sparks across canvases, and
+    // recreating it on resize would allocate at the worst possible moment.
+    const vfx = createLanyardVfx(LANYARD_SPECS.length)
+    vfxRef.current = vfx
+
     /* ── Size management ────────────────────────────────────────────────── */
     let cssW = 0
     let cssH = 0
@@ -140,7 +377,16 @@ export function VerletLanyard({ className }: { className?: string }) {
       // so events aimed "at the badge" were landing outside it. Exposing the
       // solver lets verification assert on real physics state instead of pixels.
       if (import.meta.env.DEV) {
-        ;(window as unknown as { __lanyardSim?: unknown }).__lanyardSim = simRef.current
+        // The vfx bundle rides along: sparks and break arcs live in a pool with
+        // no DOM trace, so a pixel assertion cannot tell a working burst from a
+        // decorative gradient. `engine.alive` and the illumination record are what
+        // prove the burst actually fired.
+        const debugWindow = window as unknown as {
+          __lanyardSim?: unknown
+          __lanyardVfx?: unknown
+        }
+        debugWindow.__lanyardSim = simRef.current
+        debugWindow.__lanyardVfx = vfx
       }
     }
 
@@ -198,6 +444,17 @@ export function VerletLanyard({ className }: { className?: string }) {
         timeRef.current += FIXED_DT
         sim.step(FIXED_DT, timeRef.current)
 
+        /*
+         * Turn this substep's solver output into sparks and break effects.
+         *
+         * Done HERE, inside the fixed-step loop, for two reasons: the solver
+         * only partly separates overlapping badges (72% of the penetration per
+         * step), so the remaining sliver is what the contact test can still see;
+         * and the solver reports impact SPEED for audio but never the contact
+         * POINT, which has to be read from the pose before the next step moves it.
+         */
+        captureImpactEvents(vfx, sim)
+
         const impacts = sim.impactCount
         for (let i = 0; i < impacts; i++) {
           const v = sim.getImpactSpeed(i)
@@ -220,11 +477,20 @@ export function VerletLanyard({ className }: { className?: string }) {
       // Any number of simultaneous snaps is one break event to the ear.
       if (snappedThisFrame > 0) soundEngine.playRopeSnap()
 
+      /*
+       * Advance the vfx layer by the PHYSICS time this frame consumed, not by
+       * the raw wall-clock delta: the accumulator usually carries a remainder,
+       * and ageing sparks by `dt` while the rope only advanced `steps * FIXED_DT`
+       * would make them drift ahead of the motion they belong to.
+       */
+      const vfxDt = steps > 0 ? steps * FIXED_DT : dt
+      updateVfx(vfx, vfxDt, cssW, cssH)
+
       // Draw once per animation frame, not once per physics step.
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.clearRect(0, 0, cssW, cssH)
 
-      drawSandbox(ctx, sim, cssW, cssH, renderTime(timeRef.current))
+      drawSandbox(ctx, sim, cssW, cssH, renderTime(timeRef.current), vfx)
 
       // Push HUD numbers ~6×/s rather than every frame: this is a readout, and
       // re-rendering React at 60fps for it would defeat the point of the canvas.
@@ -245,6 +511,11 @@ export function VerletLanyard({ className }: { className?: string }) {
     return () => {
       cancelAnimationFrame(rafId)
       resizeObserver.disconnect()
+      // Retire the pool with the canvas. A dead sandbox must not keep a few
+      // hundred live spark records (or an in-flight break arc) referenced by the
+      // bundle it just dropped.
+      resetLanyardVfx(vfx)
+      if (vfxRef.current === vfx) vfxRef.current = null
     }
   }, [inViewRef])
 
@@ -328,6 +599,10 @@ export function VerletLanyard({ className }: { className?: string }) {
     const sim = simRef.current
     if (!sim) return
     sim.reforge(LANYARD_SPECS)
+    // The sparks and arcs belonged to the ropes that just got replaced, so a
+    // re-forge clears them too; otherwise lightning would hang over fresh cord.
+    const vfx = vfxRef.current
+    if (vfx) resetLanyardVfx(vfx)
     timeRef.current = 0
     accRef.current = 0
     setBrokenCount(0)
@@ -439,6 +714,490 @@ export function VerletLanyard({ className }: { className?: string }) {
 }
 
 /* -------------------------------------------------------------------------- */
+/*  VFX layer                                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Build the per-mount vfx state.
+ *
+ * Called once from the effect, not per frame. The arrays are sized from the
+ * lanyard count so the contact and cooldown passes can index into them directly
+ * instead of using maps or lookups.
+ */
+function createLanyardVfx(lanyardCount: number): LanyardVfx {
+  const snaps: SnapArc[] = []
+  for (let i = 0; i < SNAP_ARC_POOL; i++) {
+    snaps.push({
+      active: false,
+      x: 0,
+      y: 0,
+      age: 0,
+      strayAge: 0,
+      spawnAccumulator: 0,
+      r: 255,
+      g: 255,
+      b: 255,
+      bolt: [],
+      branchA: [],
+      branchB: [],
+      glowStyle: 'rgba(255, 255, 255, 0.6)',
+    })
+  }
+
+  return {
+    engine: new VfxParticleEngine(VFX_PARTICLE_CAPACITY),
+    snaps,
+    snapCursor: 0,
+    prevVx: new Array<number>(lanyardCount).fill(0),
+    prevVy: new Array<number>(lanyardCount).fill(0),
+    wasBroken: new Array<boolean>(lanyardCount).fill(false),
+    pairCooldown: new Array<number>(lanyardCount * lanyardCount).fill(0),
+    wallCooldown: new Array<number>(lanyardCount).fill(0),
+  }
+}
+
+/**
+ * Retire every effect at once: unmount and "Re-forge Lanyards".
+ *
+ * `engine.clear()` deactivates every pooled particle without freeing the pool;
+ * the snap slots are marked inactive so the next break reuses them. The
+ * illumination record is zeroed too, or one frame of stale light would flash at
+ * the last collision's position after a reset.
+ */
+function resetLanyardVfx(vfx: LanyardVfx): void {
+  vfx.engine.clear()
+  for (let i = 0; i < vfx.snaps.length; i++) vfx.snaps[i].active = false
+  vfx.snapCursor = 0
+  for (let i = 0; i < vfx.prevVx.length; i++) {
+    vfx.prevVx[i] = 0
+    vfx.prevVy[i] = 0
+    vfx.wasBroken[i] = false
+    vfx.wallCooldown[i] = 0
+  }
+  for (let i = 0; i < vfx.pairCooldown.length; i++) vfx.pairCooldown[i] = 0
+  ILLUMINATION.intensity = 0
+}
+
+/**
+ * Scalar separating-axis test, used only to locate contacts for sparks.
+ *
+ * ── Why this duplicates `collideObb` ──────────────────────────────────────
+ * The solver's version is the source of truth and is used for the real
+ * resolution, but it allocates its eight axis components into an array on every
+ * call. That is fine for a handful of pairs inside a physics step, and not fine
+ * for the render loop's no-allocation rule, so this is the same four-axis test
+ * with the axes kept in locals and the result written into a caller-owned record.
+ * The maths is deliberately identical, normal direction included, so the two
+ * agree about which way the badges hit.
+ */
+function overlapObb(a: Obb, b: Obb, out: ObbHit): ObbHit {
+  const ca = Math.cos(a.angle)
+  const sa = Math.sin(a.angle)
+  const cb = Math.cos(b.angle)
+  const sb = Math.sin(b.angle)
+  const dx = b.cx - a.cx
+  const dy = b.cy - a.cy
+
+  let minOverlap = Number.POSITIVE_INFINITY
+  let nx = 0
+  let ny = 0
+
+  for (let k = 0; k < 4; k++) {
+    let ax: number
+    let ay: number
+    if (k === 0) {
+      ax = ca
+      ay = sa
+    } else if (k === 1) {
+      ax = -sa
+      ay = ca
+    } else if (k === 2) {
+      ax = cb
+      ay = sb
+    } else {
+      ax = -sb
+      ay = cb
+    }
+
+    // Projected radii of both boxes on this axis.
+    const ra = a.hw * Math.abs(ca * ax + sa * ay) + a.hh * Math.abs(-sa * ax + ca * ay)
+    const rb = b.hw * Math.abs(cb * ax + sb * ay) + b.hh * Math.abs(-sb * ax + cb * ay)
+    const dist = dx * ax + dy * ay
+    const overlap = ra + rb - Math.abs(dist)
+
+    if (overlap <= 0) {
+      out.hit = false
+      out.nx = 0
+      out.ny = 0
+      out.depth = 0
+      return out
+    }
+
+    if (overlap < minOverlap) {
+      minOverlap = overlap
+      // Orient the normal from A toward B.
+      const sign = dist < 0 ? -1 : 1
+      nx = ax * sign
+      ny = ay * sign
+    }
+  }
+
+  out.hit = true
+  out.nx = nx
+  out.ny = ny
+  out.depth = minOverlap
+  return out
+}
+
+/**
+ * Throw the collision burst.
+ *
+ * Count and speed are both driven by the measured impulse, across the 15–40
+ * spark band: a nudge pops, a slam explodes. The spark options themselves carry
+ * `stretch` (velocity-stretched streaks), `bounce`, `restitution` 0.6 and
+ * `splits` 1, so floor hits throw secondary sparks — that cascade is what sells
+ * the impact as energy rather than as decoration.
+ */
+function emitImpactSparks(
+  engine: VfxParticleEngine,
+  x: number,
+  y: number,
+  impulse: number,
+): void {
+  // Above the calibration ceiling the burst is already at maximum; clamping the
+  // speed too stops a very fast drag from throwing sparks clear off the canvas.
+  const speed = Math.min(impulse, IMPACT_MAX_SPEED * 1.15)
+  const t = Math.min(
+    1,
+    Math.max(0, (speed - IMPACT_MIN_SPEED) / (IMPACT_MAX_SPEED - IMPACT_MIN_SPEED)),
+  )
+
+  COLLISION_SPARK_OPTIONS.count = 15 + Math.round(t * 25)
+  COLLISION_SPARK_OPTIONS.x = x
+  COLLISION_SPARK_OPTIONS.y = y
+  COLLISION_SPARK_OPTIONS.speedMin = Math.max(40, speed * 0.18)
+  COLLISION_SPARK_OPTIONS.speedMax = speed * 0.9
+  engine.burst(COLLISION_SPARK_OPTIONS)
+}
+
+/**
+ * Set off the break effect at the node that failed.
+ *
+ * ── Finding the break node ────────────────────────────────────────────────
+ * `snap()` freezes the rope and reports how many ropes broke, but not where. The
+ * failing constraint is the most overstretched one — that is the definition of
+ * the break test — so it is recovered by walking the constraints of the frozen
+ * pose and taking the maximum strain.
+ *
+ * ── One allocation per break, not per frame ──────────────────────────────
+ * The bolt polylines are produced here, at the instant of the break, and cached
+ * in the arc record; the 250 ms of rendering only re-strokes them.
+ */
+function spawnSnapArc(vfx: LanyardVfx, sim: LanyardSimulation, index: number): void {
+  const l = sim.lanyards[index]
+  if (!l || l.points.length < 2) return
+
+  let worstStrain = -1
+  let breakX = l.points[0].x
+  let breakY = l.points[0].y
+  for (let i = 0; i < l.constraints.length; i++) {
+    const c = l.constraints[i]
+    const pa = l.points[c.a]
+    const pb = l.points[c.b]
+    if (!pa || !pb) continue
+    const dx = pb.x - pa.x
+    const dy = pb.y - pa.y
+    const strain = Math.abs(Math.hypot(dx, dy) - c.restLength) / c.restLength
+    if (strain > worstStrain) {
+      worstStrain = strain
+      breakX = (pa.x + pb.x) * 0.5
+      breakY = (pa.y + pb.y) * 0.5
+    }
+  }
+
+  // Round-robin slots: a full quartet of breaks fits exactly, and an old arc is
+  // the least valuable thing to keep if a fifth somehow arrives.
+  const arc = vfx.snaps[vfx.snapCursor]
+  vfx.snapCursor = (vfx.snapCursor + 1) % vfx.snaps.length
+
+  const rgb = ACCENT_RGB[index < ACCENT_RGB.length ? index : 0]
+  arc.active = true
+  arc.x = breakX
+  arc.y = breakY
+  arc.age = 0
+  arc.strayAge = 0
+  arc.spawnAccumulator = 0
+  arc.r = rgb[0]
+  arc.g = rgb[1]
+  arc.b = rgb[2]
+  // Built once: the fade applies a globalAlpha on top, so all the frames of the
+  // arc's life reuse one string.
+  arc.glowStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.6)`
+
+  // Main bolt, thrown from the break node in a direction biased upward (cord
+  // failure sprays along the tension, but upward reads better against the rail).
+  const boltAngle = -Math.PI * 0.5 + (Math.random() - 0.5) * 1.8
+  const boltLength = 46 + Math.random() * 52
+  arc.bolt = fractalLightning(
+    breakX,
+    breakY,
+    breakX + Math.cos(boltAngle) * boltLength,
+    breakY + Math.sin(boltAngle) * boltLength,
+    5,
+    0.52,
+    0.2,
+  )
+
+  // A fork starting partway along the main bolt: two identical bolts would look
+  // like a drawn glyph, a fork reads like an arc seeking a ground.
+  const forkVertex = Math.floor((arc.bolt.length / 2) * 0.45) * 2
+  const forkX = arc.bolt[forkVertex]
+  const forkY = arc.bolt[forkVertex + 1]
+  const forkAngle = boltAngle + (Math.random() - 0.5) * 2.2
+  const forkLength = 18 + Math.random() * 30
+  arc.branchA = fractalLightning(
+    forkX,
+    forkY,
+    forkX + Math.cos(forkAngle) * forkLength,
+    forkY + Math.sin(forkAngle) * forkLength,
+    4,
+    0.5,
+    0.22,
+  )
+
+  // Second, lower fork off the break node itself.
+  const branchAngle = boltAngle + (Math.random() - 0.5) * 2.8
+  const branchLength = 14 + Math.random() * 26
+  arc.branchB = fractalLightning(
+    breakX,
+    breakY,
+    breakX + Math.cos(branchAngle) * branchLength,
+    breakY + Math.sin(branchAngle) * branchLength,
+    4,
+    0.5,
+    0.24,
+  )
+
+  /* ── The hot pop: a short burst in the lanyard's own accent ───────────── */
+  SNAP_BURST_OPTIONS.color[0] = rgb[0]
+  SNAP_BURST_OPTIONS.color[1] = rgb[1]
+  SNAP_BURST_OPTIONS.color[2] = rgb[2]
+  SNAP_BURST_OPTIONS.x = breakX
+  SNAP_BURST_OPTIONS.y = breakY
+  vfx.engine.burst(SNAP_BURST_OPTIONS)
+}
+
+/**
+ * Age every break effect by `dt`, dribbling stray sparks as it goes.
+ *
+ * The arc itself is a 250 ms flash, but the cord keeps spitting for about a
+ * second: the emission rate decays linearly to zero over `SNAP_STRAY_LIFE`, so
+ * the last sparks are sparse rather than cutting off on a frame boundary.
+ */
+function advanceSnapArcs(vfx: LanyardVfx, dt: number): void {
+  if (!(dt > 0)) return
+
+  for (let i = 0; i < vfx.snaps.length; i++) {
+    const arc = vfx.snaps[i]
+    if (!arc.active) continue
+    arc.age += dt
+
+    if (arc.strayAge < SNAP_STRAY_LIFE) {
+      arc.strayAge += dt
+      const fade = 1 - arc.strayAge / SNAP_STRAY_LIFE
+      arc.spawnAccumulator += dt * 22 * fade
+
+      // Whole sparks only, and bounded per frame so a stalled/backgrounded tab
+      // cannot dump the whole second of dribble into one frame when it returns.
+      let guard = 4
+      while (arc.spawnAccumulator >= 1 && guard > 0) {
+        arc.spawnAccumulator -= 1
+        guard--
+        STRAY_SPARK_OPTIONS.x = arc.x
+        STRAY_SPARK_OPTIONS.y = arc.y
+        STRAY_SPARK_OPTIONS.color[0] = arc.r
+        STRAY_SPARK_OPTIONS.color[1] = arc.g
+        STRAY_SPARK_OPTIONS.color[2] = arc.b
+        vfx.engine.spawn(STRAY_SPARK_OPTIONS)
+      }
+    }
+
+    // The slot is free only when BOTH windows have expired: the flash uses the
+    // first 250 ms, the dribble the full second.
+    if (arc.age >= SNAP_ARC_LIFE && arc.strayAge >= SNAP_STRAY_LIFE) {
+      arc.active = false
+    }
+  }
+}
+
+/**
+ * Convert one solver step into spark/break events.
+ *
+ * Called immediately after `sim.step`, while the post-step pose still carries
+ * the contact geometry. Nothing here allocates: the OBBs, the hit record and the
+ * burst option objects are module scratch.
+ */
+function captureImpactEvents(vfx: LanyardVfx, sim: LanyardSimulation): void {
+  const lanyards = sim.lanyards
+  const count = Math.min(lanyards.length, vfx.prevVx.length)
+
+  // Cooldowns tick on the fixed step, so one contact cannot fire a burst on every
+  // substep while the boxes are still touching.
+  for (let i = 0; i < vfx.pairCooldown.length; i++) {
+    if (vfx.pairCooldown[i] > 0) vfx.pairCooldown[i] -= FIXED_DT
+  }
+  for (let i = 0; i < vfx.wallCooldown.length; i++) {
+    if (vfx.wallCooldown[i] > 0) vfx.wallCooldown[i] -= FIXED_DT
+  }
+
+  /* ── Badge vs badge ───────────────────────────────────────────────────── */
+  for (let i = 0; i < count; i++) {
+    const ta = lanyards[i].tag
+    for (let j = i + 1; j < count; j++) {
+      const tb = lanyards[j].tag
+
+      // Cheap distance reject first, exactly like the solver's broad phase.
+      const dx = tb.x - ta.x
+      const dy = tb.y - ta.y
+      const reach = (ta.width + ta.height + tb.width + tb.height) * 0.5
+      if (dx * dx + dy * dy > reach * reach) continue
+
+      const key = i * count + j
+      if (vfx.pairCooldown[key] > 0) continue
+
+      VFX_OBB_A.cx = ta.x
+      VFX_OBB_A.cy = ta.y
+      VFX_OBB_A.hw = ta.width * 0.5
+      VFX_OBB_A.hh = ta.height * 0.5
+      VFX_OBB_A.angle = ta.angle
+
+      VFX_OBB_B.cx = tb.x
+      VFX_OBB_B.cy = tb.y
+      VFX_OBB_B.hw = tb.width * 0.5
+      VFX_OBB_B.hh = tb.height * 0.5
+      VFX_OBB_B.angle = tb.angle
+
+      const hit = overlapObb(VFX_OBB_A, VFX_OBB_B, VFX_HIT)
+      // The solver corrects 72% of the penetration, so a real hit still leaves a
+      // visible sliver; sub-pixel overlap is just badges resting together.
+      if (!hit.hit || hit.depth < 0.5) continue
+
+      // Impulse from the velocities as they were BEFORE this substep. Post-step
+      // values are useless here: the solver has already reversed them.
+      const rvx = vfx.prevVx[j] - vfx.prevVx[i]
+      const rvy = vfx.prevVy[j] - vfx.prevVy[i]
+      const closing = -(rvx * hit.nx + rvy * hit.ny)
+      if (closing < IMPACT_MIN_SPEED) continue
+
+      vfx.pairCooldown[key] = IMPACT_SPARK_COOLDOWN
+      /*
+       * Contact point ≈ midpoint of the two centres.
+       *
+       * Both badges are the same 132×84 box, so for equal projected extents the
+       * midpoint lies on the contact plane; a difference in rotation moves it by
+       * a few pixels at most, which is invisible inside a 15–40 spark burst and
+       * far cheaper than computing the exact support point.
+       */
+      emitImpactSparks(
+        vfx.engine,
+        (ta.x + tb.x) * 0.5,
+        (ta.y + tb.y) * 0.5,
+        closing,
+      )
+    }
+  }
+
+  /* ── Badge vs sandbox wall ────────────────────────────────────────────── */
+  // Only detached badges are wall-contained by the solver, so these are the
+  // impacts that exist. The test is positional because `containFreeTag` clamps
+  // the badge exactly onto the barrier: "on the wall with a velocity that was
+  // reversed this step" is a collision.
+  for (let i = 0; i < count; i++) {
+    const l = lanyards[i]
+    if (!l.broken || vfx.wallCooldown[i] > 0) continue
+
+    const t = l.tag
+    const halfW = t.width * 0.5
+    const halfH = t.height * 0.5
+    // Same circumscribed-radius approximation `containFreeTag` uses, so the
+    // detected contact line is exactly where the solver stopped the badge.
+    const inner = Math.min(halfW, halfH) + Math.abs(Math.sin(t.angle)) * (halfW - halfH) * 0.5
+    const radius = Math.max(halfW, halfH) * 0.82 + inner * 0.18
+    const floor = sim.height - 6
+
+    const prevVx = vfx.prevVx[i]
+    const prevVy = vfx.prevVy[i]
+
+    let impulse = 0
+    let contactX = 0
+    let contactY = 0
+    if (t.y + radius >= floor - 0.75 && prevVy > IMPACT_MIN_SPEED) {
+      impulse = prevVy
+      contactX = t.x
+      contactY = floor
+    } else if (t.y - radius <= 0.75 && prevVy < -IMPACT_MIN_SPEED) {
+      impulse = -prevVy
+      contactX = t.x
+      contactY = 0
+    } else if (t.x - radius <= 0.75 && prevVx < -IMPACT_MIN_SPEED) {
+      impulse = -prevVx
+      contactX = 0
+      contactY = t.y
+    } else if (t.x + radius >= sim.width - 0.75 && prevVx > IMPACT_MIN_SPEED) {
+      impulse = prevVx
+      contactX = sim.width
+      contactY = t.y
+    }
+
+    if (impulse <= 0) continue
+    vfx.wallCooldown[i] = WALL_SPARK_COOLDOWN
+    emitImpactSparks(vfx.engine, contactX, contactY, impulse)
+  }
+
+  /* ── Remember this step's outgoing state for the next one ─────────────── */
+  for (let i = 0; i < count; i++) {
+    const l = lanyards[i]
+    // Falling edge of the broken flag: the rope failed THIS step, so the break
+    // effect belongs at the pose we are looking at right now.
+    if (!vfx.wasBroken[i] && l.broken) spawnSnapArc(vfx, sim, i)
+    vfx.prevVx[i] = l.tag.vx
+    vfx.prevVy[i] = l.tag.vy
+    vfx.wasBroken[i] = l.broken
+  }
+}
+
+/**
+ * Advance the whole vfx layer by one rendered frame.
+ *
+ * Ordering is deliberate: strays from a fresh break are spawned first so they are
+ * integrated on the same frame they appear; then the pool is stepped against the
+ * same floor the solver uses; then the cloud's energy centroid is measured for
+ * the illumination pass.
+ *
+ * The engine has no clock of its own — every call here is driven by the sandbox's
+ * single rAF loop.
+ */
+function updateVfx(
+  vfx: LanyardVfx,
+  dt: number,
+  width: number,
+  height: number,
+): void {
+  advanceSnapArcs(vfx, dt)
+
+  VFX_BOUNDS.left = 0
+  VFX_BOUNDS.right = width
+  // Match `containFreeTag`'s floor (6 px above the canvas edge) so a spark that
+  // bounces and a badge that lands agree about where the ground is.
+  VFX_BOUNDS.bottom = height - 6
+  vfx.engine.step(dt, VFX_BOUNDS)
+
+  // Particle-driven light. The engine fills the module record in place; this is
+  // the read side of `drawIllumination` in `drawSandbox`.
+  vfx.engine.computeIllumination(ILLUMINATION)
+}
+
+/* -------------------------------------------------------------------------- */
 /*  Rendering                                                                 */
 /* -------------------------------------------------------------------------- */
 
@@ -461,8 +1220,18 @@ function renderTime(fallback: number): number {
 /**
  * Draw the whole sandbox. Called once per animation frame.
  *
- * Split into passes so overlapping objects layer correctly: ropes first (behind
- * everything), then tags back-to-front, then the strain glow on top.
+ * Split into passes so overlapping objects layer correctly: particle-driven light
+ * first, then ropes (behind everything), then tags back-to-front, then the break
+ * flash and finally the sparks.
+ *
+ * ── Why the light has two passes ─────────────────────────────────────────
+ * The ambient pass is drawn UNDER all content, before even the anchor rail. The
+ * canvas is transparent, so its additive glow also lands on the CSS tech grid
+ * behind the canvas — which is how the backdrop visibly brightens near a spark
+ * cloud. An opaque badge, however, cannot be lit by a pass drawn beneath it, so a
+ * second, tighter and weaker pass sits on top of the tags to light their faces.
+ * That split (broad light below, local response above) is the same trick a
+ * compositor uses: the light is a source, the badge is a surface that catches it.
  */
 function drawSandbox(
   ctx: CanvasRenderingContext2D,
@@ -470,8 +1239,13 @@ function drawSandbox(
   width: number,
   height: number,
   time: number,
+  vfx: LanyardVfx,
 ): void {
   void height
+
+  /* ── Particle-driven light, pass 1: under everything ─────────────────── */
+  drawIllumination(ctx, ILLUMINATION, AMBIENT_LIGHT_RADIUS, VFX_LIGHT_RGB, 0.34)
+
   // Anchor rail: a thin line the lanyards hang from.
   ctx.strokeStyle = 'rgba(42, 51, 72, 0.85)'
   ctx.lineWidth = 1
@@ -495,6 +1269,92 @@ function drawSandbox(
     ctx.fillStyle = l.broken ? 'rgba(74, 86, 112, 0.7)' : l.accent
     ctx.fill()
   }
+
+  /* ── Particle-driven light, pass 2: the badges' response ─────────────── */
+  // Deliberately weaker than pass 1 and half the radius: it is the hot spot on
+  // the metal, not the ambient pool. Without it the badges stay flat plates while
+  // the grid around them glows, which reads as a decal rather than as lighting.
+  drawIllumination(ctx, ILLUMINATION, BADGE_LIGHT_RADIUS, VFX_LIGHT_RGB, 0.16)
+
+  // Break arc + flash above the cord and badge it tore from, but below the
+  // particles so the lingering sparks stay the sharpest thing on screen.
+  drawSnapArcs(ctx, vfx)
+
+  // Sparks last: additive, velocity-stretched streaks.
+  vfx.engine.draw(ctx)
+}
+
+/**
+ * Draw the live break effects: radial flash, fractal arc, fading forks.
+ *
+ * Everything is additive, because a tearing cord is a light source, not a line.
+ * The bolt is a cached polyline (generated once in `spawnSnapArc`); the visible
+ * "electricity" comes from two layers over it — a deterministic high-frequency
+ * alpha tremble plus a white core — rather than from new geometry per frame.
+ */
+function drawSnapArcs(ctx: CanvasRenderingContext2D, vfx: LanyardVfx): void {
+  let hasActive = false
+  for (let i = 0; i < vfx.snaps.length; i++) {
+    if (vfx.snaps[i].active) {
+      hasActive = true
+      break
+    }
+  }
+  if (!hasActive) return
+
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+
+  for (let i = 0; i < vfx.snaps.length; i++) {
+    const arc = vfx.snaps[i]
+    if (!arc.active) continue
+
+    // The arc and flash share one 250 ms window; the dribble outlives them.
+    const life = Math.min(1, arc.age / SNAP_ARC_LIFE)
+    if (life < 1) {
+      const fade = 1 - life
+      // Radial flash decays on the same schedule as the bolt: a bright pop whose
+      // radius also shrinks, so it reads as a flash rather than a fading lamp.
+      SNAP_FLASH_RGB[0] = arc.r
+      SNAP_FLASH_RGB[1] = arc.g
+      SNAP_FLASH_RGB[2] = arc.b
+      drawRadialFlash(
+        ctx,
+        arc.x,
+        arc.y,
+        24 + 52 * fade,
+        fade * fade * 0.85,
+        SNAP_FLASH_RGB,
+      )
+
+      // Deterministic tremble: 96 rad/s is far above the 60 Hz sampling rate, so
+      // it aliases into an electrical shimmer instead of a smooth pulse.
+      const flicker = 0.62 + 0.38 * Math.abs(Math.sin(arc.age * 96))
+
+      // Wide coloured halo.
+      ctx.globalAlpha = fade * 0.5 * flicker
+      ctx.strokeStyle = arc.glowStyle
+      ctx.lineWidth = 5.5
+      strokePolyline(ctx, arc.bolt)
+
+      // White core: the arc itself, thin enough to read as a bright line.
+      ctx.globalAlpha = fade * flicker
+      ctx.strokeStyle = SNAP_CORE_STYLE
+      ctx.lineWidth = 1.4
+      strokePolyline(ctx, arc.bolt)
+
+      // Forks: dimmer, so the eye follows the main discharge.
+      ctx.globalAlpha = fade * 0.45 * flicker
+      ctx.strokeStyle = arc.glowStyle
+      ctx.lineWidth = 2.2
+      strokePolyline(ctx, arc.branchA)
+      strokePolyline(ctx, arc.branchB)
+    }
+  }
+
+  ctx.restore()
 }
 
 /**
@@ -502,12 +1362,15 @@ function drawSandbox(
  * specular highlight and a red overload warning.
  *
  * ── Rendering order (bottom to top) ───────────────────────────────────────
+ *  0. fibre bloom       — very wide cyan haze, the "light in the fibre" layer
  *  1. outer glow        — accent halo, widens with strain
  *  2. shadow pass       — a dark, slightly offset copy so the cord lifts off the
  *                         backdrop
  *  3. fabric body       — the strap itself, with a cross-section gradient
  *  4. weave texture     — diagonal hatching sampled along the fitted curve
  *  5. specular edge     — a thin bright line offset toward the light
+ *  6. photon pulses     — a travelling cyan band of lit segments
+ *  7. clasp             — metal clip at the badge junction
  *
  * ── The stress state ──────────────────────────────────────────────────────
  * `stress` is a 0..1 ramp that only starts above ~55% of the break threshold.
@@ -577,6 +1440,28 @@ function drawRope(
     cb = 36 + (hotB - 36) * t
   }
   const cordColor = `rgb(${Math.round(cr)}, ${Math.round(cg)}, ${Math.round(cb)})`
+
+  /* ── 0. Fibre-optic bloom ────────────────────────────────────────────── */
+  /*
+   * The wide, diffuse layer. Two halos stacked (this 18 px cyan one and the
+   * accent glow below at 7 px) read as light bleeding OUT of the cord; a single
+   * stroke with one `shadowBlur` looks like exactly what it is, because the blur
+   * is centred on the same line as the stroke. The shadow here doubles the
+   * softness without a second geometry pass.
+   */
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.globalAlpha = alpha * (0.045 + stress * 0.05)
+  ctx.strokeStyle = '#22d3ee'
+  ctx.lineWidth = 18 + stress * 8
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  ctx.shadowColor = '#22d3ee'
+  ctx.shadowBlur = 22
+  ctx.beginPath()
+  traceBezierPath(ctx, segments)
+  ctx.stroke()
+  ctx.restore()
 
   /* ── 1. Outer glow ───────────────────────────────────────────────────── */
   ctx.save()
@@ -688,8 +1573,120 @@ function drawRope(
   ctx.stroke()
   ctx.restore()
 
-  /* ── 6. Metal clasp where the cord meets the badge ───────────────────── */
+  /* ── 6. Photon pulses ────────────────────────────────────────────────── */
+  // The light travelling inside the fibre. Drawn after the fabric and specular
+  // so it sits ON the cord, before the clasp so the metal still reads as the top
+  // object. The jitter offsets are forwarded so the band rides the same shivering
+  // polyline the fabric does — otherwise it would slide over a still strap.
+  drawFibrePulses(ctx, l, time, alpha, jx, jy)
+
+  /* ── 7. Metal clasp where the cord meets the badge ───────────────────── */
   drawClasp(ctx, l, stress, alpha)
+}
+
+/**
+ * Fibre-optic photon pulses: a travelling band of lit segments on the cord.
+ *
+ * ── Why it is not a new animation loop ───────────────────────────────────
+ * The band position is derived from the `time` clock the renderer already
+ * receives. There is no accumulator, no timer and no rAF of its own: if the
+ * sandbox is scrolled off screen the loop sleeps, and when it wakes the pulse is
+ * simply further along its cycle. That keeps the one-animation-loop rule intact.
+ *
+ * ── Why it walks `l.points` and not the Bezier ───────────────────────────
+ * The fitted spline in `drawRope` is a rendering convenience; the solver's point
+ * array is the physical cord. Walking the points guarantees the light rides the
+ * real path (and the brief asks for exactly that), segment by segment, so the
+ * band's length is in cord length rather than in curve-parameter space.
+ *
+ * ── Allocation ───────────────────────────────────────────────────────────
+ * Intensity is applied through `globalAlpha` — a number write — rather than a
+ * fresh `rgba(...)` string per segment. The two style strings are module
+ * constants, so a frame allocates nothing for the pulses.
+ */
+function drawFibrePulses(
+  ctx: CanvasRenderingContext2D,
+  l: LanyardState,
+  time: number,
+  alpha: number,
+  jitterX: number,
+  jitterY: number,
+): void {
+  // A broken cord has no light left in it; its rope is only fading out.
+  if (l.broken || alpha <= 0.01) return
+  const points = l.points
+  const n = points.length
+  if (n < 2) return
+
+  /*
+   * Two heads per cycle, the second half a lap behind and dimmer. One lone pulse
+   * reads as a loading bar; the echo makes the cord look like it is carrying
+   * traffic in both directions.
+   *
+   * `windPhase` is already a per-lanyard arbitrary offset, so reusing it keeps
+   * the four cords from flashing in lockstep without introducing Math.random at
+   * mount (which would make the effect differ between two otherwise identical
+   * reloads).
+   */
+  let headA = (time / PULSE_CYCLE + l.windPhase * 0.159) % 1
+  if (headA < 0) headA += 1
+  const headB = headA > 0.52 ? headA - 0.52 : headA + 0.48
+
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+
+  for (let i = 0; i < n - 1; i++) {
+    const a = points[i]
+    const b = points[i + 1]
+    if (!a || !b) continue
+
+    // `along` is the segment midpoint as a fraction of the cord, so the band has
+    // the same width in every segment regardless of how stretched it is.
+    const along = (i + 0.5) / (n - 1)
+
+    // Circular distance: a pulse reaching the clasp wraps back to the anchor.
+    let distA = Math.abs(along - headA)
+    if (distA > 0.5) distA = 1 - distA
+    let distB = Math.abs(along - headB)
+    if (distB > 0.5) distB = 1 - distB
+
+    let intensity = 1 - distA / PULSE_BAND
+    if (intensity < 0) intensity = 0
+    intensity *= intensity
+
+    let echo = 1 - distB / PULSE_BAND
+    if (echo < 0) echo = 0
+    echo *= echo * 0.42
+    if (echo > intensity) intensity = echo
+    if (intensity < 0.015) continue
+
+    const x1 = a.x + jitterX
+    const y1 = a.y + jitterY
+    const x2 = b.x + jitterX
+    const y2 = b.y + jitterY
+
+    // Soft cyan bloom around the lit segment.
+    ctx.globalAlpha = alpha * intensity * 0.34
+    ctx.strokeStyle = PULSE_GLOW_STYLE
+    ctx.lineWidth = 7
+    ctx.beginPath()
+    ctx.moveTo(x1, y1)
+    ctx.lineTo(x2, y2)
+    ctx.stroke()
+
+    // Hot white core: the photon itself.
+    ctx.globalAlpha = alpha * intensity * 0.95
+    ctx.strokeStyle = PULSE_CORE_STYLE
+    ctx.lineWidth = 1.9
+    ctx.beginPath()
+    ctx.moveTo(x1, y1)
+    ctx.lineTo(x2, y2)
+    ctx.stroke()
+  }
+
+  ctx.restore()
 }
 
 /**

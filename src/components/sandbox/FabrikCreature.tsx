@@ -13,6 +13,14 @@ import {
   type IKJoint,
   type Vec2,
 } from '@/utils/fabrik'
+import {
+  drawHexRipple,
+  drawRadialFlash,
+  VfxParticleEngine,
+  type VfxBounds,
+  type VfxBurstOptions,
+  type VfxSpawnOptions,
+} from '@/utils/vfxParticleEngine'
 
 /**
  * FabrikCreature — FABRIK inverse kinematics and procedural animation.
@@ -69,7 +77,37 @@ const RECOIL_IMPULSE = 210
 
 /** Laser pulse. */
 const LASER_DURATION = 0.34
-const LASER_RANGE = 1400
+
+/**
+ * Scorch lifetime, in seconds — the brief's 3 s.
+ *
+ * A scorch marks the surface the beam terminated against, so it has to outlive
+ * the 0.34 s pulse by an order of magnitude: long enough to read as "the last
+ * shot did that", short enough that the canvas cannot fill with marks.
+ */
+const SCORCH_LIFE = 3
+/**
+ * Preallocated scorch slots.
+ *
+ * Clicking is unbounded — a visitor can fire dozens of times inside one 3 s
+ * window — so the marks live in a ring buffer: the cursor wraps and the oldest
+ * slot is overwritten. `push`/`splice` here would allocate on every shot and let
+ * the array grow without bound.
+ */
+const SCORCH_POOL = 16
+/** Radius of the white-hot core, in px. The cooling passes scale off this. */
+const SCORCH_RADIUS = 13
+
+/** Beam-turbulence particles emitted per fixed step while the pulse is live. */
+const BEAM_TURBULENCE_PER_STEP = 2
+/** Beam-turbulence particles in the initial burst along the path, at fire time. */
+const BEAM_TURBULENCE_BURST = 14
+/** Molten sparks emitted per fixed step at the impact point while live. */
+const IMPACT_SPARKS_PER_STEP = 2
+/** Size of the initial molten burst at the impact point. */
+const IMPACT_SPARK_BURST = 18
+/** Segments in each ion-braid filament; 8 reads as a discharge, not a sine wave. */
+const ION_BRAID_SEGMENTS = 8
 
 /* -------------------------------------------------------------------------- */
 /*  Creature tuning                                                          */
@@ -107,6 +145,23 @@ const GROUP_LOCK_TIME = 0.07
 const RIPPLE_DURATION = 0.55
 /** Pool size. Two groups landing in quick succession must not evict each other. */
 const RIPPLE_POOL = 10
+
+/**
+ * Holographic footfall: the pooled hex ripples and the motes they throw.
+ *
+ * The gait already spawns one ground ellipse per touchdown; this layers the
+ * projected hologram on top. TWO records are taken per foot — the second starts
+ * `HEX_RIPPLE_PHASE` of a cycle behind — which is what produces the brief's
+ * double expanding hex ring instead of a single outline that happens to have six
+ * sides. 12 slots covers both diagonal pairs landing within one ripple lifetime
+ * plus the tail of the previous landing.
+ */
+const HEX_RIPPLE_DURATION = 0.72
+const HEX_RIPPLE_POOL = 12
+/** Phase delay on the trailing ring, as a fraction of one ripple life. */
+const HEX_RIPPLE_PHASE = 0.4
+/** Upward-drifting motes thrown from a locking mechanical foot. */
+const FOOT_MOTE_COUNT = 7
 /**
  * Knee limit, and it is a GEOMETRIC constraint, not a taste setting.
  *
@@ -147,6 +202,154 @@ const ARRIVE_DEAD_ZONE = 16
 const EDGE_MARGIN = 70
 
 /* -------------------------------------------------------------------------- */
+/*  Shared VFX tuning                                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Particle pool size, per rig.
+ *
+ * Worst case on the arm is two overlapping pulses (0.34 s apart, ~0.7 s spark
+ * tails): 18 + 14 initial slots plus ~20 fixed steps × 4 continuous slots
+ * ≈ 115 per pulse, ~230 live. 640 leaves headroom for the bounce splits — every
+ * bouncing spark may throw two children — without ever recycling a slot that is
+ * still visibly burning. The creature's motes never need more than ~30, but one
+ * shared constant keeps the two rigs' budgets comparable.
+ */
+const VFX_PARTICLE_CAPACITY = 640
+
+/**
+ * Holographic ring palette, inner ring first.
+ *
+ * Cyan / violet / teal are already the sandbox's accent trio (the arm tint and
+ * the creature tint are drawn from it), so the holo layer glows in the same
+ * light as the machine instead of introducing a fourth hue.
+ */
+const HOLO_RING_COLORS: string[] = [
+  'rgba(103, 232, 249, 0.9)',
+  'rgba(167, 139, 250, 0.8)',
+  'rgba(94, 234, 212, 0.7)',
+]
+/** Concentric rings per IK node: the brief's "2–3". */
+const HOLO_RING_COUNT = 3
+/** A single bright bead travelling the outer ring makes the spin unmistakable. */
+const HOLO_ORBIT_COLOR = 'rgba(224, 255, 255, 0.95)'
+
+/** Energy-fluid stripe and packet colours, inside the bone shells. */
+const FLUID_STRIPE_COLOR = 'rgba(103, 232, 249, 0.9)'
+const FLUID_PACKET_COLOR = 'rgba(224, 255, 255, 1)'
+/**
+ * Dash pattern for the pumped stripe. Module-level because `setLineDash` copies
+ * the array it is given; allocating `[6, 10]` per bone per frame would put a
+ * garbage object inside the render loop for a purely decorative effect.
+ */
+const FLUID_DASH: number[] = [6, 10]
+
+/** Cooling-scorch palette: white-hot → orange → deep red, over a char disc. */
+const SCORCH_WHITE_COLOR = 'rgba(255, 246, 232, 1)'
+const SCORCH_ORANGE_COLOR = 'rgba(255, 138, 58, 1)'
+const SCORCH_RED_COLOR = 'rgba(190, 42, 18, 1)'
+const SCORCH_CHAR_COLOR = 'rgba(16, 9, 7, 1)'
+
+/** Hex-ripple tint, matching the ground ellipse ripples already in use. */
+const HEX_RIPPLE_COLOR: [number, number, number] = [103, 232, 249]
+
+/**
+ * Reused particle descriptors.
+ *
+ * ── Why module scope ───────────────────────────────────────────────────────
+ * `VfxParticleEngine.spawn` copies its options into a recycled pool slot, so the
+ * descriptor is pure input scaffolding. A continuous emitter — the laser, every
+ * fixed step — would otherwise allocate a fresh options literal 60 times a
+ * second. Hoisting the descriptor means the emitter only mutates its dynamic
+ * fields (x / y / angle) on an object that already exists. Each emitter owns its
+ * own descriptor so a field set by one can never leak into another.
+ */
+const IMPACT_BURST_OPTS: VfxBurstOptions = {
+  count: IMPACT_SPARK_BURST,
+  x: 0,
+  y: 0,
+  speedMin: 60,
+  speedMax: 340,
+  angle: -Math.PI / 2,
+  spread: 1.6,
+  lifeMin: 0.28,
+  lifeMax: 0.8,
+  sizeMin: 0.8,
+  sizeMax: 2.2,
+  color: [255, 196, 120],
+  gravity: 620,
+  drag: 0.5,
+  restitution: 0.45,
+  bounce: true,
+  stretch: 0.022,
+  splits: 1,
+}
+
+const IMPACT_SPARK_OPTS: VfxSpawnOptions = {
+  x: 0,
+  y: 0,
+  speedMin: 30,
+  speedMax: 170,
+  angle: -Math.PI / 2,
+  spread: 1.5,
+  lifeMin: 0.22,
+  lifeMax: 0.65,
+  sizeMin: 0.7,
+  sizeMax: 1.7,
+  color: [255, 148, 60],
+  gravity: 700,
+  drag: 0.55,
+  restitution: 0.4,
+  bounce: true,
+  stretch: 0.02,
+  splits: 1,
+}
+
+const BEAM_TURBULENCE_OPTS: VfxSpawnOptions = {
+  x: 0,
+  y: 0,
+  speedMin: 24,
+  speedMax: 110,
+  angle: 0,
+  spread: 0.5,
+  lifeMin: 0.18,
+  lifeMax: 0.5,
+  sizeMin: 0.6,
+  sizeMax: 1.5,
+  color: [103, 232, 249],
+  // Negative gravity: ionised gas is buoyant, so the turbulence peels UP off the
+  // beam instead of falling like the molten metal at the impact point.
+  gravity: -70,
+  drag: 0.9,
+  restitution: 0,
+  bounce: false,
+  stretch: 0.015,
+  splits: 0,
+}
+
+const FOOT_MOTE_OPTS: VfxSpawnOptions = {
+  x: 0,
+  y: 0,
+  speedMin: 18,
+  speedMax: 64,
+  angle: -Math.PI / 2,
+  spread: 0.95,
+  lifeMin: 0.5,
+  lifeMax: 1.15,
+  sizeMin: 0.7,
+  sizeMax: 1.6,
+  color: [167, 139, 250],
+  // The brief's negative gravity: motes drift up off the projected floor like
+  // dust kicked loose by the foot, rather than settling back down.
+  gravity: -60,
+  drag: 0.75,
+  restitution: 0,
+  bounce: false,
+  stretch: 0.02,
+  splits: 0,
+}
+
+/* -------------------------------------------------------------------------- */
 /*  Rig types                                                                */
 /* -------------------------------------------------------------------------- */
 
@@ -172,6 +375,31 @@ interface ArmRig {
   /** Base mount position. */
   baseX: number
   baseY: number
+  /**
+   * Seconds elapsed in this rig, advanced by `stepArm`.
+   *
+   * Every holographic layer reads THIS rather than React state or
+   * `performance.now()`: React state to animate a decoration would re-render the
+   * whole component 60 times a second, and a wall clock would teleport every
+   * rotation forward by however long the sandbox spent off screen (the loop is
+   * IntersectionObserver-gated). A rig-relative clock resumes exactly where the
+   * sandbox stopped.
+   */
+  clock: number
+  /** Shared particle pool: ionised beam turbulence and molten impact sparks. */
+  engine: VfxParticleEngine
+  /** Reused `step` bounds for the pool; no per-step allocation. */
+  bounds: VfxBounds
+  /** Fixed ring-buffer of cooling scorch marks. */
+  scorches: Scorch[]
+  /** Ring cursor: index of the next scorch slot to overwrite. */
+  scorchCursor: number
+  /** Canvas-space point where the current beam terminates. */
+  impactX: number
+  impactY: number
+  /** Canvas size, used to clip a fresh beam against the viewport. */
+  viewW: number
+  viewH: number
 }
 
 interface LegRig {
@@ -220,6 +448,40 @@ interface Ripple {
 }
 
 /**
+ * One cooling scorch mark left where the laser beam terminated.
+ *
+ * Pooled for the same reason as `Ripple`: firing is unbounded and the fade-out
+ * is three seconds, so the pool is fixed and overwritten in a ring. `seed` is
+ * captured once at spawn so each mark's heat-shimmer has its own phase instead
+ * of every scorch on screen flickering in lockstep.
+ */
+interface Scorch {
+  x: number
+  y: number
+  /** Seconds since the beam landed. */
+  age: number
+  /** 0..1 random, fixed at spawn; drives the per-mark shimmer phase. */
+  seed: number
+  alive: boolean
+}
+
+/**
+ * One expanding hexagonal holographic ripple under a locking foot.
+ *
+ * Two records are taken per touchdown, with `t` starting at `0` and
+ * `-HEX_RIPPLE_PHASE`. The negative start IS the phase delay: cheaper and more
+ * precise than giving every record its own countdown timer, and it means the
+ * draw code stays a pure function of `t`.
+ */
+interface HexRipple {
+  x: number
+  y: number
+  /** Progress 0 → 1 over `HEX_RIPPLE_DURATION`; negative = waiting for its phase. */
+  t: number
+  alive: boolean
+}
+
+/**
  * Gait controller state.
  *
  * The two diagonal groups are exclusive: only one may be in its swing phase at a
@@ -259,6 +521,16 @@ interface CreatureRig {
   gait: GaitState
   /** Pooled landing ripples. */
   ripples: Ripple[]
+  /** Seconds elapsed in this rig, for the time-driven holographic layers. */
+  clock: number
+  /** Shared particle pool for the footfall motes. */
+  engine: VfxParticleEngine
+  /** Reused `step` bounds for the pool; no per-step allocation. */
+  bounds: VfxBounds
+  /** Fixed ring-buffer of double hex footfall ripples. */
+  hexRipples: HexRipple[]
+  /** Ring cursor for `hexRipples`. */
+  hexCursor: number
 }
 
 /* -------------------------------------------------------------------------- */
@@ -274,6 +546,13 @@ function createArm(width: number, height: number): ArmRig {
   const joints: IKJoint[] = []
   for (let i = 0; i <= ARM_BONES.length; i++) {
     joints.push({ x: baseX, y: baseY - (total * i) / ARM_BONES.length })
+  }
+
+  // Pre-allocated scorch slots; the ring cursor wraps, so firing forever cannot
+  // grow this array. Inactive slots start aged out.
+  const scorches: Scorch[] = []
+  for (let i = 0; i < SCORCH_POOL; i++) {
+    scorches.push({ x: 0, y: 0, age: SCORCH_LIFE, seed: 0, alive: false })
   }
 
   return {
@@ -293,6 +572,17 @@ function createArm(width: number, height: number): ArmRig {
     shots: 0,
     baseX,
     baseY,
+    clock: 0,
+    engine: new VfxParticleEngine(VFX_PARTICLE_CAPACITY),
+    bounds: { left: 0, right: width, bottom: height },
+    scorches,
+    scorchCursor: 0,
+    // Before the first shot there is no beam; the tip's rest position is the
+    // least surprising placeholder. Nothing reads it while `laserT === 1`.
+    impactX: baseX,
+    impactY: baseY - total * 0.9,
+    viewW: width,
+    viewH: height,
   }
 }
 
@@ -355,10 +645,15 @@ function createCreature(width: number, height: number): CreatureRig {
     }
   })
 
-  // Pre-allocated ripple pool; nothing here allocates at run time.
+  // Pre-allocated ripple pools; nothing here allocates at run time.
   const ripples: Ripple[] = []
   for (let i = 0; i < RIPPLE_POOL; i++) {
     ripples.push({ x: 0, y: 0, t: 1, alive: false })
+  }
+
+  const hexRipples: HexRipple[] = []
+  for (let i = 0; i < HEX_RIPPLE_POOL; i++) {
+    hexRipples.push({ x: 0, y: 0, t: 1, alive: false })
   }
 
   return {
@@ -375,7 +670,140 @@ function createCreature(width: number, height: number): CreatureRig {
     // controller is free to launch whichever group lags first.
     gait: { activeGroup: -1, lockTimer: 0, groupLanded: true, lastGroup: -1 },
     ripples,
+    clock: 0,
+    engine: new VfxParticleEngine(VFX_PARTICLE_CAPACITY),
+    bounds: { left: 0, right: width, bottom: height },
+    hexRipples,
+    hexCursor: 0,
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  VFX emission                                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Distance along a unit ray to the first viewport edge.
+ *
+ * The sandbox has no collision geometry beyond its own viewport, so that
+ * rectangle IS the surface the laser burns: the bottom edge doubles as the floor
+ * and the side edges as walls. Clipping the ray to it — instead of drawing the
+ * beam off screen to a fixed nominal range — is what gives the pulse a real
+ * termination point, and therefore an impact to spark and to scorch.
+ *
+ * Only positive crossings count: the muzzle can be pushed past a canvas edge by
+ * the IK constraint, and an origin outside the rectangle must travel back INTO
+ * the view before its exit crossing becomes the impact.
+ */
+function rayRectDistance(
+  x: number,
+  y: number,
+  dx: number,
+  dy: number,
+  width: number,
+  height: number,
+): number {
+  let nearest = Infinity
+
+  if (dx > 1e-6) {
+    const t = (width - x) / dx
+    if (t > 0 && t < nearest) nearest = t
+  } else if (dx < -1e-6) {
+    const t = -x / dx
+    if (t > 0 && t < nearest) nearest = t
+  }
+  if (dy > 1e-6) {
+    const t = (height - y) / dy
+    if (t > 0 && t < nearest) nearest = t
+  } else if (dy < -1e-6) {
+    const t = -y / dy
+    if (t > 0 && t < nearest) nearest = t
+  }
+
+  // No edge ahead only if the origin is already outside the canvas AND aiming
+  // away from it. Fall back to the origin, which yields a degenerate but
+  // invisible beam rather than an `Infinity` impact coordinate.
+  return nearest === Infinity ? 0 : nearest
+}
+
+/** Burn a scorch into the next slot of the ring buffer. */
+function spawnScorch(rig: ArmRig, x: number, y: number): void {
+  const slot = rig.scorches[rig.scorchCursor]
+  rig.scorchCursor = rig.scorchCursor + 1 >= rig.scorches.length ? 0 : rig.scorchCursor + 1
+  slot.x = x
+  slot.y = y
+  slot.age = 0
+  slot.seed = Math.random()
+  slot.alive = true
+}
+
+/** One-time molten burst exactly where the beam lands. */
+function emitImpactBurst(rig: ArmRig): void {
+  IMPACT_BURST_OPTS.x = rig.impactX
+  IMPACT_BURST_OPTS.y = rig.impactY
+  rig.engine.burst(IMPACT_BURST_OPTS)
+}
+
+/**
+ * Continuous molten spray at the impact point.
+ *
+ * Called every fixed step while the beam is live. The engine randomises speed
+ * and life inside the descriptor's ranges, so consecutive sparks do not read as
+ * duplicates despite sharing one hoisted descriptor.
+ */
+function emitImpactSparks(rig: ArmRig, count: number): void {
+  for (let i = 0; i < count; i++) {
+    IMPACT_SPARK_OPTS.x = rig.impactX
+    IMPACT_SPARK_OPTS.y = rig.impactY
+    rig.engine.spawn(IMPACT_SPARK_OPTS)
+  }
+}
+
+/**
+ * Turbulence peeling off the beam along its length.
+ *
+ * Each particle is placed on the muzzle→impact chord and emitted with a
+ * perpendicular velocity: `angle` is the beam heading rotated 90°, and the
+ * descriptor's 0.5 rad spread gives the "slight" perpendicular jitter the brief
+ * asks for. Emitting everything at the muzzle would leave the rest of the beam
+ * empty, so each gets its own point ON the path.
+ */
+function emitBeamTurbulence(rig: ArmRig, count: number): void {
+  const dx = rig.impactX - rig.laserX
+  const dy = rig.impactY - rig.laserY
+  const beamAngle = Math.atan2(dy, dx)
+
+  for (let i = 0; i < count; i++) {
+    const along = 0.06 + Math.random() * 0.9
+    BEAM_TURBULENCE_OPTS.x = rig.laserX + dx * along
+    BEAM_TURBULENCE_OPTS.y = rig.laserY + dy * along
+    // Alternating sides keeps the two strands from reading as one flat spray.
+    BEAM_TURBULENCE_OPTS.angle = beamAngle + (i % 2 === 0 ? Math.PI / 2 : -Math.PI / 2)
+    rig.engine.spawn(BEAM_TURBULENCE_OPTS)
+  }
+}
+
+/** Holographic motes thrown upward by one locking foot. */
+function emitFootMotes(rig: CreatureRig, x: number, y: number): void {
+  for (let i = 0; i < FOOT_MOTE_COUNT; i++) {
+    FOOT_MOTE_OPTS.x = x + (Math.random() - 0.5) * 16
+    FOOT_MOTE_OPTS.y = y - Math.random() * 5
+    rig.engine.spawn(FOOT_MOTE_OPTS)
+  }
+}
+
+/**
+ * Take the next hex-ripple slot, starting it `phase` of a life behind.
+ *
+ * A phase of 0 is the leading ring; `HEX_RIPPLE_PHASE` is the trailing one.
+ */
+function spawnHexRipple(rig: CreatureRig, x: number, y: number, phase: number): void {
+  const slot = rig.hexRipples[rig.hexCursor]
+  rig.hexCursor = rig.hexCursor + 1 >= rig.hexRipples.length ? 0 : rig.hexCursor + 1
+  slot.x = x
+  slot.y = y
+  slot.t = -phase
+  slot.alive = true
 }
 
 /* -------------------------------------------------------------------------- */
@@ -439,8 +867,37 @@ function stepArm(rig: ArmRig, dt: number, pointerX: number, pointerY: number): v
   rig.recoil.x += rig.recoilVel.x * dt
   rig.recoil.y += rig.recoilVel.y * dt
 
-  /* ── Laser countdown ─────────────────────────────────────────────────── */
-  if (rig.laserT < 1) rig.laserT = Math.min(1, rig.laserT + dt / LASER_DURATION)
+  /* ── Holographic clock ───────────────────────────────────────────────── */
+  rig.clock += dt
+
+  /* ── Ionised laser: continuous emission while the beam is live ─────────
+   * The pulse is only 0.34 s, but turbulence and impact sparks are re-emitted
+   * every fixed step, so the beam reads as a sustained ionised stream instead
+   * of two discrete pops at the moment of firing.
+   */
+  if (rig.laserT < 1) {
+    emitBeamTurbulence(rig, BEAM_TURBULENCE_PER_STEP)
+    emitImpactSparks(rig, IMPACT_SPARKS_PER_STEP)
+    /* ── Laser countdown ───────────────────────────────────────────────── */
+    rig.laserT = Math.min(1, rig.laserT + dt / LASER_DURATION)
+  }
+
+  /* ── Scorch cooling ────────────────────────────────────────────────────
+   * Ages advance here rather than in the draw call: rendering stays a pure
+   * function of rig state, and `drawArm` also runs on frames where the
+   * fixed-step accumulator advanced zero steps.
+   */
+  for (let i = 0; i < rig.scorches.length; i++) {
+    const scorch = rig.scorches[i]
+    if (!scorch.alive) continue
+    scorch.age += dt
+    if (scorch.age >= SCORCH_LIFE) scorch.alive = false
+  }
+
+  /* ── Integrate the shared particle pool ────────────────────────────────
+   * Bounds are the rig's reused record, so stepping the pool allocates nothing.
+   */
+  rig.engine.step(dt, rig.bounds)
 }
 
 /** Fire the claw: start the pulse, kick the arm back, and synthesise the shot. */
@@ -452,6 +909,31 @@ function fireArm(rig: ArmRig): void {
   rig.laserY = tip.y
   rig.laserDirX = rig.aimX
   rig.laserDirY = rig.aimY
+
+  /* ── Resolve the impact before the pulse starts ────────────────────────
+   * The beam direction is frozen for the whole pulse, so the point it lands on
+   * can be resolved once here. Everything downstream — the impact flare, the
+   * continuous sparks and the scorch mark — then shares one stable coordinate
+   * instead of re-deriving (and visibly drifting) it every frame.
+   */
+  const beamDistance = rayRectDistance(
+    rig.laserX,
+    rig.laserY,
+    rig.laserDirX,
+    rig.laserDirY,
+    rig.viewW,
+    rig.viewH,
+  )
+  rig.impactX = Math.min(rig.viewW, Math.max(0, rig.laserX + rig.laserDirX * beamDistance))
+  rig.impactY = Math.min(rig.viewH, Math.max(0, rig.laserY + rig.laserDirY * beamDistance))
+
+  // The hit itself: a scorch that cools over the next three seconds, the initial
+  // molten burst, and the along-beam turbulence burst. Continuous emission is
+  // handled by `stepArm` for as long as the pulse is alive.
+  spawnScorch(rig, rig.impactX, rig.impactY)
+  emitImpactBurst(rig)
+  emitBeamTurbulence(rig, BEAM_TURBULENCE_BURST)
+
   // Recoil along the aim: the arm is shoved back the way it fired.
   rig.recoilVel.x -= rig.aimX * RECOIL_IMPULSE
   rig.recoilVel.y -= rig.aimY * RECOIL_IMPULSE
@@ -475,6 +957,9 @@ function stepCreature(
   width: number,
   height: number,
 ): void {
+  /* Elapsed clock for the time-driven holographic layers (never React state). */
+  rig.clock += dt
+
   /* ── Steering behaviour: seek with arrival ───────────────────────────── */
   const toX = pointerX - rig.head.x
   const toY = pointerY - rig.head.y
@@ -826,6 +1311,20 @@ function stepCreature(
     const foot = leg.joints[2]
     if (!foot) continue
 
+    /**
+     * Holographic footfall.
+     *
+     * Spawned from the SAME clamped foot position as the ground ellipse below,
+     * so the foot pad, the shockwave, the two hex ripples and the motes all
+     * agree about where the mechanical foot locked. Two hex records at opposite
+     * phases give the double expanding ring; the motes are ordinary pool
+     * particles with negative gravity, so they drift up and fade instead of
+     * settling back onto the floor.
+     */
+    spawnHexRipple(rig, foot.x, foot.y, 0)
+    spawnHexRipple(rig, foot.x, foot.y, HEX_RIPPLE_PHASE)
+    emitFootMotes(rig, foot.x, foot.y)
+
     // Reuse a dead slot; if every slot is live, recycle the oldest so a burst of
     // landings degrades gracefully instead of dropping the newest ripple.
     let slot: Ripple | null = null
@@ -854,6 +1353,20 @@ function stepCreature(
       r.alive = false
     }
   }
+
+  /* Advance the hex footfall ripples. A record whose `t` is still negative is
+   * waiting out its phase delay and simply counts up toward zero. */
+  for (const r of rig.hexRipples) {
+    if (!r.alive) continue
+    r.t += dt / HEX_RIPPLE_DURATION
+    if (r.t >= 1) {
+      r.t = 1
+      r.alive = false
+    }
+  }
+
+  /* Integrate the mote pool (emitted by the landing loop above). */
+  rig.engine.step(dt, rig.bounds)
 
   /* ── Centre of mass and its velocity, for the debug vector ───────────── */
   let sumX = 0
@@ -1351,6 +1864,298 @@ function drawJoint(ctx: CanvasRenderingContext2D, x: number, y: number, r: numbe
 }
 
 /* -------------------------------------------------------------------------- */
+/*  Holographic + impact VFX rendering                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Multi-layer rotating holographic rings around one IK joint.
+ *
+ * ── Why arcs instead of full circles ─────────────────────────────────────
+ * Three concentric FULL circles read as a static reticle: perfect rotational
+ * symmetry gives the eye nothing to track. Rotating ARCS at different radii,
+ * speeds and phases read as a scan instead, because motion is the only cue the
+ * eye can use. The gaps also keep the steel hub visible underneath.
+ *
+ * ── Why `time` is passed in ─────────────────────────────────────────────
+ * It is the rig's accumulated clock, not `performance.now()`. The loop is gated
+ * by an IntersectionObserver, so a wall clock would teleport every ring forward
+ * by however long the sandbox spent off screen; the rig clock resumes exactly
+ * where it stopped.
+ */
+function drawHoloJoint(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radius: number,
+  time: number,
+  seed: number,
+): void {
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+
+  for (let ring = 0; ring < HOLO_RING_COUNT; ring++) {
+    const ringRadius = radius * (1.35 + ring * 0.34)
+    // Ring 1 counter-rotates. Co-rotating rings keep their gaps fixed relative
+    // to each other, which collapses the illusion into a set of spokes.
+    const direction = ring === 1 ? -1 : 1
+    const spin = time * (0.9 + ring * 0.62) * direction + seed + ring * 2.1
+    // Slow breathing keeps the layer reading as projected light, not paint.
+    const breathe = 0.65 + 0.35 * Math.sin(time * 2.3 + ring * 1.7 + seed)
+    const sweep = 2.5 - ring * 0.4
+
+    ctx.globalAlpha = (0.5 - ring * 0.1) * breathe
+    ctx.strokeStyle = HOLO_RING_COLORS[ring]
+    ctx.lineWidth = ring === 0 ? 1.3 : 1
+
+    ctx.beginPath()
+    ctx.arc(x, y, ringRadius, spin, spin + sweep)
+    ctx.stroke()
+
+    // A second, shorter arc half a turn away: together the pair reads as a
+    // rotating instrument bezel rather than a dashed circle.
+    ctx.beginPath()
+    ctx.arc(x, y, ringRadius, spin + Math.PI, spin + Math.PI + sweep * 0.55)
+    ctx.stroke()
+  }
+
+  // One bright bead orbiting the outermost ring is the cheapest possible cue
+  // that the whole assembly is rotating rather than merely breathing.
+  const orbit = time * 1.9 + seed
+  ctx.globalAlpha = 0.8
+  ctx.fillStyle = HOLO_ORBIT_COLOR
+  ctx.beginPath()
+  ctx.arc(
+    x + Math.cos(orbit) * radius * 2.03,
+    y + Math.sin(orbit) * radius * 2.03,
+    Math.max(0.9, radius * 0.11),
+    0,
+    Math.PI * 2,
+  )
+  ctx.fill()
+
+  ctx.restore()
+}
+
+/**
+ * Flowing "energy fluid" inside one bone segment.
+ *
+ * Two layers, both driven by the elapsed clock:
+ *   · a dashed stripe whose dash offset advances, so the fluid appears to be
+ *     pumped from the parent joint toward the child joint;
+ *   · two travelling bright packets with a sine-shaped alpha envelope, which
+ *     give the flow a direction even on a bone only a few frames long on screen.
+ * The stripe is narrower than the metal shell, so it reads as fluid running
+ * INSIDE the bone rather than as another outline drawn on top of it.
+ */
+function drawEnergyFluid(
+  ctx: CanvasRenderingContext2D,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  width: number,
+  time: number,
+  seed: number,
+): void {
+  const dx = x1 - x0
+  const dy = y1 - y0
+  if (dx === 0 && dy === 0) return
+
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.lineCap = 'round'
+
+  /* Pumped stripe. The negative offset makes the dashes travel parent → child. */
+  ctx.globalAlpha = 0.55
+  ctx.strokeStyle = FLUID_STRIPE_COLOR
+  ctx.lineWidth = Math.max(1, width * 0.22)
+  ctx.setLineDash(FLUID_DASH)
+  ctx.lineDashOffset = -((time * 42 + seed * 160) % 18)
+  ctx.beginPath()
+  ctx.moveTo(x0, y0)
+  ctx.lineTo(x1, y1)
+  ctx.stroke()
+
+  /* Travelling packets: born at one joint, absorbed at the other. */
+  for (let packet = 0; packet < 2; packet++) {
+    const phase = (time * 0.55 + seed + packet * 0.5) % 1
+    const envelope = Math.sin(phase * Math.PI)
+    if (envelope <= 0.02) continue
+    const px = x0 + dx * phase
+    const py = y0 + dy * phase
+    ctx.globalAlpha = envelope * 0.75
+    ctx.fillStyle = FLUID_PACKET_COLOR
+    ctx.beginPath()
+    ctx.arc(px, py, Math.max(1.1, width * 0.34), 0, Math.PI * 2)
+    ctx.fill()
+    ctx.globalAlpha = envelope * 0.3
+    ctx.beginPath()
+    ctx.arc(px, py, Math.max(2.2, width * 0.7), 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  ctx.restore()
+}
+
+/**
+ * Draw the cooling impact scorches.
+ *
+ * ── The cooling curve ─────────────────────────────────────────────────────
+ * A fresh hit is white-hot; it then decays through orange to a dull red before
+ * fading out, and the passes below are exactly those three temperatures rather
+ * than one additive blob with changing alpha. The char disc is drawn in
+ * `source-over` so it reads as something burned INTO the surface, while the heat
+ * passes above it are `lighter`.
+ *
+ * Flicker comes from `rig.clock` and the mark's own seed — NOT `Math.random()` —
+ * so a mark glows like cooling metal instead of strobing with noise, and the
+ * draw stays a pure function of state.
+ */
+function drawScorches(ctx: CanvasRenderingContext2D, rig: ArmRig): void {
+  for (let i = 0; i < rig.scorches.length; i++) {
+    const scorch = rig.scorches[i]
+    if (!scorch.alive) continue
+
+    const t = Math.min(1, scorch.age / SCORCH_LIFE)
+    const heat = 1 - t
+
+    ctx.save()
+    ctx.translate(scorch.x, scorch.y)
+
+    // Charred disc: the burn the glow sits on top of. Drawn first, in
+    // source-over, and it lingers after the glow has cooled.
+    if (t > 0.12) {
+      ctx.globalAlpha = Math.min(1, (t - 0.12) * 4) * heat * 0.55
+      ctx.fillStyle = SCORCH_CHAR_COLOR
+      ctx.beginPath()
+      ctx.arc(0, 0, SCORCH_RADIUS * (0.55 + t * 0.5), 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    if (heat > 0.02) {
+      ctx.globalCompositeOperation = 'lighter'
+      const flicker = 0.82 + 0.18 * Math.sin(rig.clock * 19 + scorch.seed * 12)
+
+      // White-hot core: only while the mark is genuinely hot.
+      const white = Math.max(0, heat - 0.55) / 0.45
+      if (white > 0) {
+        ctx.globalAlpha = white * 0.9 * flicker
+        ctx.fillStyle = SCORCH_WHITE_COLOR
+        ctx.beginPath()
+        ctx.arc(0, 0, SCORCH_RADIUS * (0.22 + t * 0.16), 0, Math.PI * 2)
+        ctx.fill()
+      }
+
+      // Orange body: the middle of the cool-down.
+      ctx.globalAlpha = heat * 0.45 * flicker
+      ctx.fillStyle = SCORCH_ORANGE_COLOR
+      ctx.beginPath()
+      ctx.arc(0, 0, SCORCH_RADIUS * (0.55 + t * 0.35), 0, Math.PI * 2)
+      ctx.fill()
+
+      // Deep-red halo; heat squared so the outer glow dies before the core.
+      ctx.globalAlpha = heat * heat * 0.3 * flicker
+      ctx.fillStyle = SCORCH_RED_COLOR
+      ctx.beginPath()
+      ctx.arc(0, 0, SCORCH_RADIUS * (1.05 + t * 0.7), 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    ctx.restore()
+  }
+}
+
+/**
+ * Draw the holographic footfall ripples.
+ *
+ * `drawHexRipple` already paints a hexagon plus a fainter inner copy, so what
+ * this loop adds is the TWO-phase choreography: two pooled records per landing,
+ * the trailing one starting `HEX_RIPPLE_PHASE` into the leading one's life. That
+ * stagger is what reads as a projected scan propagating outward, rather than as
+ * one outline that happens to have six sides.
+ *
+ * Like the ground ellipse below the creature, the hexagon is squashed on its
+ * vertical axis so it lies on the floor plane instead of floating in front of
+ * the body.
+ */
+function drawHexRipples(ctx: CanvasRenderingContext2D, rig: CreatureRig): void {
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+
+  for (let i = 0; i < rig.hexRipples.length; i++) {
+    const ripple = rig.hexRipples[i]
+    // A negative `t` is a record still waiting out its phase delay.
+    if (!ripple.alive || ripple.t <= 0 || ripple.t >= 1) continue
+
+    const t = ripple.t
+    // Cubic ease-out, matching the ground ellipse: a scan wave loses energy.
+    const ease = 1 - (1 - t) * (1 - t) * (1 - t)
+    const radius = 8 + ease * 44
+    // Alpha peaks early, then thins; squaring keeps the tail faint.
+    const alpha = (1 - t) * (1 - t) * 0.85
+    // Anchored to the rig clock, so both phases of one footfall keep turning in
+    // the same direction instead of snapping back every frame.
+    const rotation = rig.clock * 0.5 + t * 2.2
+
+    ctx.save()
+    ctx.translate(ripple.x, ripple.y)
+    ctx.scale(1, 0.62)
+    drawHexRipple(ctx, 0, 0, radius, alpha, HEX_RIPPLE_COLOR, rotation)
+    ctx.restore()
+  }
+
+  ctx.restore()
+}
+
+/**
+ * Two counter-wobbling discharge filaments braided around the beam core.
+ *
+ * Written as sine height fields rather than by calling `fractalLightning`: that
+ * helper returns a freshly allocated point array per call, and this runs every
+ * frame for the duration of the pulse. Two offset `sin` terms off the rig clock
+ * give the same visual instability with zero allocation.
+ */
+function drawIonBraid(
+  ctx: CanvasRenderingContext2D,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  time: number,
+  alpha: number,
+): void {
+  const dx = x1 - x0
+  const dy = y1 - y0
+  const len = Math.hypot(dx, dy) || 1
+  const nx = -dy / len
+  const ny = dx / len
+
+  ctx.lineWidth = 1.1
+  for (let strand = 0; strand < 2; strand++) {
+    const side = strand === 0 ? 1 : -1
+    ctx.strokeStyle = strand === 0 ? 'rgba(196, 181, 253, 0.55)' : 'rgba(165, 243, 252, 0.6)'
+    ctx.globalAlpha = alpha
+    ctx.beginPath()
+    for (let i = 0; i <= ION_BRAID_SEGMENTS; i++) {
+      const t = i / ION_BRAID_SEGMENTS
+      // Zero displacement at both ends pins the arc to the muzzle and to the
+      // impact, instead of letting it float off the beam.
+      const envelope = Math.sin(t * Math.PI)
+      const wobble =
+        (Math.sin(t * 11 + time * 52 + strand * 2.3) + 0.5 * Math.sin(t * 23 - time * 31)) *
+        envelope *
+        3.2 *
+        side
+      const px = x0 + dx * t + nx * wobble
+      const py = y0 + dy * t + ny * wobble
+      if (i === 0) ctx.moveTo(px, py)
+      else ctx.lineTo(px, py)
+    }
+    ctx.stroke()
+  }
+}
+
+/* -------------------------------------------------------------------------- */
 /*  Arm rendering                                                            */
 /* -------------------------------------------------------------------------- */
 
@@ -1358,6 +2163,9 @@ function drawArm(ctx: CanvasRenderingContext2D, rig: ArmRig, debug: boolean): vo
   const rx = rig.recoil.x
   const ry = rig.recoil.y
   const tint = '#22d3ee'
+
+  /* ── Cooling scorches, on the surface under everything else ──────────── */
+  drawScorches(ctx, rig)
 
   ctx.save()
   ctx.translate(rx, ry)
@@ -1404,13 +2212,26 @@ function drawArm(ctx: CanvasRenderingContext2D, rig: ArmRig, debug: boolean): vo
     const w0 = 13 - (i / (n - 1)) * 5
     const w1 = 13 - ((i + 1) / (n - 1)) * 5
     drawBoneMetal(ctx, a.x, a.y, b.x, b.y, w0, w1, tint)
+    // Energy fluid pumped through the bone shell. The seed staggers each
+    // segment's packet phase so the six bones do not pulse in lockstep.
+    drawEnergyFluid(ctx, a.x, a.y, b.x, b.y, (w0 + w1) * 0.5, rig.clock, i * 0.37)
   }
 
   /* ── Joints ──────────────────────────────────────────────────────────── */
   for (let i = 0; i < n - 1; i++) {
     const p = rig.joints[i]
-    drawJoint(ctx, p.x, p.y, i === 0 ? 11 : 8.5 - i * 0.5, tint)
+    const jointRadius = i === 0 ? 11 : 8.5 - i * 0.5
+    drawJoint(ctx, p.x, p.y, jointRadius, tint)
+    // Holographic scan rings around every solved pivot, spinning on the rig
+    // clock. The final chain node is drawn as the claw flange below, so its
+    // rings are added there instead.
+    drawHoloJoint(ctx, p.x, p.y, jointRadius, rig.clock, i * 0.63)
   }
+
+  // The tool flange is an IK joint too — tighter rings make the emitter read as
+  // a charged pivot rather than a plain block.
+  const flange = rig.joints[n - 1]
+  if (flange) drawHoloJoint(ctx, flange.x, flange.y, 5.2, rig.clock, n * 0.63)
 
   /* ── Claw ────────────────────────────────────────────────────────────── */
   const tip = rig.joints[n - 1]
@@ -1472,21 +2293,41 @@ function drawArm(ctx: CanvasRenderingContext2D, rig: ArmRig, debug: boolean): vo
     ctx.restore()
   }
 
-  /* ── Laser pulse ─────────────────────────────────────────────────────── */
+  /* ── Ionised laser pulse ─────────────────────────────────────────────── */
   if (rig.laserT < 1 && tip) {
     // Quadratic decay: bright flash, fast fade. Reads as a pulse, not a beam.
     const fade = (1 - rig.laserT) * (1 - rig.laserT)
-    const ex = rig.laserX + rig.laserDirX * LASER_RANGE
-    const ey = rig.laserY + rig.laserDirY * LASER_RANGE
+    /*
+     * The beam is pinned to the WORLD impact point (`stepArm`/`fireArm` own it)
+     * while the muzzle rides the recoil spring. Because this whole layer is
+     * drawn inside the recoil translate, the impact has to be transformed back
+     * out of that space — otherwise the flare, the sparks and the scorch mark
+     * would slide apart under recoil.
+     */
+    const ex = rig.impactX - rx
+    const ey = rig.impactY - ry
 
     ctx.save()
     ctx.lineCap = 'round'
     ctx.globalCompositeOperation = 'lighter'
 
-    // Wide soft glow.
-    ctx.globalAlpha = 0.16 * fade
+    /* ── b) Outer ionised glow ──────────────────────────────────────────
+     * Two wide, low-alpha passes instead of one: the violet pass is the
+     * ionised air around the beam, the cyan pass the charge sheath hugging it.
+     * Both are additive, so they BRIGHTEN the scene underneath rather than
+     * painting over it.
+     */
+    ctx.globalAlpha = 0.12 * fade
+    ctx.strokeStyle = '#7c3aed'
+    ctx.lineWidth = 30
+    ctx.beginPath()
+    ctx.moveTo(rig.laserX, rig.laserY)
+    ctx.lineTo(ex, ey)
+    ctx.stroke()
+
+    ctx.globalAlpha = 0.2 * fade
     ctx.strokeStyle = '#22d3ee'
-    ctx.lineWidth = 20
+    ctx.lineWidth = 15
     ctx.beginPath()
     ctx.moveTo(rig.laserX, rig.laserY)
     ctx.lineTo(ex, ey)
@@ -1501,30 +2342,46 @@ function drawArm(ctx: CanvasRenderingContext2D, rig: ArmRig, debug: boolean): vo
     ctx.lineTo(ex, ey)
     ctx.stroke()
 
-    // Hot core.
+    /* ── a) Pure-white core ─────────────────────────────────────────────
+     * The only pass that is not tinted: it is white at the centre of every
+     * colour the glow stacks, which is what sells a beam as "this hot".
+     */
     ctx.globalAlpha = 0.95 * fade
-    ctx.lineWidth = 2.2
+    ctx.lineWidth = 2.4
     ctx.strokeStyle = '#ffffff'
     ctx.beginPath()
     ctx.moveTo(rig.laserX, rig.laserY)
     ctx.lineTo(ex, ey)
     ctx.stroke()
 
-    // Muzzle flash.
-    const flash = ctx.createRadialGradient(rig.laserX, rig.laserY, 0, rig.laserX, rig.laserY, 46)
-    flash.addColorStop(0, `rgba(255, 255, 255, ${0.85 * fade})`)
-    flash.addColorStop(0.35, `rgba(34, 211, 238, ${0.5 * fade})`)
-    flash.addColorStop(1, 'rgba(34, 211, 238, 0)')
+    /* Discharge filaments braided around the core. */
+    drawIonBraid(ctx, rig.laserX, rig.laserY, ex, ey, rig.clock, fade)
+
+    // Muzzle flash. `drawRadialFlash` replaces the hand-rolled gradient this
+    // block used to allocate every frame.
     ctx.globalAlpha = 1
+    drawRadialFlash(ctx, rig.laserX, rig.laserY, 46, 0.9 * fade, [34, 211, 238])
+
+    /* ── c/d) Impact ────────────────────────────────────────────────────
+     * A hot flare plus a thin white contact disc pinned to the impact point.
+     * The continuous turbulence and molten sparks are emitted by `stepArm`
+     * from this same coordinate, so the flare, the sparks and the scorch all
+     * agree about where the beam is landing.
+     */
+    drawRadialFlash(ctx, ex, ey, 30 + 26 * fade, 0.95 * fade, [255, 224, 160])
+    ctx.globalAlpha = 0.8 * fade
+    ctx.fillStyle = '#ffffff'
     ctx.beginPath()
-    ctx.arc(rig.laserX, rig.laserY, 46, 0, Math.PI * 2)
-    ctx.fillStyle = flash
+    ctx.arc(ex, ey, 3.4 + 3 * fade, 0, Math.PI * 2)
     ctx.fill()
 
     ctx.restore()
   }
 
   ctx.restore()
+
+  /* ── Particle layer: beam turbulence + impact sparks, in world space ─── */
+  rig.engine.draw(ctx)
 
   /* ── Debug overlay ───────────────────────────────────────────────────── */
   if (debug) drawArmDebug(ctx, rig)
@@ -1597,10 +2454,16 @@ function drawCreature(
 ): void {
   const tint = '#a78bfa'
 
-  /* ── Landing ripples, on the ground under everything else ────────────── */
+  /* ── Landing effects, on the ground under everything else ────────────── */
   drawRipples(ctx, rig)
+  drawHexRipples(ctx, rig)
 
-  /* ── Legs first, so the body overlaps them ───────────────────────────── */
+  /* ── Legs first, so the body overlaps them ─────────────────────────────
+   * The holographic layers are applied to the FABRIK chains only — four legs
+   * with three IK nodes each. The spine is a follow-the-leader tendon, not an
+   * IK chain, so it keeps its existing articulated plating instead of faking
+   * pivots the solver never produces.
+   */
   for (const leg of rig.legs) {
     const hip = leg.joints[0]
     const knee = leg.joints[1]
@@ -1613,8 +2476,15 @@ function drawCreature(
     ctx.save()
     ctx.globalAlpha = shade
     drawBoneMetal(ctx, hip.x, hip.y, knee.x, knee.y, 6.5, 4.6, tint)
+    drawEnergyFluid(ctx, hip.x, hip.y, knee.x, knee.y, 5.4, rig.clock, leg.hipIndex * 0.31)
     drawBoneMetal(ctx, knee.x, knee.y, foot.x, foot.y, 4.6, 2.6, tint)
+    drawEnergyFluid(ctx, knee.x, knee.y, foot.x, foot.y, 3.6, rig.clock, leg.hipIndex * 0.31 + 0.5)
     drawJoint(ctx, knee.x, knee.y, 4.4, tint)
+    // Both solved pivots of this leg get the holographic scan rings. The seeds
+    // are derived from the hip index, so the four legs are phase-offset from one
+    // another instead of spinning in lockstep.
+    drawHoloJoint(ctx, hip.x, hip.y, 6.2, rig.clock, leg.hipIndex * 0.47)
+    drawHoloJoint(ctx, knee.x, knee.y, 4.4, rig.clock, leg.hipIndex * 0.47 + 1.7)
     ctx.restore()
 
     // Foot pad: a small wedge pointing outward.
@@ -1634,6 +2504,10 @@ function drawCreature(
     ctx.lineWidth = 1
     ctx.stroke()
     ctx.restore()
+
+    // The foot pad is a solved IK node too: a small ring reads as the projected
+    // sensor the hound plants its weight through.
+    drawHoloJoint(ctx, foot.x, foot.y, 3.4, rig.clock, leg.hipIndex * 0.47 + 3.2)
   }
 
   /* ── Spine: an offset polygon with varying thickness ─────────────────── */
@@ -1735,6 +2609,9 @@ function drawCreature(
     ctx.fill()
     ctx.restore()
   }
+
+  /* ── Particle layer: upward footfall motes, in world space ───────────── */
+  rig.engine.draw(ctx)
 
   if (debug) drawCreatureDebug(ctx, rig)
 }

@@ -13,6 +13,7 @@ import { preloadR3FAdvance, setCanvasActive } from '@/lib/frameBridge'
 import { supportsWebGL } from '@/lib/device'
 import { getTransient, useAppStore } from '@/store/useAppStore'
 import { CameraRig } from '@/components/canvas/CameraRig'
+import { AuroraCurtain } from '@/components/canvas/AuroraCurtain'
 import { FlowFieldParticles } from '@/components/canvas/FlowFieldParticles'
 import { CursorStardustTrail } from '@/components/canvas/CursorStardustTrail'
 import { VolumetricStageLights } from '@/components/canvas/VolumetricStageLights'
@@ -335,6 +336,18 @@ export function SceneCanvas() {
 
       <DprSync max={highQuality ? 2 : 1} />
       <CameraRig />
+
+      {/*
+       * Aurora backdrop. Mounted BEFORE the nebula and given a negative
+       * renderOrder: everything in this canvas is additive with depthWrite off,
+       * so draw order decides the layering, not the depth buffer. The shell is
+       * a 25-unit-radius arc centred behind the origin, which puts it ~36 units
+       * further back than the particles — far enough that it reads as sky
+       * rather than as a wall, and far enough that mouse parallax barely moves
+       * it while the nebula swings.
+       */}
+      <AuroraCurtain tier={tier} />
+
       <FlowFieldParticles tier={tier} count={particleCount} />
 
       {/*
