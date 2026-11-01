@@ -535,7 +535,16 @@ void main() {
   float n = vnoise(vNormalW * 1.5 + vec3(t, t * 0.6, -t * 0.4));
   n = n * 0.65 + vnoise(vNormalW * 2.9 - vec3(t * 0.7)) * 0.35;
 
-  vec3 col = mix(uDeep, uHot, fresnel);
+  /*
+   * Centre to limb, not limb to centre.
+   *
+   * The previous mix put the SATURATED cyan in the middle and the near-white at
+   * the grazing angle, which is what made it read as a hard cyan bulb with a
+   * bright ring. A volume of glowing gas is the other way round: dense and
+   * near-white in the middle, thinning out to a pale cyan where the path length
+   * through the medium gets short.
+   */
+  vec3 col = mix(uDeep, uHot, pow(1.0 - fresnel, 1.6));
   col *= mix(0.94, 1.0, n);
 
   gl_FragColor = vec4(col * uIntensity, 1.0);
@@ -654,9 +663,15 @@ function SpatialLayer({
       // Body and limb, in that order: `uDeep` is what the centre samples, `uHot`
       // what the Fresnel rim reaches. The old dark #123138 limb is what produced
       // the black ring around the sphere.
-      uDeep: { value: new THREE.Color('#5ce1e6') },
-      uHot: { value: new THREE.Color('#e0ffff') },
-      uIntensity: { value: 2.2 },
+      /*
+       * Low-saturation by construction: the most saturated stop is already mixed
+       * toward white, so nothing here can render as pure cyan. `uIntensity` came
+       * down from 2.2 -- at that level the sphere clipped to a flat, glaring disc
+       * with no visible falloff.
+       */
+      uDeep: { value: new THREE.Color('#f2feff') },
+      uHot: { value: new THREE.Color('#8fc9d4') },
+      uIntensity: { value: 1.15 },
     }),
     [],
   )
@@ -762,7 +777,7 @@ function SpatialLayer({
 
       // Drives overall plasma brightness; the shader owns the colour mix.
       // 6 s breathing cycle, +/-10%: no flicker, no pulse.
-      plasmaUniforms.uIntensity.value = 2.2 * (1 + 0.1 * Math.sin((t * Math.PI * 2) / 6))
+      plasmaUniforms.uIntensity.value = 1.15 * (1 + 0.1 * Math.sin((t * Math.PI * 2) / 6))
 
       /*
        * The dispersion shell is a ShaderMaterial, so the rig's `material.opacity`
@@ -875,9 +890,29 @@ function SpatialLayer({
          * over it. Bloom then lifts the hot noise cells and the limb.
          */}
         {stage >= 1 && (
-          <mesh ref={coreRef} material={plasmaMaterial}>
-            <sphereGeometry args={[CORE_INNER_RADIUS, 64, 48]} />
-          </mesh>
+          <>
+            {/*
+              * Volumetric halo. An opaque sphere always has a silhouette, however
+              * soft its shading; this additive shell is what lets the glow bleed
+              * past that silhouette and fade into the glass instead of ending on a
+              * circle. Low exponent on purpose -- a tight Fresnel would simply draw
+              * a second ring.
+              */}
+            <mesh renderOrder={1}>
+              <sphereGeometry args={[CORE_INNER_RADIUS * 1.55, 48, 32]} />
+              <shaderMaterial
+                transparent
+                depthWrite={false}
+                blending={THREE.AdditiveBlending}
+                vertexShader={RIM_VERTEX}
+                fragmentShader={CORE_HALO_FRAGMENT}
+              />
+            </mesh>
+
+            <mesh ref={coreRef} material={plasmaMaterial}>
+              <sphereGeometry args={[CORE_INNER_RADIUS, 64, 48]} />
+            </mesh>
+          </>
         )}
 
         {/*
@@ -1819,5 +1854,29 @@ const CONTACT_FRAGMENT = `
 
     vec3 col = mix(vec3(0.0, 0.012, 0.02), vec3(0.10, 0.30, 0.34), clamp(caught / 0.16, 0.0, 1.0));
     gl_FragColor = vec4(col, max(shade, caught));
+  }
+`
+
+/**
+ * Core halo.
+ *
+ * The whole job of this shader is to erase a hard edge: it takes the core
+ * sphere's silhouette and smears it outward as an additive falloff, so the glow
+ * dissolves into the surrounding glass rather than stopping on a circle. The
+ * exponent is low (1.6) for the same reason -- a high one would trace a bright
+ * ring instead of a gradient.
+ */
+const CORE_HALO_FRAGMENT = `
+  varying vec3 vRimN;
+  varying vec3 vRimV;
+
+  void main() {
+    float f = 1.0 - clamp(dot(normalize(vRimN), normalize(vRimV)), 0.0, 1.0);
+    f = pow(f, 1.6);
+
+    // Pale, low-saturation cyan so the halo never introduces saturated colour of
+    // its own; the core supplies the hue and this only supplies the falloff.
+    vec3 col = vec3(0.74, 0.92, 0.94);
+    gl_FragColor = vec4(col * f * 0.55, 1.0);
   }
 `
