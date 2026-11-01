@@ -1,11 +1,17 @@
-import { Suspense, useCallback, useEffect, useState } from 'react'
-import { Canvas, useThree } from '@react-three/fiber'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { PerformanceMonitor } from '@react-three/drei'
-import { Bloom, ChromaticAberration, EffectComposer, Vignette } from '@react-three/postprocessing'
-import { BlendFunction } from 'postprocessing'
+import {
+  Bloom,
+  ChromaticAberration,
+  EffectComposer,
+  Noise,
+  Vignette,
+} from '@react-three/postprocessing'
+import { BlendFunction, type ChromaticAberrationEffect } from 'postprocessing'
 import { preloadR3FAdvance, setCanvasActive } from '@/lib/frameBridge'
 import { supportsWebGL } from '@/lib/device'
-import { useAppStore } from '@/store/useAppStore'
+import { getTransient, useAppStore } from '@/store/useAppStore'
 import { CameraRig } from '@/components/canvas/CameraRig'
 import { FlowFieldParticles } from '@/components/canvas/FlowFieldParticles'
 import { CursorStardustTrail } from '@/components/canvas/CursorStardustTrail'
@@ -91,6 +97,92 @@ function DprSync({ max }: { max: number }) {
   }, [gl, setDpr, max])
 
   return null
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Motion-driven optical dispersion                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Ceiling on the fringe offset, in NDC. Well under a pixel at the canvas edge —
+ * past roughly this value it stops reading as a lens and starts reading as a
+ * rendering fault.
+ */
+const CA_MAX_OFFSET = 0.006
+
+/** Offset per unit of scroll velocity (progress/second). */
+const CA_SCROLL_GAIN = 0.0022
+
+/** Offset per unit of pointer speed (NDC/second). */
+const CA_MOUSE_GAIN = 0.0009
+
+/** Exponential approach rate for the smoothed offset, per second. */
+const CA_SMOOTHING = 7
+
+/**
+ * Optical dispersion that only exists while the page is in motion.
+ *
+ * A constant chromatic-aberration offset — the obvious implementation — makes
+ * every line of text permanently soft, which is the opposite of the "text stays
+ * absolutely crisp" requirement. So the resting offset is exactly zero and the
+ * fringe is driven by the two things that would actually flex a real lens: fast
+ * scrolling and a hard pointer sweep.
+ *
+ *   delta = min(0.006, k_scroll * |v_scroll| + k_mouse * |v_mouse|)
+ *
+ * Both signals come from the transient store, read once per frame — no React
+ * subscription, so this costs nothing when idle.
+ */
+function DynamicChromaticAberration() {
+  const effectRef = useRef<ChromaticAberrationEffect | null>(null)
+  const current = useRef(0)
+  const prevMouse = useRef({ x: 0, y: 0 })
+
+  useFrame((_, rawDelta) => {
+    const effect = effectRef.current
+    if (!effect) return
+
+    // Clamped so a long stall cannot turn one sample into a huge derivative.
+    const dt = Math.min(rawDelta, 1 / 20)
+    const transient = getTransient()
+
+    const mouseSpeed = Math.min(
+      6,
+      Math.hypot(
+        transient.mouse.x - prevMouse.current.x,
+        transient.mouse.y - prevMouse.current.y,
+      ) / Math.max(dt, 1 / 240),
+    )
+    prevMouse.current.x = transient.mouse.x
+    prevMouse.current.y = transient.mouse.y
+
+    const target = Math.min(
+      CA_MAX_OFFSET,
+      CA_SCROLL_GAIN * Math.abs(transient.scroll.velocity) + CA_MOUSE_GAIN * mouseSpeed,
+    )
+
+    // Exponential approach, so the fringe swells and recedes instead of snapping
+    // on and off at the threshold.
+    current.current += (target - current.current) * Math.min(1, dt * CA_SMOOTHING)
+
+    /*
+     * The horizontal component is deliberately smaller than the vertical one.
+     * Real dispersion is radial — fringing grows toward the edges of the frame —
+     * and a slight axis split approximates that falloff without paying for a
+     * per-pixel radial term in the shader.
+     */
+    effect.offset.set(current.current * 0.6, current.current)
+  })
+
+  return (
+    <ChromaticAberration
+      ref={effectRef}
+      offset={[0, 0]}
+      radialModulation={false}
+      modulationOffset={0}
+      blendFunction={BlendFunction.NORMAL}
+    />
+  )
 }
 
 export function SceneCanvas() {
@@ -264,25 +356,20 @@ export function SceneCanvas() {
           {highQuality ? (
             <>
               <Bloom
-                // Specified values.
-                luminanceThreshold={0.2}
+                /*
+                 * The threshold sits deliberately low: every glowing mote, comet
+                 * beam and wireframe edge in the scene is above it, so they all
+                 * feed the mipmap chain and bleed a soft multi-octave halo
+                 * instead of only the brightest cores doing so.
+                 */
+                luminanceThreshold={0.15}
                 intensity={1.2}
                 // Soften the knee so the bloom ramps in instead of clipping.
                 luminanceSmoothing={0.28}
                 mipmapBlur
                 radius={0.78}
               />
-              {/*
-               * Subtle lens fringing, and the effect the medium tier drops. Kept
-               * at a small offset: this is a deep-space backdrop, and a heavy
-               * aberration reads as a rendering fault rather than as a lens.
-               */}
-              <ChromaticAberration
-                offset={[0.0006, 0.0009]}
-                radialModulation={false}
-                modulationOffset={0}
-                blendFunction={BlendFunction.NORMAL}
-              />
+              <DynamicChromaticAberration />
             </>
           ) : (
             <></>
@@ -293,6 +380,13 @@ export function SceneCanvas() {
             darkness={0.78}
             blendFunction={BlendFunction.NORMAL}
           />
+          {/*
+           * Film grain. Kept at 0.025, which is enough to break the banding that
+           * large additive gradients show on 8-bit output, and low enough to be
+           * invisible on its own. OVERLAY rather than NORMAL so it modulates the
+           * existing image instead of veiling it.
+           */}
+          <Noise premultiply opacity={0.025} blendFunction={BlendFunction.OVERLAY} />
         </EffectComposer>
       </Suspense>
     </Canvas>
