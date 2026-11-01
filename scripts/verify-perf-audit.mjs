@@ -410,9 +410,24 @@ report.assertions = {
   sandboxRanWhileVisible: (num(awake.max) ?? 0) - (num(awake.min) ?? 0) > 0.001,
   sandboxFrozenWhileOffscreen: (num(asleep.max) ?? 1) - (num(asleep.min) ?? 0) === 0,
 
-  /* P4 —particles halve on the medium tier */
-  highParticles: high.counters?.particles === 8000,
-  mediumParticles: medium.counters?.particles === 4000,
+  /* P4 —both particle systems halve on the medium tier.
+   *
+   * Asserted per system AND as a total. The aggregate alone (8000 -> 4000) was
+   * what this check used to test, and it silently kept passing when a second
+   * producer was added: the sum doubled, the assertion went red for the right
+   * reason but pointed at the wrong thing. Checking `particleCounts` names the
+   * system that regressed; the total still catches arithmetic drift between
+   * them. Medium is nebula 4000 + trail 2000, so the halves are 8000/4000 and
+   * 4000/2000.
+   */
+  highParticles:
+    high.counters?.particleCounts?.nebula === 8000 &&
+    high.counters?.particleCounts?.trail === 4000 &&
+    high.counters?.particles === 12000,
+  mediumParticles:
+    medium.counters?.particleCounts?.nebula === 4000 &&
+    medium.counters?.particleCounts?.trail === 2000 &&
+    medium.counters?.particles === 6000,
 
   /* P5 —DPR pinned to exactly 1.0 on medium */
   mediumDprIsOne: num(medium.pixelRatio) === 1,
