@@ -580,11 +580,26 @@ void main() {
   }
   density /= float(STEPS);
 
-  // Fresnel limb, kept because the reference is brightest at the silhouette.
+  /*
+   * Fresnel limb.
+   *
+   * The exponent controls how WIDE the white edge is: 2.2 confined it to a couple
+   * of pixels at the very silhouette, which is why the sphere kept reading as a
+   * uniform milky mass instead of the reference's bright-rimmed volume. 1.6 spreads
+   * it inward so the edge actually carries light.
+   */
   float facing = clamp(dot(normalize(vNormalW), normalize(vViewDir)), 0.0, 1.0);
-  float limb = pow(1.0 - facing, 2.2);
+  float limb = pow(1.0 - facing, 1.6);
 
-  float milk = smoothstep(0.22, 0.95, density);
+  /*
+   * Density contrast.
+   *
+   * The marching window was 0.22..0.95, i.e. almost the whole measured range, so
+   * every fold mapped to nearly the same output value and the internal structure
+   * washed out. Narrowing to 0.35..0.85 spends the full 0..1 range on the middle of
+   * the distribution, which is where the wisps actually live.
+   */
+  float milk = smoothstep(0.35, 0.85, density);
   vec3 col = mix(uDeep, uHot, clamp(max(milk * 0.8, limb), 0.0, 1.0));
 
   // Carries the structure into the brightest areas, where the colour mix saturates.
