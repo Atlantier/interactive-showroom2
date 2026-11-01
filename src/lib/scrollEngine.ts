@@ -135,11 +135,24 @@ export function createScrollEngine(): () => void {
       transient.mouse.strength = mouseTarget
     }
 
-    // While releasing, walk the stored position back toward the centre with the
-    // same curve so no consumer sees a jump in x/y either.
-    if (transient.mouse.strength < 1) {
-      transient.mouse.x *= 1 - mouseEase
-      transient.mouse.y *= 1 - mouseEase
+    /*
+     * Advance the eased position toward its target.
+     *
+     * Small deltas are applied exactly, so ordinary tracking has zero lag. A
+     * large delta only happens on re-entry after the pointer left -- the stored
+     * position was eased back to the centre in the meantime -- and is eased
+     * instead, which is what removes the "teleport on enter" the brief reports.
+     */
+    const targetX = transient.mouse.active ? transient.mouse.tx : 0
+    const targetY = transient.mouse.active ? transient.mouse.ty : 0
+    const dx = targetX - transient.mouse.x
+    const dy = targetY - transient.mouse.y
+    if (transient.mouse.active && Math.abs(dx) < 0.35 && Math.abs(dy) < 0.35) {
+      transient.mouse.x = targetX
+      transient.mouse.y = targetY
+    } else {
+      transient.mouse.x += dx * mouseEase
+      transient.mouse.y += dy * mouseEase
     }
 
     // 4. Publish to the transient store + imperative DOM consumers.

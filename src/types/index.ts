@@ -28,6 +28,10 @@ export interface MouseState {
    * stored x/y are eased back toward centre alongside it.
    */
   strength: number
+  /** Raw pointer target. `x`/`y` ease toward these, so a re-entry after the
+   *  pointer left the window does not teleport the effects to the new spot. */
+  tx: number
+  ty: number
   x: number
   y: number
   px: number

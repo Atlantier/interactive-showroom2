@@ -149,14 +149,19 @@ const DEFAULT_SECTION = 'hero'
 export const transient: TransientState = {
   mouse: { x: 0, y: 0, px: 0, py: 0, active: false,
     // Eased by the scroll engine; 0 while no pointer is over the viewport.
-    strength: 0 },
+    strength: 0,
+    tx: 0,
+    ty: 0 },
   scroll: { progress: 0, velocity: 0 },
 }
 
 /** Write normalized mouse coordinates, both clamped to [-1, 1]. */
 export function writeNormalizedMouse(x: number, y: number): void {
-  transient.mouse.x = clamp(safeNumber(x), -1, 1)
-  transient.mouse.y = clamp(safeNumber(y), -1, 1)
+  // Written to the target only. The eased x/y are advanced by the scroll engine
+  // so that re-entering the window after the pointer left fades the influence
+  // in from where the last ease left it instead of snapping to the new position.
+  transient.mouse.tx = clamp(safeNumber(x), -1, 1)
+  transient.mouse.ty = clamp(safeNumber(y), -1, 1)
 }
 
 /** Write raw viewport pixel coordinates. */
