@@ -172,16 +172,16 @@ function InfrastructureLayer({ groupRef }: { groupRef: React.RefObject<THREE.Gro
     <group ref={groupRef}>
       <mesh geometry={solid}>
         <meshStandardMaterial
-          color="#06202a"
-          metalness={0.9}
-          roughness={0.28}
+          color="#04161d"
+          metalness={0.8}
+          roughness={0.15}
           emissive="#052a33"
-          emissiveIntensity={0.55}
+          emissiveIntensity={0.35}
         />
       </mesh>
       {/* Wireframe lattice: emissive so Bloom picks it up. */}
       <lineSegments geometry={wire}>
-        <lineBasicMaterial color="#22d3ee" transparent opacity={0.5} toneMapped={false} />
+        <lineBasicMaterial color="#22d3ee" transparent opacity={0.32} toneMapped={false} />
       </lineSegments>
     </group>
   )
@@ -418,14 +418,30 @@ function OrchestrationLayer({
 /**
  * Outer cage radius. Detail 0, so this is also the centre-to-vertex distance.
  *
- * Sized together with `CORE_HOVER_LIFT` so the requested hover gap (0.8x the
- * radius) can be met without pushing the top of the cage out of frame — at 1.8
- * the same gap lifted the cage past the top edge.
+ * 1.5x the previous 1.5: the crystal is the subject of the chapter rather than a
+ * prop above the grid, and at the old size the facets were too small to read.
  */
-const CORE_SHELL_RADIUS = 1.5
+const CORE_SHELL_RADIUS = 2.25
 
-/** Inner plasma sphere: 45% of the cage, per the brief. */
-const CORE_INNER_RADIUS = CORE_SHELL_RADIUS * 0.45
+/**
+ * Ratio of a regular icosahedron's inradius to its circumradius.
+ *
+ * r / R = (sqrt(3)/12)(3+sqrt(5)) / ((1/4)sqrt(10+2sqrt(5))) = 0.794654...
+ *
+ * Named rather than inlined because the core radius is derived from it: the brief
+ * caps the inner sphere at 65% of the INSPHERE, and a hard-coded result would
+ * drift the moment the shell is resized again.
+ */
+const ICOSA_INRADIUS_RATIO = 0.7946544723
+
+/**
+ * Inner glow sphere: 55% of the insphere, comfortably under the 65% ceiling.
+ *
+ * The ceiling is what guarantees no clipping -- the insphere touches each facet
+ * at exactly one point, so anything inside 65% of it cannot reach a plane even
+ * when the shell is spinning.
+ */
+const CORE_INNER_RADIUS = CORE_SHELL_RADIUS * ICOSA_INRADIUS_RATIO * 0.55
 
 /**
  * Hover gap above the infrastructure matrix.
@@ -439,7 +455,7 @@ const CORE_INNER_RADIUS = CORE_SHELL_RADIUS * 0.45
  * `LAYER_Y.rest[0]`, so the clearance works out to `LIFT + 0.1`, which is 1.2
  * units for a 1.5-unit cage.
  */
-const CORE_HOVER_LIFT = 0.8
+const CORE_HOVER_LIFT = 1.05
 
 /**
  * Plasma core shaders.
@@ -504,15 +520,23 @@ float vnoise(vec3 p) {
 void main() {
   // Volumetric falloff: densest where the surface faces the viewer, fading to
   // the rim. Reads as light inside a volume, not as a painted sphere.
-  float facing = clamp(dot(normalize(vNormalW), normalize(vViewDir)), 0.0, 1.0);
-  float body = pow(facing, 1.75);
+  /*
+   * Fresnel volume term.
+   *
+   * The old shader mixed toward a dark teal at the limb, which is exactly the
+   * hard black ring the brief calls out: a dark band between glow and glass
+   * reads as a mask, not a surface. Inverting it -- ice cyan in the body,
+   * near-white at the grazing angle -- is what makes it read as light inside a
+   * volume.
+   */
+  float fresnel = pow(1.0 - abs(dot(normalize(vNormalW), normalize(vViewDir))), 2.5);
 
   float t = uTime * 0.11;
   float n = vnoise(vNormalW * 1.5 + vec3(t, t * 0.6, -t * 0.4));
   n = n * 0.65 + vnoise(vNormalW * 2.9 - vec3(t * 0.7)) * 0.35;
 
-  vec3 col = mix(uDeep, uHot, body);
-  col *= mix(0.9, 1.0, n);
+  vec3 col = mix(uDeep, uHot, fresnel);
+  col *= mix(0.94, 1.0, n);
 
   gl_FragColor = vec4(col * uIntensity, 1.0);
 }
@@ -627,8 +651,11 @@ function SpatialLayer({
       // whole sphere read as a black marble with cyan blotches on it.
       // Desaturated theme cyan. The old #5ff2ff was a saturated neon that read
       // as a glowing moon rather than as light inside glass.
-      uDeep: { value: new THREE.Color('#123138') },
-      uHot: { value: new THREE.Color('#d2f3f8') },
+      // Body and limb, in that order: `uDeep` is what the centre samples, `uHot`
+      // what the Fresnel rim reaches. The old dark #123138 limb is what produced
+      // the black ring around the sphere.
+      uDeep: { value: new THREE.Color('#5ce1e6') },
+      uHot: { value: new THREE.Color('#e0ffff') },
       uIntensity: { value: 2.2 },
     }),
     [],
@@ -791,18 +818,18 @@ function SpatialLayer({
             <meshPhysicalMaterial
               userData={{ noExitFade: true }}
               color="#e6f7fb"
-              transmission={0.95}
-              thickness={1.25}
-              roughness={0.09}
-              ior={1.52}
+              transmission={0.98}
+              thickness={1.2}
+              roughness={0.05}
+              ior={1.5}
               clearcoat={1}
-              clearcoatRoughness={0.1}
+              clearcoatRoughness={0.05}
               metalness={0}
-              attenuationColor="#8fd6e4"
-              attenuationDistance={2.4}
+              attenuationColor="#e0f7fa"
+              attenuationDistance={2.0}
               side={THREE.DoubleSide}
               depthWrite={false}
-              envMapIntensity={1.1}
+              envMapIntensity={1.25}
             />
           </mesh>
 
@@ -816,10 +843,11 @@ function SpatialLayer({
           <lineSegments geometry={edgeGeo} renderOrder={4}>
             <lineBasicMaterial
               userData={{ noExitFade: true }}
-              color="#a8dbe4"
+              color="#ffffff"
               transparent
-              opacity={0.45}
+              opacity={0.7}
               depthWrite={false}
+              blending={THREE.AdditiveBlending}
             />
           </lineSegments>
 
@@ -867,8 +895,8 @@ function SpatialLayer({
          * appears to catch some glass. A single extra draw call, no mirror pass.
          */}
         {stage >= 1 && (
-          <mesh position={[0, -1.32, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={3}>
-            <planeGeometry args={[4.2, 4.2]} />
+          <mesh position={[0, -1.25, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={3}>
+            <planeGeometry args={[7.0, 7.0]} />
             <shaderMaterial
               transparent
               depthWrite={false}
@@ -879,7 +907,7 @@ function SpatialLayer({
           </mesh>
         )}
 
-        <pointLight ref={lightRef} color="#00f0ff" intensity={3} distance={10} decay={2} />
+        <pointLight ref={lightRef} color="#40e0d0" intensity={3} distance={10} decay={2} />
       </group>
     </group>
   )

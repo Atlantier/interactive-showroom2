@@ -524,10 +524,39 @@ export function VerletLanyard({ className }: { className?: string }) {
     const canvas = canvasRef.current
     if (!canvas) return
 
-    /** Convert a pointer event to sandbox-local pixels. */
-    const localPoint = (e: PointerEvent): { x: number; y: number } => {
+    /**
+     * Convert a pointer event to sandbox-local pixels.
+     *
+     * With `clampToTag`, the result is held inside the canvas by half a badge on
+     * each side. This is the drag bug fix: the tag eases toward this point and
+     * nothing else bounds it, so dragging past the edge used to carry the badge
+     * outside the sandbox entirely -- the canvas clips it mid-drag and it can be
+     * left stranded out there on release, with only the rope still attached.
+     *
+     * Clamping the TARGET rather than the tag keeps the physics honest: the rope
+     * constraint still resolves normally, the badge simply cannot be dragged
+     * somewhere it cannot be seen.
+     */
+    const localPoint = (e: PointerEvent, clampToTag = false): { x: number; y: number } => {
       const rect = canvas.getBoundingClientRect()
-      return { x: e.clientX - rect.left, y: e.clientY - rect.top }
+      const x = e.clientX - rect.left
+      const y = e.clientY - rect.top
+      if (!clampToTag) return { x, y }
+
+      let halfW = 0
+      let halfH = 0
+      for (const l of simRef.current?.lanyards ?? []) {
+        halfW = Math.max(halfW, l.tag.width / 2)
+        halfH = Math.max(halfH, l.tag.height / 2)
+      }
+      // A canvas smaller than one badge cannot satisfy both bounds; fall back to
+      // the free position rather than producing an inverted range.
+      if (rect.width <= halfW * 2 || rect.height <= halfH * 2) return { x, y }
+
+      return {
+        x: Math.min(Math.max(x, halfW), rect.width - halfW),
+        y: Math.min(Math.max(y, halfH), rect.height - halfH),
+      }
     }
 
     const onDown = (e: PointerEvent): void => {
@@ -544,7 +573,7 @@ export function VerletLanyard({ className }: { className?: string }) {
     const onMove = (e: PointerEvent): void => {
       const sim = simRef.current
       if (!sim || !sim.isDragging) return
-      const { x, y } = localPoint(e)
+      const { x, y } = localPoint(e, true)
       sim.pointerMove(x, y)
       e.preventDefault()
     }

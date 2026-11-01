@@ -74,6 +74,30 @@ const MAX_EMIT_PER_FRAME = 56
 /** Ignore sub-pixel cursor jitter. */
 const MIN_SPAWN_DISTANCE = 0.012
 
+/**
+ * Longest cursor segment that is still treated as real movement.
+ *
+ * `transient.mouse` no longer jumps when the pointer leaves and re-enters the
+ * window -- the position EASES back from the centre, which is what removed the
+ * teleport. But this component interpolates between the previous and current
+ * cursor points and also keeps a 24-frame ribbon history, so without a guard that
+ * ease is drawn as a single segment across the viewport: the trail slashes from
+ * the middle of the screen to wherever the pointer came back in, and the ribbon
+ * sweeps with it.
+ *
+ * A real fast flick covers a few tenths of a unit per frame; anything an order of
+ * magnitude beyond that is a discontinuity, not a sample.
+ */
+const MAX_SEGMENT_DISTANCE = 0.9
+
+/**
+ * Pointer influence above which the cursor counts as settled.
+ *
+ * The engine eases `strength` from 0 to 1 after a re-entry and snaps it to exactly
+ * 1 once it is within 1e-4, so this only excludes the recovery itself.
+ */
+const SETTLED_STRENGTH = 0.98
+
 /** Cap on the integration step so a stalled tab cannot age the pool out at once. */
 const MAX_DT = 1 / 30
 
@@ -721,7 +745,16 @@ export function CursorStardustTrail({
     let cursorValid = false
     camera.updateMatrixWorld()
 
-    if (mouse.active) {
+    /*
+     * Suspend the trail while the pointer influence is still easing back in.
+     *
+     * The eased position is the fix for the re-entry teleport, but it makes the
+     * cursor travel most of the viewport over the ~0.5s recovery. A trail is a
+     * MOTION effect, and 24 frames of that recovery spans a third of the screen --
+     * which is the wedge that was being drawn. Nothing is lost by waiting: the
+     * trail is meant to start where the pointer actually settles.
+     */
+    if (mouse.active && mouse.strength > SETTLED_STRENGTH) {
       ndc.set(mouse.x, mouse.y)
       ray.setFromCamera(ndc, camera)
       cursorValid = ray.ray.intersectPlane(plane, hit) !== null
@@ -730,6 +763,17 @@ export function CursorStardustTrail({
     /* 3. Emit stardust along the frame-to-frame segment. */
     let spawned = false
 
+    /*
+     * The history has to be restarted whenever the cursor reappears, not merely
+     * when the step is large.
+     *
+     * `hasPrev` is false on the first valid frame after the pointer comes back,
+     * and the ribbon still holds the 24 points recorded before it left -- which is
+     * why the guard alone still drew a wedge from the old position to the new one.
+     * Starting from `!hasPrev` covers that case and the large-step case below.
+     */
+    let resetHistory = !sim.hasPrev
+
     if (cursorValid) {
       if (sim.hasPrev) {
         const dx = hit.x - prev.x
@@ -737,7 +781,9 @@ export function CursorStardustTrail({
         const dz = hit.z - prev.z
         const distance = Math.sqrt(dx * dx + dy * dy + dz * dz)
 
-        if (distance > MIN_SPAWN_DISTANCE) {
+        if (distance > MAX_SEGMENT_DISTANCE) resetHistory = true
+
+        if (!resetHistory && distance > MIN_SPAWN_DISTANCE) {
           let n = Math.round(distance * EMIT_DENSITY)
           if (n < 1) n = 1
           else if (n > MAX_EMIT_PER_FRAME) n = MAX_EMIT_PER_FRAME
@@ -789,8 +835,15 @@ export function CursorStardustTrail({
     const target = cursorValid ? hit : prev
 
     if (cursorValid) {
-      for (let i = 0; i < RIBBON_POINTS - 1; i++) history[i].copy(history[i + 1])
-      history[RIBBON_POINTS - 1].copy(target)
+      if (resetHistory) {
+        // Restart the history at the new point rather than letting the strip
+        // stretch from the old one: every entry coinciding makes `span` zero, so
+        // `uFade` collapses and nothing is drawn this frame.
+        for (let i = 0; i < RIBBON_POINTS; i++) history[i].copy(target)
+      } else {
+        for (let i = 0; i < RIBBON_POINTS - 1; i++) history[i].copy(history[i + 1])
+        history[RIBBON_POINTS - 1].copy(target)
+      }
     }
 
     // Total span of the history — the ribbon must vanish when the cursor stops,
