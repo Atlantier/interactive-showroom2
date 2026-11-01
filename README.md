@@ -13,6 +13,16 @@
 </p>
 
 <p>
+  <a href="https://atlantier.github.io/interactive-showroom2/">
+    <img alt="Live" src="https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E8%AE%BF%E9%97%AE-atlantier.github.io-10b981?logo=githubpages&logoColor=white">
+  </a>
+  <a href="https://github.com/Atlantier/interactive-showroom2">
+    <img alt="Repo" src="https://img.shields.io/badge/GitHub-Atlantier%2Finteractive--showroom2-181717?logo=github&logoColor=white">
+  </a>
+  <img alt="Deploy" src="https://github.com/Atlantier/interactive-showroom2/actions/workflows/deploy.yml/badge.svg">
+</p>
+
+<p>
   <a href="#-三十秒速览">速览</a> ·
   <a href="#-架构拓扑">架构</a> ·
   <a href="#-核心物理与数学">物理</a> ·
@@ -529,6 +539,11 @@ node scripts/verify-leaks.mjs http://127.0.0.1:5279
 
 推送到 `main` 即自动发布到 GitHub Pages。
 
+| | |
+| :--- | :--- |
+| **线上地址** | <https://atlantier.github.io/interactive-showroom2/> |
+| **仓库** | <https://github.com/Atlantier/interactive-showroom2> |
+
 ```mermaid
 flowchart LR
     PUSH([push to main]) --> CHECKOUT[checkout]
@@ -558,6 +573,10 @@ flowchart LR
 - **`needs: build`**：类型错误永远到不了发布步骤
 - **`concurrency` 不取消进行中的发布**：中途取消会留下半写入的 artifact
 - **最小权限**：仅 `contents: read` / `pages: write` / `id-token: write`
+- **供应链隔离窗口**：`pnpm-workspace.yaml` 把 `minimumReleaseAge` 设为 12 小时。
+  pnpm 11 的默认值是 24 小时，曾让首次部署因为两个依赖「刚发布几小时」而失败
+  （`lucide-react@1.66.0`、`ws@8.22.1`）。12 小时仍然能拒绝「当天发布、当天撤下」的
+  投毒版本，但不会让每次依赖升级都冻结部署一整天。
 
 ---
 
