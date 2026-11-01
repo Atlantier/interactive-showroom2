@@ -29,6 +29,20 @@ export interface VfxBounds {
   bottom: number
 }
 
+/**
+ * Reusable result record for `VfxParticleEngine.computeIllumination`.
+ *
+ * A plain mutable object rather than a return value: the whole point of the pool
+ * is that nothing is allocated inside the frame loop, and that includes the
+ * record describing where the light is.
+ */
+export interface VfxIllumination {
+  x: number
+  y: number
+  /** 0..1, calibrated so a full collision burst saturates. */
+  intensity: number
+}
+
 export interface VfxParticle {
   active: boolean
   x: number
@@ -394,11 +408,119 @@ export class VfxParticleEngine {
     ctx.globalCompositeOperation = 'source-over'
   }
 
+  /**
+   * Energy-weighted centroid of every live particle.
+   *
+   * This is the whole of the "dynamic point light": a burst of sparks is not one
+   * emitter but dozens, so the light has to follow their centre of mass rather
+   * than any single particle. Weighting by remaining life squared (the same
+   * curve the sprite opacity uses) means the light tracks the part of the cloud
+   * that is still visibly glowing, not the cold tail.
+   *
+   * The caller passes a reused record: allocating one per frame would defeat the
+   * point of having a pool at all.
+   */
+  computeIllumination(out: VfxIllumination): VfxIllumination {
+    let sumX = 0
+    let sumY = 0
+    let weight = 0
+
+    for (let i = 0; i < this.particles.length; i++) {
+      const p = this.particles[i]
+      if (!p.active) continue
+      const remaining = 1 - p.age / p.life
+      const energy = remaining * remaining * p.size
+      sumX += p.x * energy
+      sumY += p.y * energy
+      weight += energy
+    }
+
+    if (weight <= 0) {
+      out.intensity = 0
+      return out
+    }
+
+    out.x = sumX / weight
+    out.y = sumY / weight
+    // Calibrated so a typical 40-spark collision saturates at 1.0.
+    out.intensity = Math.min(1, weight / (this.particles.length * 0.06))
+    return out
+  }
+
   /** Retire everything immediately (used when a sandbox leaves the viewport). */
   clear(): void {
     for (let i = 0; i < this.particles.length; i++) {
       this.particles[i].active = false
     }
     this.liveCount = 0
+  }
+}
+
+/**
+ * Paint the environment light cast by a particle cloud.
+ *
+ * Additive radial falloff centred on the cloud's centroid. Callers draw this
+ * BELOW their own content — under the badge surface and under the background
+ * grid — so the sparks appear to be the thing lighting the scene rather than an
+ * overlay sitting on top of it.
+ */
+export function drawIllumination(
+  ctx: CanvasRenderingContext2D,
+  illumination: VfxIllumination,
+  radius: number,
+  color: [number, number, number],
+  strength = 0.35,
+): void {
+  if (illumination.intensity <= 0.01) return
+  // The lit area grows with the energy as well as brightening: a single stray
+  // spark should not cast as wide a pool as a full collision.
+  const spread = radius * (0.55 + illumination.intensity * 0.75)
+  const previous = ctx.globalCompositeOperation
+  ctx.globalCompositeOperation = 'lighter'
+  drawRadialFlash(
+    ctx,
+    illumination.x,
+    illumination.y,
+    spread,
+    illumination.intensity * strength,
+    color,
+  )
+  ctx.globalCompositeOperation = previous
+}
+
+/**
+ * One hexagonal holographic ripple.
+ *
+ * Drawn as a stroked hexagon plus a fainter inner copy, which is enough to read
+ * as a projected grid without needing a real grid texture. Callers drive
+ * `radius`/`alpha` over the ripple's life; run two of them at different phases
+ * for the double-ring the brief asks for.
+ */
+export function drawHexRipple(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radius: number,
+  alpha: number,
+  color: [number, number, number],
+  rotation = 0,
+): void {
+  if (radius <= 0.5 || alpha <= 0.004) return
+
+  for (let ring = 0; ring < 2; ring++) {
+    const r = radius * (ring === 0 ? 1 : 0.62)
+    const a = alpha * (ring === 0 ? 1 : 0.55)
+    ctx.strokeStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${a})`
+    ctx.lineWidth = ring === 0 ? 1.6 : 1
+    ctx.beginPath()
+    for (let i = 0; i < 6; i++) {
+      const angle = rotation + (i / 6) * Math.PI * 2
+      const px = x + Math.cos(angle) * r
+      const py = y + Math.sin(angle) * r
+      if (i === 0) ctx.moveTo(px, py)
+      else ctx.lineTo(px, py)
+    }
+    ctx.closePath()
+    ctx.stroke()
   }
 }
