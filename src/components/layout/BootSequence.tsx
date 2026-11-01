@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { resizeScroll, startScroll, stopScroll } from '@/lib/scrollEngine'
 import { useAppStore } from '@/store/useAppStore'
+import { useI18n } from '@/i18n/useI18n'
 
 /**
  * BootSequence — the entrance veil, and the reason it exists.
@@ -80,6 +81,7 @@ const PAGE_START = typeof performance !== 'undefined' ? performance.now() : 0
 type Phase = 'hold' | 'leaving' | 'gone'
 
 export function BootSequence() {
+  const { t } = useI18n()
   const prewarmDone = useAppStore((state) => state.prewarmDone)
   const [phase, setPhase] = useState<Phase>('hold')
   const veilRef = useRef<HTMLDivElement>(null)
@@ -214,7 +216,7 @@ export function BootSequence() {
           </div>
 
           <span className="font-mono text-[0.58rem] tracking-[0.3em] text-ink-500">
-            正在初始化渲染管线
+            {t.boot.status}
           </span>
         </div>
       </div>
