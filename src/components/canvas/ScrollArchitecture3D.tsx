@@ -472,72 +472,6 @@ void main() {
  * loader, a UV unwrap and ~1 MB of assets, and this project ships no assets at
  * all. Roughly 60 lines of maths is the cheaper trade.
  */
-const PLASMA_NOISE = `
-vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-vec4 permute(vec4 x) { return mod289(((x * 34.0) + 1.0) * x); }
-vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
-
-float snoise(vec3 v) {
-  const vec2 C = vec2(1.0 / 6.0, 1.0 / 3.0);
-  const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
-
-  vec3 i = floor(v + dot(v, C.yyy));
-  vec3 x0 = v - i + dot(i, C.xxx);
-
-  vec3 g = step(x0.yzx, x0.xyz);
-  vec3 l = 1.0 - g;
-  vec3 i1 = min(g.xyz, l.zxy);
-  vec3 i2 = max(g.xyz, l.zxy);
-
-  vec3 x1 = x0 - i1 + C.xxx;
-  vec3 x2 = x0 - i2 + C.yyy;
-  vec3 x3 = x0 - D.yyy;
-
-  i = mod289(i);
-  vec4 p = permute(permute(permute(
-             i.z + vec4(0.0, i1.z, i2.z, 1.0))
-           + i.y + vec4(0.0, i1.y, i2.y, 1.0))
-           + i.x + vec4(0.0, i1.x, i2.x, 1.0));
-
-  float n_ = 0.142857142857;
-  vec3 ns = n_ * D.wyz - D.xzx;
-
-  vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
-
-  vec4 x_ = floor(j * ns.z);
-  vec4 y_ = floor(j - 7.0 * x_);
-
-  vec4 x = x_ * ns.x + ns.yyyy;
-  vec4 y = y_ * ns.x + ns.yyyy;
-  vec4 h = 1.0 - abs(x) - abs(y);
-
-  vec4 b0 = vec4(x.xy, y.xy);
-  vec4 b1 = vec4(x.zw, y.zw);
-
-  vec4 s0 = floor(b0) * 2.0 + 1.0;
-  vec4 s1 = floor(b1) * 2.0 + 1.0;
-  vec4 sh = -step(h, vec4(0.0));
-
-  vec4 a0 = b0.xzyw + s0.xzyw * sh.xxyy;
-  vec4 a1 = b1.xzyw + s1.xzyw * sh.zzww;
-
-  vec3 p0 = vec3(a0.xy, h.x);
-  vec3 p1 = vec3(a0.zw, h.y);
-  vec3 p2 = vec3(a1.xy, h.z);
-  vec3 p3 = vec3(a1.zw, h.w);
-
-  vec4 norm = taylorInvSqrt(vec4(dot(p0, p0), dot(p1, p1), dot(p2, p2), dot(p3, p3)));
-  p0 *= norm.x;
-  p1 *= norm.y;
-  p2 *= norm.z;
-  p3 *= norm.w;
-
-  vec4 m = max(0.6 - vec4(dot(x0, x0), dot(x1, x1), dot(x2, x2), dot(x3, x3)), 0.0);
-  m = m * m;
-  return 42.0 * dot(m * m, vec4(dot(p0, x0), dot(p1, x1), dot(p2, x2), dot(p3, x3)));
-}
-`
 
 const PLASMA_FRAGMENT = `
 uniform float uTime;
@@ -549,38 +483,38 @@ varying vec3 vPos;
 varying vec3 vNormalW;
 varying vec3 vViewDir;
 
-${PLASMA_NOISE}
+float hash31(vec3 p) {
+  return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453123);
+}
+
+// 2-octave value noise, deliberately low frequency and low amplitude: the old
+// 3-octave field produced the moon-crater mottling the brief calls dirty, so
+// this only drifts brightness by a few percent.
+float vnoise(vec3 p) {
+  vec3 i = floor(p);
+  vec3 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = mix(hash31(i), hash31(i + vec3(1.0, 0.0, 0.0)), f.x);
+  float b = mix(hash31(i + vec3(0.0, 1.0, 0.0)), hash31(i + vec3(1.0, 1.0, 0.0)), f.x);
+  float c = mix(hash31(i + vec3(0.0, 0.0, 1.0)), hash31(i + vec3(1.0, 0.0, 1.0)), f.x);
+  float d = mix(hash31(i + vec3(0.0, 1.0, 1.0)), hash31(i + vec3(1.0, 1.0, 1.0)), f.x);
+  return mix(mix(a, b, f.y), mix(c, d, f.y), f.z);
+}
 
 void main() {
-  vec3 p = vPos * 2.4;
-  float t = uTime * 0.32;
+  // Volumetric falloff: densest where the surface faces the viewer, fading to
+  // the rim. Reads as light inside a volume, not as a painted sphere.
+  float facing = clamp(dot(normalize(vNormalW), normalize(vViewDir)), 0.0, 1.0);
+  float body = pow(facing, 1.75);
 
-  // Three octaves scrolling at different rates and directions: a single octave
-  // pulses in place instead of churning.
-  float n1 = snoise(p + vec3(0.0, t, 0.0));
-  float n2 = snoise(p * 2.1 + vec3(-t * 1.3, 0.0, t * 0.9));
-  float n3 = snoise(p * 4.3 + vec3(t * 2.0, t * 1.1, 0.0));
+  float t = uTime * 0.11;
+  float n = vnoise(vNormalW * 1.5 + vec3(t, t * 0.6, -t * 0.4));
+  n = n * 0.65 + vnoise(vNormalW * 2.9 - vec3(t * 0.7)) * 0.35;
 
-  float plasma = n1 * 0.55 + n2 * 0.30 + n3 * 0.15;
-  plasma = plasma * 0.5 + 0.5;
+  vec3 col = mix(uDeep, uHot, body);
+  col *= mix(0.9, 1.0, n);
 
-  // Limb brightening: a glowing volume is brighter edge-on than face-on.
-  float facing = max(dot(normalize(vNormalW), normalize(vViewDir)), 0.0);
-  float limb = pow(1.0 - facing, 1.8);
-
-  // Bias the ramp so most of the surface is hot and only the noise troughs stay
-  // deep. The first pass used a 0.32-0.82 ramp, which left the sphere reading as
-  // a black marble with cyan blotches.
-  vec3 col = mix(uDeep, uHot, smoothstep(0.18, 0.68, plasma));
-  col += uHot * limb * 1.1;
-
-  // Gamma lift on the midtones, then a white-hot term for the few cells that
-  // clip above 1.0 — that is what gives Bloom something to grab onto.
-  col = pow(col, vec3(0.82));
-  col += uHot * pow(plasma, 4.0) * 0.9;
-  col *= (0.95 + plasma * 0.6) * uIntensity;
-
-  gl_FragColor = vec4(col, 1.0);
+  gl_FragColor = vec4(col * uIntensity, 1.0);
 }
 `
 
@@ -691,9 +625,11 @@ function SpatialLayer({
       uTime: { value: 0 },
       // Troughs are a lit blue, not near-black: a very dark `uDeep` made the
       // whole sphere read as a black marble with cyan blotches on it.
-      uDeep: { value: new THREE.Color('#0a3f66') },
-      uHot: { value: new THREE.Color('#5ff2ff') },
-      uIntensity: { value: 1.5 },
+      // Desaturated theme cyan. The old #5ff2ff was a saturated neon that read
+      // as a glowing moon rather than as light inside glass.
+      uDeep: { value: new THREE.Color('#123138') },
+      uHot: { value: new THREE.Color('#a9e6ee') },
+      uIntensity: { value: 1.55 },
     }),
     [],
   )
@@ -768,8 +704,9 @@ function SpatialLayer({
 
     const shell = shellRef.current
     if (shell) {
-      shell.rotation.y += delta * 0.16
-      shell.rotation.z += delta * 0.07
+      // 18 s per revolution, inside the 15-20 s the brief asks for.
+      shell.rotation.y += delta * ((Math.PI * 2) / 18)
+      shell.rotation.z += delta * 0.02
     }
 
     const core = coreRef.current
@@ -783,7 +720,8 @@ function SpatialLayer({
       core.scale.setScalar(0.95 + breathe * 0.1)
 
       // Drives overall plasma brightness; the shader owns the colour mix.
-      plasmaUniforms.uIntensity.value = 1.35 + breathe * 0.45
+      // 6 s breathing cycle, +/-10%: no flicker, no pulse.
+      plasmaUniforms.uIntensity.value = 1.55 * (1 + 0.1 * Math.sin((t * Math.PI * 2) / 6))
 
       /*
        * The dispersion shell is a ShaderMaterial, so the rig's `material.opacity`
@@ -811,16 +749,30 @@ function SpatialLayer({
          */}
         <group ref={shellRef}>
           <mesh geometry={shellGeo}>
+            {/*
+             * Real transmission glass.
+             *
+             * `color` is near-white on purpose: in three.js it multiplies the
+             * TRANSMITTED light as well as the diffuse, so the previous dark
+             * #031525 turned the crystal into a black box instead of a window.
+             * The cyan cast comes from `attenuationColor`, which tints with
+             * thickness rather than killing the transmission.
+             */}
             <meshPhysicalMaterial
               userData={{ noExitFade: true }}
-              color="#031525"
-              metalness={0.9}
-              roughness={0.1}
-              transparent
-              opacity={0.25}
+              color="#e6f7fb"
+              transmission={0.95}
+              thickness={1.25}
+              roughness={0.09}
+              ior={1.52}
+              clearcoat={1}
+              clearcoatRoughness={0.1}
+              metalness={0}
+              attenuationColor="#8fd6e4"
+              attenuationDistance={2.4}
               side={THREE.DoubleSide}
               depthWrite={false}
-              envMapIntensity={1.6}
+              envMapIntensity={1.1}
             />
           </mesh>
 
@@ -834,20 +786,13 @@ function SpatialLayer({
           <lineSegments geometry={edgeGeo} renderOrder={4}>
             <lineBasicMaterial
               userData={{ noExitFade: true }}
-              color="#00f0ff"
-              toneMapped={false}
+              color="#a8dbe4"
               transparent
-              opacity={0.95}
+              opacity={0.45}
               depthWrite={false}
             />
           </lineSegments>
 
-          {/*
-           * Dispersion fringe. A hair larger than the cage and parented to it,
-           * so the three channel bands sit just outside the silhouette and
-           * rotate with the prism.
-           */}
-          <mesh geometry={shellGeo} material={dispersionMaterial} scale={1.021} renderOrder={5} />
         </group>
 
         {/*
