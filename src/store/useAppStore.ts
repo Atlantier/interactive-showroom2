@@ -5,6 +5,7 @@ import type { VfxPreset } from '@/lib/vfxPalette'
 import { clamp, safeNumber } from '@/lib/math'
 import { detectPerformanceTier } from '@/lib/device'
 
+import { getDictionary } from '@/i18n/useI18n'
 /* -------------------------------------------------------------------------- */
 /*  Reactive state                                                            */
 /* -------------------------------------------------------------------------- */
@@ -43,14 +44,6 @@ export const GRAVITY_SCALE: Record<GravityMode, number> = {
   zero: 0,
   moon: 1 / 6,
   heavy: 2.6,
-}
-
-/** Human-readable labels, shared by the palette and the sandbox HUD. */
-export const GRAVITY_LABELS: Record<GravityMode, string> = {
-  earth: '地球重力',
-  zero: '零重力',
-  moon: '月球重力',
-  heavy: '超重模式',
 }
 
 /** Swatch colours per accent, for the palette's preview dots. */
@@ -307,7 +300,7 @@ export const useAppStore = create<AppState>()(
         set({
           performanceTier: 'medium',
           perfNotice: {
-            title: '已切换至性能模式',
+            title: getDictionary().hud.noticeTitle,
             detail: reason,
             nonce: Date.now(),
           },

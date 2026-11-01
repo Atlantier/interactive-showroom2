@@ -13,6 +13,7 @@ import {
 import { useAppStore } from '@/store/useAppStore'
 import { soundEngine } from '@/utils/soundEngine'
 
+import { useI18n } from '@/i18n/useI18n'
 /**
  * CommandPalette — the Cmd/Ctrl+K palette.
  *
@@ -57,6 +58,7 @@ interface GroupedCommands {
 const PANEL_EASE = [0.22, 1, 0.36, 1] as const
 
 export function CommandPalette() {
+  const { t } = useI18n()
   const open = useAppStore((state) => state.commandPaletteOpen)
   const setOpen = useAppStore((state) => state.setCommandPaletteOpen)
 
@@ -181,7 +183,7 @@ export function CommandPalette() {
     const result = await cmd.run()
     if (result === false) return
 
-    if (cmd.group === '操作') {
+    if (cmd.group === 'actions') {
       setFlash(cmd.id)
       if (flashTimer.current !== null) window.clearTimeout(flashTimer.current)
       flashTimer.current = window.setTimeout(() => setFlash(null), 1600)
@@ -253,7 +255,7 @@ export function CommandPalette() {
           <motion.div
             role="dialog"
             aria-modal="true"
-            aria-label="命令面板"
+            aria-label={t.commands.dialogAria}
             initial={{ opacity: 0, scale: 0.97, y: -10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.98, y: -6 }}
@@ -281,8 +283,8 @@ export function CommandPalette() {
                   setActiveIndex(0)
                 }}
                 onKeyDown={onInputKeyDown}
-                placeholder="搜索章节、重力、主题或操作…"
-                aria-label="搜索命令"
+                placeholder={t.commands.placeholder}
+                aria-label={t.commands.searchAria}
                 role="combobox"
                 aria-expanded
                 aria-controls="command-palette-list"
@@ -301,14 +303,14 @@ export function CommandPalette() {
             <div
               id="command-palette-list"
               role="listbox"
-              aria-label="可用命令"
+              aria-label={t.commands.listAria}
               className="scrollbar-none max-h-[min(24rem,52vh)] overflow-y-auto overscroll-contain p-1.5"
             >
               {flat.length === 0 ? (
                 <div className="px-3 py-10 text-center">
-                  <p className="text-sm text-ink-300">没有匹配的命令</p>
+                  <p className="text-sm text-ink-300">{t.commands.empty}</p>
                   <p className="mt-1 font-mono text-[0.62rem] text-ink-700">
-                    试试「架构」「重力」「主题」「简历」
+                    {t.commands.emptyHint}
                   </p>
                 </div>
               ) : (
@@ -386,12 +388,12 @@ export function CommandPalette() {
                           {flash === item.cmd.id ? (
                             <span className="flex shrink-0 items-center gap-1 font-mono text-[0.55rem] text-signal-teal">
                               <Check className="size-3" aria-hidden />
-                              完成
+                              {t.commands.done}
                             </span>
                           ) : item.cmd.active ? (
                             <Check
                               className="size-3.5 shrink-0 text-signal-cyan"
-                              aria-label="当前设置"
+                              aria-label={t.commands.settingsAria}
                             />
                           ) : item.cmd.hint ? (
                             <span className="shrink-0 font-mono text-[0.58rem] text-ink-700">
@@ -412,17 +414,17 @@ export function CommandPalette() {
                 <span className="flex items-center gap-1">
                   <Kbd>↑</Kbd>
                   <Kbd>↓</Kbd>
-                  导航
+                  {t.commands.navHint}
                 </span>
                 <span className="flex items-center gap-1">
                   <Kbd>
                     <CornerDownLeft className="size-2.5" aria-hidden />
                   </Kbd>
-                  执行
+                  {t.commands.execHint}
                 </span>
               </span>
               <span className="tabular-nums">
-                {flat.length} 项 · {commands.length} 条命令
+                {t.commands.countLabel.replace('{items}', String(flat.length)).replace('{total}', String(commands.length))}
               </span>
             </div>
           </motion.div>

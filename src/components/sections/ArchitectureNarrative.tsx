@@ -3,6 +3,8 @@ import { cn } from '@/lib/cn'
 import { useSectionProgress } from '@/hooks/useSectionProgress'
 import { useInViewAnimation } from '@/hooks/useInViewAnimation'
 import { LAYERS, findLayer } from '@/components/canvas/architecture/layers'
+import { getDictionary, useI18n } from '@/i18n/useI18n'
+import type { Dictionary } from '@/i18n/locales/en'
 
 /**
  * ArchitectureNarrative — the Apple-keynote-style chapter.
@@ -39,12 +41,29 @@ const ScrollArchitecture3D = lazy(() =>
 /* -------------------------------------------------------------------------- */
 
 /** Metric cards revealed in the final phase. */
-const METRICS = [
-  { value: '12.4k', unit: 'tok/s', label: '单节点推理吞吐', note: '较上一代提升 3.2×' },
-  { value: '99.98', unit: '%', label: '集群可用性', note: '跨 6 个区域热切换' },
-  { value: '38', unit: 'ms', label: '端到端延迟', note: '含网络与排队' },
-  { value: '8 000', unit: 'agents', label: '并发智能体', note: '单编排层上限' },
-]
+interface Metric {
+  value: string
+  unit: string
+  label: string
+  note: string
+}
+
+/**
+ * The four telemetry counters.
+ *
+ * Built per locale rather than declared once: the numbers and units are data, but
+ * the labels and the explanatory notes are copy, and a module-level constant would
+ * freeze whichever language was active when the bundle evaluated.
+ */
+function buildMetrics(dict: Dictionary): Metric[] {
+  const m = dict.architecture.metrics
+  return [
+    { value: '12.4k', unit: 'tok/s', label: m.throughputLabel, note: m.throughputNote },
+    { value: '99.98', unit: '%', label: m.availabilityLabel, note: m.availabilityNote },
+    { value: '38', unit: 'ms', label: m.latencyLabel, note: m.latencyNote },
+    { value: '8 000', unit: 'agents', label: m.agentsLabel, note: m.agentsNote },
+  ]
+}
 
 /* -------------------------------------------------------------------------- */
 /*  Layer HUD                                                                 */
@@ -72,6 +91,7 @@ function LayerHud({
   layerId: string | null
   onClose: () => void
 }) {
+  const { t } = useI18n()
   const layer = findLayer(layerId)
 
   // Escape closes the HUD. Registered only while a layer is open.
@@ -97,7 +117,7 @@ function LayerHud({
     >
       <div
         role="dialog"
-        aria-label={layer ? `${layer.title} 技术栈详情` : undefined}
+        aria-label={layer ? `${layer.title} — ${t.architecture.layerStack}` : undefined}
         aria-hidden={!layer}
         className={cn(
           'pointer-events-auto w-[19rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-panel',
@@ -134,7 +154,7 @@ function LayerHud({
               <button
                 type="button"
                 onClick={onClose}
-                aria-label="关闭技术栈详情"
+                aria-label={t.architecture.layerDetailClose}
                 className="grid size-6 shrink-0 place-items-center rounded border border-void-600/70 text-ink-500 transition-colors hover:border-signal-cyan/60 hover:text-signal-cyan"
               >
                 <svg viewBox="0 0 12 12" className="size-2.5" aria-hidden>
@@ -150,22 +170,22 @@ function LayerHud({
 
             {/* Summary */}
             <p className="px-4 pt-3 text-[0.72rem] leading-relaxed text-ink-300">
-              {layer.summary}
+              {t.architecture.layers[layer.id].summary}
             </p>
 
             {/* Tech stack rows */}
             <ul className="mt-2 space-y-0 divide-y divide-void-600/40 px-4 pb-4">
-              {layer.tech.map((t) => (
-                <li key={t.name} className="flex items-baseline gap-3 py-2">
+              {layer.tech.map((tech, index) => (
+                <li key={tech.name} className="flex items-baseline gap-3 py-2">
                   <span
                     aria-hidden
                     className="mt-1 size-1 shrink-0 rounded-full"
                     style={{ backgroundColor: layer.accent }}
                   />
                   <div className="min-w-0">
-                    <p className="font-mono text-[0.68rem] text-ink-100">{t.name}</p>
+                    <p className="font-mono text-[0.68rem] text-ink-100">{tech.name}</p>
                     <p className="mt-0.5 text-[0.66rem] leading-relaxed text-ink-500">
-                      {t.detail}
+                      {t.architecture.layers[layer.id].details[index]}
                     </p>
                   </div>
                 </li>
@@ -173,7 +193,7 @@ function LayerHud({
             </ul>
 
             <p className="border-t border-void-600/40 px-4 py-2 font-mono text-[0.5rem] tracking-wider text-ink-700 uppercase">
-              esc 或再次点击layer · 返回总览
+              {t.architecture.layerDetailHint}
             </p>
           </>
         )}
@@ -187,6 +207,9 @@ function LayerHud({
 /* -------------------------------------------------------------------------- */
 
 export function ArchitectureNarrative() {
+  const { t } = useI18n()
+  const metrics = buildMetrics(t)
+
   /** Which layer is focused, or null for the overview. */
   const [selectedLayer, setSelectedLayer] = useState<string | null>(null)
   /**
@@ -233,12 +256,13 @@ export function ArchitectureNarrative() {
         const phase = p < 0.3 ? 'interlocked' : p < 0.7 ? 'exploded' : 'reassembled'
         if (cap.dataset.phase !== phase) {
           cap.dataset.phase = phase
+          const copy = getDictionary().architecture
           cap.textContent =
             phase === 'interlocked'
-              ? '三层紧密咬合 · 持续自转'
+              ? copy.subtitleIdle
               : phase === 'exploded'
-                ? '分层展开 · 数据流贯通'
-                : '结构重组 · 指标浮现'
+                ? copy.subtitleExplode
+                : copy.subtitleFinal
         }
       }
 
@@ -327,16 +351,17 @@ export function ArchitectureNarrative() {
             id="architecture-title"
             className="mt-4 text-[clamp(1.75rem,3.6vw,2.75rem)] leading-[1.1] font-medium tracking-tight text-ink-100"
           >
-            全栈 AI 与
+            {t.architecture.headingLead}
             <br />
-            <span className="text-signal-cyan">分布式计算</span>核心
+            <span className="text-signal-cyan">{t.architecture.headingAccent}</span>
+            {t.architecture.headingTail}
           </h2>
           <p
             ref={captionRef}
             className="mt-4 font-mono text-[0.7rem] tracking-wide text-ink-500"
             data-phase="interlocked"
           >
-            三层紧密咬合 · 持续自转
+            {t.architecture.subtitleIdle}
           </p>
         </div>
 
@@ -361,7 +386,7 @@ export function ArchitectureNarrative() {
                 {layer.subtitle}
               </p>
               <p className="mt-1 text-[0.7rem] leading-relaxed text-ink-700">
-                {layer.summary}
+                {t.architecture.layers[layer.id].summary}
               </p>
             </div>
           ))}
@@ -379,7 +404,7 @@ export function ArchitectureNarrative() {
           )}
           style={{ opacity: 0, pointerEvents: 'none' }}
         >
-          {METRICS.map((m) => (
+          {metrics.map((m) => (
             <li
               key={m.label}
               className="rounded-panel border border-void-600/70 bg-void-950/72 p-3 backdrop-blur-md"

@@ -13,6 +13,8 @@
  * (Braille, runic) render as tofu on a meaningful share of machines.
  */
 
+import { getDictionary } from '@/i18n/useI18n'
+
 export type TerminalTone = 'command' | 'success' | 'dim' | 'accent' | 'error'
 
 /** One rendered line of terminal output. */
@@ -37,12 +39,22 @@ export const HELP_ART: string[] = [
   BOX_BOT,
 ]
 
-export const HELP_ROWS: TerminalLine[] = [
-  { text: 'help    — 显示此帮助', tone: 'dim' },
-  { text: 'skills  — 列出技能矩阵', tone: 'dim' },
-  { text: 'matrix  — 进入矩阵视图', tone: 'dim' },
-  { text: 'clear   — 清空终端', tone: 'dim' },
-]
+/**
+ * Help rows, resolved at call time.
+ *
+ * A function rather than a const: the descriptions are copy and have to follow the
+ * active locale, and a module-level array would freeze whichever language was
+ * active when the bundle first evaluated.
+ */
+export function buildHelpRows(): TerminalLine[] {
+  const { terminalHelp } = getDictionary().bento
+  return [
+    { text: terminalHelp.help, tone: 'dim' },
+    { text: terminalHelp.skills, tone: 'dim' },
+    { text: terminalHelp.matrix, tone: 'dim' },
+    { text: terminalHelp.clear, tone: 'dim' },
+  ]
+}
 
 /* -------------------------------------------------------------------------- */
 /*  skills                                                                    */

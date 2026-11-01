@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/cn'
+import { getDictionary, useI18n } from '@/i18n/useI18n'
 import {
   HELP_ART,
-  HELP_ROWS,
+  buildHelpRows,
   MATRIX_HEADER,
   SKILLS_ART,
   SKILL_ROWS,
   UNKNOWN_ART,
   makeMatrixFrame,
   parseCommand,
+  type TerminalLine,
   type TerminalTone,
 } from '@/components/bento/micro/terminalCommands'
 
@@ -58,13 +60,23 @@ const TONE_CLASS: Record<TerminalTone, string> = {
 }
 
 /** The scripted demo session shown until the visitor takes over. */
-const DEMO_SCRIPT: Array<{ text: string; prompt?: string; tone?: TerminalTone }> = [
-  { text: 'showroom deploy --env edge', prompt: '$ ', tone: 'command' },
-  { text: 'resolve manifest ........ ok', prompt: '  ', tone: 'dim' },
-  { text: 'upload 412 assets ...... 100%', prompt: '  ', tone: 'dim' },
-  { text: 'live at showroom.edge', prompt: '✓ ', tone: 'success' },
-  { text: 'type "help" to explore', prompt: '› ', tone: 'accent' },
-]
+/**
+ * The scripted demo session.
+ *
+ * Built per locale rather than frozen at module load: two of its five lines are
+ * copy, and a module-level constant would keep whichever language was active when
+ * the bundle evaluated.
+ */
+function buildDemoScript(): Array<{ text: string; prompt?: string; tone?: TerminalTone }> {
+  const { bento } = getDictionary()
+  return [
+    { text: 'showroom deploy --env edge', prompt: '$ ', tone: 'command' },
+    { text: 'resolve manifest ........ ok', prompt: '  ', tone: 'dim' },
+    { text: 'upload 412 assets ...... 100%', prompt: '  ', tone: 'dim' },
+    { text: bento.terminalOnline, prompt: '✓ ', tone: 'success' },
+    { text: bento.terminalHint, prompt: '› ', tone: 'accent' },
+  ]
+}
 
 interface TerminalTyperProps {
   className?: string
@@ -79,6 +91,7 @@ interface Line {
 }
 
 export function TerminalTyper({ className }: TerminalTyperProps) {
+  const { t, locale } = useI18n()
   const inputRef = useRef<HTMLInputElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const liveRef = useRef<HTMLSpanElement>(null)
@@ -105,13 +118,14 @@ export function TerminalTyper({ className }: TerminalTyperProps) {
   useEffect(() => {
     if (interactive) return
 
+    const script = buildDemoScript()
     let cancelled = false
     let charTimer: ReturnType<typeof setTimeout> | undefined
     let lineTimer: ReturnType<typeof setTimeout> | undefined
 
     const runLine = (index: number): void => {
       if (cancelled) return
-      const line = DEMO_SCRIPT[index]
+      const line = script[index]
       if (!line) {
         // Loop the demo forever; it is ambient, not a one-shot.
         lineTimer = setTimeout(() => {
@@ -160,7 +174,7 @@ export function TerminalTyper({ className }: TerminalTyperProps) {
       if (charTimer) clearTimeout(charTimer)
       if (lineTimer) clearTimeout(lineTimer)
     }
-  }, [interactive, pushLines])
+  }, [interactive, pushLines, locale])
 
   /* ── Focus handling ────────────────────────────────────────────────────── */
   const takeOver = useCallback(() => {
@@ -173,7 +187,7 @@ export function TerminalTyper({ className }: TerminalTyperProps) {
             { id: nextId.current++, text: 'showroom shell · v0.1', tone: 'accent' as const },
             {
               id: nextId.current++,
-              text: '输入 help / skills / matrix / clear',
+              text: t.bento.terminalInputHint,
               tone: 'dim' as const,
             },
           ],
@@ -234,7 +248,7 @@ export function TerminalTyper({ className }: TerminalTyperProps) {
         pushLines([
           echo,
           ...HELP_ART.map((t) => ({ text: t, tone: 'accent' as const })),
-          ...HELP_ROWS.map((l) => ({ text: l.text, tone: l.tone ?? 'dim' })),
+          ...buildHelpRows().map((l: TerminalLine) => ({ text: l.text, tone: l.tone ?? 'dim' })),
         ])
         return
       }
@@ -264,7 +278,7 @@ export function TerminalTyper({ className }: TerminalTyperProps) {
       pushLines([
         echo,
         ...UNKNOWN_ART.map((t) => ({ text: t, tone: 'error' as const })),
-        { text: '  try: help', tone: 'dim' as const },
+        { text: t.bento.terminalUnknownHint, tone: 'dim' as const },
       ])
     },
     [pushLines],
@@ -368,7 +382,7 @@ export function TerminalTyper({ className }: TerminalTyperProps) {
           autoComplete="off"
           autoCapitalize="off"
           autoCorrect="off"
-          aria-label="终端命令输入，可用命令：help、skills、matrix、clear"
+          aria-label={t.bento.terminalAria}
           className="pointer-events-auto absolute h-px w-px opacity-0"
           tabIndex={0}
         />

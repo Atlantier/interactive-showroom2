@@ -19,6 +19,7 @@ import { FlowFieldParticles } from '@/components/canvas/FlowFieldParticles'
 import { CursorStardustTrail } from '@/components/canvas/CursorStardustTrail'
 import { VolumetricStageLights } from '@/components/canvas/VolumetricStageLights'
 
+import { getDictionary } from '@/i18n/useI18n'
 /**
  * SceneCanvas — the full-viewport, fixed WebGL background.
  *
@@ -238,9 +239,16 @@ export function SceneCanvas() {
       for (let i = 0; i < samples.length; i++) total += samples[i]
       const average = total / samples.length
       if (average >= DEGRADE_FPS) return
-      degrade(
-        `最近 ${((MONITOR_MS * MONITOR_ITERATIONS) / 1000).toFixed(0)} 秒平均 ${average.toFixed(0)} FPS，低于 ${DEGRADE_FPS} FPS 阈值`,
-      )
+      /*
+       * The reason string is user-facing: it is what the notice toast shows, so it
+       * has to follow the locale. Interpolated from a single template rather than
+       * concatenated so word order stays a property of the language, not the code.
+       */
+      const reason = getDictionary()
+        .hud.degradeReason.replace('{fps}', average.toFixed(0))
+        .replace('{seconds}', ((MONITOR_MS * MONITOR_ITERATIONS) / 1000).toFixed(0))
+        .replace('{threshold}', String(DEGRADE_FPS))
+      degrade(reason)
     },
     [degrade],
   )

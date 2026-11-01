@@ -46,6 +46,9 @@ export const en = {
     frame: 'frame',
     worst: 'worst',
     viewport: 'viewport',
+    backToTop: 'Back to top',
+    scrollProgressTitle: 'Scroll progress · click to return to the top',
+    audioSpectrumTitle: 'Live audio spectrum',
     languageAria: 'Switch language',
     languageEnglish: 'EN',
     languageChinese: '中文',
@@ -118,6 +121,16 @@ export const en = {
     cardThroughputNote: 'A live token-throughput chart, redrawn straight to canvas',
     cardThroughputBody:
       'Real-time throughput across the edge inference cluster, sampled every 120ms and drawn directly to a canvas.',
+    topologyHint: 'Tap a node',
+    topologyAria: 'Architecture topology diagram. Select a node to inspect its responsibility.',
+    topologyRoles: {
+      edge: 'Global ingress · edge caching',
+      gateway: 'Request gateway · auth and rate limiting',
+      router: 'Semantic routing · model selection',
+      worker: 'Inference workers · batch scheduling',
+      cache: 'Semantic cache · answer on hit',
+      store: 'Persistence · vectors and logs',
+    },
     cardTopologyTitle: 'Distributed topology',
     cardTopologyNote: 'Click a node to inspect its responsibility',
     cardTerminalTitle: 'One-command deploy',
@@ -137,7 +150,15 @@ export const en = {
     drawCalls: 'draw calls',
     particles: 'particles',
     frame: 'frame',
-    terminalAria: 'Terminal input. Available commands: help, skills, matrix, clear',
+    terminalAria: 'Terminal command input. Available commands: help, skills, matrix, clear',
+    terminalInputHint: 'type help / skills / matrix / clear',
+    terminalUnknownHint: '  try: help',
+    terminalHelp: {
+      help: 'help    — show this help',
+      skills: 'skills  — list the skills matrix',
+      matrix: 'matrix  — enter the matrix view',
+      clear: 'clear   — clear the terminal',
+    },
     terminalPrompt: '$',
     terminalHint: 'type "help" to explore',
     terminalOnline: 'live at showroom.edge',
@@ -200,9 +221,21 @@ export const en = {
     layerStack: 'Technology stack',
   },
 
+  /** Visual Overdrive palette names. */
+  palette: {
+    emerald: 'Emerald Cyber',
+    supernova: 'Black Gold Supernova',
+    phantom: 'Quantum Phantom',
+  },
+
   /** Physics sandboxes. */
   sandbox: {
     verletLabel: 'Verlet sandbox',
+    verletAria: 'Draggable physics lanyard sandbox: drag a badge to swing it, overstretch it and the cord snaps',
+    fabrikArmAria: 'Six-axis arm driven by FABRIK inverse kinematics. Move the pointer to track, click to fire the laser',
+    fabrikCreatureAria: 'Procedural quadruped gait demo. Move the pointer to steer the tracking behaviour',
+    fabrikArmHint: 'Move the pointer to track · click to fire the laser',
+    fabrikCreatureHint: 'Move the pointer · the gait planner picks each foothold',
     verletHint: 'Drag a badge to stress the rope',
     verletReset: 'Re-forge lanyards',
     verletStrain: 'strain',
@@ -240,6 +273,7 @@ export const en = {
     hint: 'shift + d to toggle',
     heap: 'JS heap',
     noticeTitle: 'Performance mode engaged',
+    degradeReason: 'Averaged {fps} FPS over the last {seconds}s — below the {threshold} FPS threshold',
   },
 
   /** Archive rows. `type` stays a technical proper noun in both locales. */
@@ -282,6 +316,38 @@ export const en = {
     copyEmail: 'Copy email address',
     downloadJson: 'Download profile JSON',
     jumpTo: 'Jump to',
+    searchAria: 'Search commands',
+    listAria: 'Available commands',
+    settingsAria: 'Current settings',
+    emptyHint: 'Try "architecture", "gravity", "theme" or "resume"',
+    navHint: 'navigate',
+    execHint: 'run',
+    done: 'done',
+    countLabel: '{items} results · {total} commands',
+    gravityNotes: {
+      earth: '1.0 g · restored to default',
+      zero: '0 g · the cord floats free',
+      moon: '0.17 g · lunar surface',
+      heavy: '2.6 g · the cord snaps taut',
+    },
+    accents: {
+      emerald: { title: 'Emerald', subtitle: 'Emerald · default accent' },
+      violet: { title: 'Cyber Violet', subtitle: 'Cyber Violet · neon purple' },
+      amber: { title: 'Titanium Amber', subtitle: 'Titanium Amber · warm gold highlight' },
+      cyan: { title: 'Signal Cyan', subtitle: 'Signal Cyan · the showroom original' },
+    },
+    profile: {
+      title: 'Personal Digital Showroom',
+      role: 'Full-stack AI · real-time graphics engineering',
+      summary:
+        'An immersive space assembled from WebGL, inertial scrolling and real-time state orchestration, where scrolling is camera motion.',
+    },
+    skills: {
+      graphics: 'Real-time graphics',
+      physics: 'Physics simulation',
+      frontend: 'Frontend architecture',
+      interaction: 'Interaction',
+    },
     gravityPrefix: '',
   },
 }

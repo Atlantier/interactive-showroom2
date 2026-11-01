@@ -30,6 +30,7 @@ import {
 import { useInViewAnimation } from '@/hooks/useInViewAnimation'
 import { reportPhysicsSolve } from '@/lib/perfMetrics'
 import { GRAVITY_SCALE, useAppStore } from '@/store/useAppStore'
+import { useI18n } from '@/i18n/useI18n'
 
 /**
  * VerletLanyard — an interactive physics sandbox of hanging geek badges.
@@ -280,6 +281,7 @@ interface LanyardVfx {
 }
 
 export function VerletLanyard({ className }: { className?: string }) {
+  const { t } = useI18n()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const simRef = useRef<LanyardSimulation | null>(null)
@@ -663,7 +665,7 @@ export function VerletLanyard({ className }: { className?: string }) {
         // the surrounding card still scrolls the page normally.
         style={{ touchAction: 'none' }}
         role="application"
-        aria-label="可拖拽的物理工牌沙盒，拖动工牌可甩动，过度拉伸会扯断绳索"
+        aria-label={t.sandbox.verletAria}
       />
 
       {/* ── HUD ─────────────────────────────────────────────────────────── */}
@@ -736,7 +738,7 @@ export function VerletLanyard({ className }: { className?: string }) {
 
       {/* Hint, fades out is not needed — it stays subtle. */}
       <p className="pointer-events-none absolute inset-x-0 bottom-2 text-center font-mono text-[0.55rem] tracking-[0.2em] text-ink-700 uppercase">
-        拖拽工牌 · 过度用力会扯断
+        {t.sandbox.verletHint}
       </p>
     </div>
   )

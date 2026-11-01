@@ -40,7 +40,7 @@ export interface VfxPalette {
   /** The preset this palette belongs to. */
   id: VfxPreset
   /** Human-facing name, in the same Chinese style as the rest of the UI. */
-  label: string
+  /** Identity only. The display name lives in the dictionary. */
   /** Hero spectral hue: the nebula, the main stage beam, the primary glow. */
   primary: string
   /** Counter-hue: the second beam / ribbon highlight / cool contrast. */
@@ -70,7 +70,6 @@ export interface VfxPalette {
  */
 const EMERALD_CYBER: VfxPalette = {
   id: 'emerald-cyber',
-  label: '翡翠赛博绿',
   primary: '#10b981',
   secondary: '#22d3ee',
   accent: '#8b5cf6',
@@ -89,7 +88,6 @@ const EMERALD_CYBER: VfxPalette = {
  */
 const SUPERNOVA_GOLD: VfxPalette = {
   id: 'supernova-gold',
-  label: '黑金超新星',
   primary: '#fbbf24',
   secondary: '#f59e0b',
   accent: '#fb7185',
@@ -107,7 +105,6 @@ const SUPERNOVA_GOLD: VfxPalette = {
  */
 const QUANTUM_VIOLET: VfxPalette = {
   id: 'quantum-violet',
-  label: '量子幻影紫',
   primary: '#a78bfa',
   secondary: '#8b5cf6',
   accent: '#22d3ee',
@@ -163,4 +160,22 @@ export function getVfxPalette(preset: VfxPreset | null | undefined): VfxPalette 
 export function getNextVfxPreset(current: VfxPreset | null | undefined): VfxPreset {
   const index = current ? VFX_PRESET_ORDER.indexOf(current) : -1
   return VFX_PRESET_ORDER[(index + 1) % VFX_PRESET_ORDER.length]
+}
+
+/**
+ * Dictionary key for a preset's display name.
+ *
+ * Kept here rather than in the dictionary so the mapping lives next to the preset
+ * union it depends on: adding a preset without adding its name is then a compile
+ * error at this switch.
+ */
+export function vfxLabelKey(preset: VfxPreset): 'emerald' | 'supernova' | 'phantom' {
+  switch (preset) {
+    case 'emerald-cyber':
+      return 'emerald'
+    case 'supernova-gold':
+      return 'supernova'
+    case 'quantum-violet':
+      return 'phantom'
+  }
 }

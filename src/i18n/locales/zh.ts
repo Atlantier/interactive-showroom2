@@ -41,6 +41,9 @@ export const zh: Dictionary = {
     frame: '单帧',
     worst: '峰值',
     viewport: '视口',
+    backToTop: '回到顶部',
+    scrollProgressTitle: '滚动进度 · 点击回到顶部',
+    audioSpectrumTitle: '实时音频频谱',
     languageAria: '切换语言',
     languageEnglish: 'EN',
     languageChinese: '中文',
@@ -105,6 +108,16 @@ export const zh: Dictionary = {
     cardThroughputNote: '实时跳动的 Token 吞吐量折线图，直接绘制到 canvas',
     cardThroughputBody:
       '边缘推理集群的实时吞吐，每 120ms 采样一次，由 canvas 直接绘制。',
+    topologyHint: '点击节点',
+    topologyAria: '架构拓扑图，可点击节点查看职责',
+    topologyRoles: {
+      edge: '全球接入 · 边缘缓存',
+      gateway: '请求网关 · 鉴权与限流',
+      router: '智能路由 · 模型选择',
+      worker: '推理工作节点 · 批量调度',
+      cache: '语义缓存 · 命中即返回',
+      store: '持久层 · 向量与日志',
+    },
     cardTopologyTitle: '分布式推理拓扑',
     cardTopologyNote: '点击节点查看其职责',
     cardTerminalTitle: '一键部署',
@@ -125,6 +138,14 @@ export const zh: Dictionary = {
     particles: '粒子',
     frame: '帧',
     terminalAria: '终端命令输入，可用命令：help、skills、matrix、clear',
+    terminalInputHint: '输入 help / skills / matrix / clear',
+    terminalUnknownHint: '  试试：help',
+    terminalHelp: {
+      help: 'help    — 显示此帮助',
+      skills: 'skills  — 列出技能矩阵',
+      matrix: 'matrix  — 进入矩阵视图',
+      clear: 'clear   — 清空终端',
+    },
     terminalPrompt: '$',
     terminalHint: '输入 "help" 开始探索',
     terminalOnline: '在线 · showroom.edge',
@@ -188,6 +209,11 @@ export const zh: Dictionary = {
 
   sandbox: {
     verletLabel: 'Verlet 沙盒',
+    verletAria: '可拖拽的物理工牌沙盒，拖动工牌可甩动，过度拉伸会扯断绳索',
+    fabrikArmAria: '六轴机械臂 FABRIK 逆向运动学演示，移动鼠标追踪，点击发射激光',
+    fabrikCreatureAria: '程序化步态四足生物演示，移动鼠标以转向行为追踪',
+    fabrikArmHint: '移动鼠标追踪 · 点击发射激光',
+    fabrikCreatureHint: '移动鼠标 · 步态自动规划落脚点',
     verletHint: '拖动工牌以拉扯绳索',
     verletReset: '重新锻造挂绳',
     verletStrain: '应变',
@@ -208,6 +234,13 @@ export const zh: Dictionary = {
     gravityHeavy: '超重模式',
   },
 
+  /** Visual Overdrive 调色板名称。 */
+  palette: {
+    emerald: '翡翠赛博绿',
+    supernova: '黑金超新星',
+    phantom: '量子幻影紫',
+  },
+
   hud: {
     panelAria: '性能遥测面板',
     closeAria: '关闭性能遥测面板',
@@ -224,6 +257,7 @@ export const zh: Dictionary = {
     hint: 'shift + d 切换',
     heap: 'JS 堆',
     noticeTitle: '已切换至性能模式',
+    degradeReason: '最近 {seconds} 秒平均 {fps} FPS，低于 {threshold} FPS 阈值',
   },
 
   archive: {
@@ -262,6 +296,37 @@ export const zh: Dictionary = {
     copyEmail: '复制邮箱',
     downloadJson: '下载简历 JSON',
     jumpTo: '跳转到',
+    searchAria: '搜索命令',
+    listAria: '可用命令',
+    settingsAria: '当前设置',
+    emptyHint: '试试「架构」「重力」「主题」「简历」',
+    navHint: '导航',
+    execHint: '执行',
+    done: '完成',
+    countLabel: '{items} 项 · {total} 条命令',
+    gravityNotes: {
+      earth: '1.0 g · 恢复默认',
+      zero: '0 g · 绳索自由漂浮',
+      moon: '0.17 g · 月球表面',
+      heavy: '2.6 g · 绳索绷紧',
+    },
+    accents: {
+      emerald: { title: '翡翠绿', subtitle: 'Emerald · 默认强调色' },
+      violet: { title: '赛博紫', subtitle: 'Cyber Violet · 霓虹紫调' },
+      amber: { title: '钛金橙', subtitle: 'Titanium Amber · 暖金高光' },
+      cyan: { title: '信号青', subtitle: 'Signal Cyan · 展厅原色' },
+    },
+    profile: {
+      title: '个人数字展厅',
+      role: '全栈 AI · 实时图形工程',
+      summary: '一个由 WebGL、惯性滚动与实时状态编排构成的沉浸式空间。滚动即是镜头运动。',
+    },
+    skills: {
+      graphics: '实时图形',
+      physics: '物理仿真',
+      frontend: '前端架构',
+      interaction: '交互',
+    },
     gravityPrefix: '',
   },
 }

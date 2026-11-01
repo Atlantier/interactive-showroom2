@@ -3,6 +3,7 @@ import { X } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { useAppStore } from '@/store/useAppStore'
 import { getActiveCanvasCount } from '@/lib/frameBridge'
+import { useI18n } from '@/i18n/useI18n'
 import {
   HEAP_HISTORY_SIZE,
   getActiveParticleCount,
@@ -68,6 +69,7 @@ interface MaybeVfxPreset {
 }
 
 export function PerfTelemetryHud() {
+  const { t } = useI18n()
   const open = useAppStore((state) => state.perfHudOpen)
   const setOpen = useAppStore((state) => state.setPerfHudOpen)
   const tier = useAppStore((state) => state.performanceTier)
@@ -262,7 +264,7 @@ export function PerfTelemetryHud() {
         'shadow-[0_24px_60px_-32px_rgba(0,0,0,0.95)]',
       )}
       role="dialog"
-      aria-label="性能遥测面板"
+      aria-label={t.hud.panelAria}
     >
       {/* Corner brackets: the cyberpunk tell. */}
       {(
@@ -288,7 +290,7 @@ export function PerfTelemetryHud() {
         <button
           type="button"
           onClick={() => setOpen(false)}
-          aria-label="关闭性能遥测面板"
+          aria-label={t.hud.closeAria}
           className="grid size-5 place-items-center rounded text-ink-500 transition-colors hover:text-signal-cyan"
         >
           <X className="size-3" aria-hidden />
@@ -407,7 +409,7 @@ export function PerfTelemetryHud() {
       </div>
 
       <p className="mt-2 text-center text-[0.5rem] tracking-[0.18em] text-ink-700 uppercase">
-        shift + d 切换
+        {t.hud.hint}
       </p>
     </div>
   )

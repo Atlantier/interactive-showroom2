@@ -2,6 +2,7 @@ import { useEffect, useId, useRef } from 'react'
 import { onScrollFrame, scrollToTarget } from '@/lib/scrollEngine'
 import { getTransient } from '@/store/useAppStore'
 import { cn } from '@/lib/cn'
+import { useI18n } from '@/i18n/useI18n'
 
 /**
  * ScrollProgressRing — a precise SVG ring that mirrors the global scroll
@@ -47,6 +48,7 @@ interface ScrollProgressRingProps {
 }
 
 export function ScrollProgressRing({ className }: ScrollProgressRingProps) {
+  const { t } = useI18n()
   // Unique gradient id: prevents collisions if the ring is ever rendered twice.
   const gradientId = useId()
   const arcRef = useRef<SVGCircleElement>(null)
@@ -87,8 +89,8 @@ export function ScrollProgressRing({ className }: ScrollProgressRingProps) {
     <button
       type="button"
       onClick={() => scrollToTarget(0)}
-      aria-label="回到顶部"
-      title="滚动进度 · 点击回到顶部"
+      aria-label={t.nav.backToTop}
+      title={t.nav.scrollProgressTitle}
       className={cn(
         'group relative grid size-9 shrink-0 place-items-center rounded-full',
         'transition-colors duration-200',

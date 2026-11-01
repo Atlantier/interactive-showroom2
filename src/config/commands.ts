@@ -13,10 +13,9 @@ import {
 import { SHOWROOM_SECTIONS } from '@/config/sections'
 import { getDictionary } from '@/i18n/useI18n'
 import { startScroll, scrollToTarget } from '@/lib/scrollEngine'
-import { VFX_PRESET_ORDER, getVfxPalette } from '@/lib/vfxPalette'
+import { VFX_PRESET_ORDER, getVfxPalette, vfxLabelKey } from '@/lib/vfxPalette'
 import {
   ACCENT_SWATCH,
-  GRAVITY_LABELS,
   useAppStore,
   type AccentTheme,
   type GravityMode,
@@ -39,16 +38,17 @@ import {
  * searching "violet" finds 赛博紫 without showing a confusing match highlight.
  */
 
-export type CommandGroup = '跳转章节' | '物理沙盒' | '主题强调色' | '视觉调色' | '操作'
+/**
+ * Group identity is a stable token, not a label.
+ *
+ * The visible heading is resolved from the dictionary at render time; storing
+ * Chinese here meant the palette's group headers were the one part of it that
+ * could never be translated.
+ */
+export type CommandGroup = 'navigate' | 'physics' | 'accent' | 'palette' | 'actions'
 
 /** Order the groups appear in the list, regardless of query score. */
-export const GROUP_ORDER: CommandGroup[] = [
-  '跳转章节',
-  '物理沙盒',
-  '主题强调色',
-  '视觉调色',
-  '操作',
-]
+export const GROUP_ORDER: CommandGroup[] = ['navigate', 'physics', 'accent', 'palette', 'actions']
 
 export interface Command {
   id: string
@@ -134,15 +134,15 @@ async function copyText(text: string): Promise<boolean> {
  * to be percent-encoded.
  */
 function downloadResumeJson(): void {
+  const dict = getDictionary()
   const payload = {
     $schema: 'https://showroom.dev/schema/resume-v1.json',
     generatedAt: new Date().toISOString(),
     profile: {
-      title: '个人数字展厅',
-      role: '全栈 AI · 实时图形工程',
+      title: dict.commands.profile.title,
+      role: dict.commands.profile.role,
       email: CONTACT_EMAIL,
-      summary:
-        '一个由 WebGL、惯性滚动与实时状态编排构成的沉浸式空间。滚动即是镜头运动。',
+      summary: dict.commands.profile.summary,
     },
     sections: SHOWROOM_SECTIONS.map((section) => ({
       index: section.index,
@@ -150,10 +150,10 @@ function downloadResumeJson(): void {
       title: getDictionary().sections[section.id].title,
     })),
     skills: [
-      { group: '实时图形', items: ['WebGL', 'Three.js', 'R3F', 'GLSL', '后处理管线'] },
-      { group: '物理仿真', items: ['Verlet', 'FABRIK IK', '约束求解', '程序化步态'] },
-      { group: '前端架构', items: ['React 19', 'TypeScript', 'Zustand', '单主时钟'] },
-      { group: '交互', items: ['惯性滚动', '命令面板', '无障碍', '移动端适配'] },
+      { group: dict.commands.skills.graphics, items: ['WebGL', 'Three.js', 'R3F', 'GLSL'] },
+      { group: dict.commands.skills.physics, items: ['Verlet', 'FABRIK IK', 'Constraints', 'Procedural gait'] },
+      { group: dict.commands.skills.frontend, items: ['React 19', 'TypeScript', 'Zustand', 'Single clock'] },
+      { group: dict.commands.skills.interaction, items: ['Inertial scroll', 'Command palette', 'A11y', 'Responsive'] },
     ],
   }
 
@@ -175,12 +175,22 @@ function downloadResumeJson(): void {
 /** Build the full command list for the current store state. */
 export function buildCommands(): Command[] {
   const state = useAppStore.getState()
+  const dict = getDictionary()
+
+  // Gravity names are copy, so they come from the dictionary rather than from the
+  // store module, which must stay free of presentation strings.
+  const gravityLabel: Record<GravityMode, string> = {
+    earth: dict.sandbox.gravityEarth,
+    zero: dict.sandbox.gravityZero,
+    moon: dict.sandbox.gravityMoon,
+    heavy: dict.sandbox.gravityHeavy,
+  }
 
   const sectionCommands: Command[] = SHOWROOM_SECTIONS.map((section) => ({
     id: `goto-${section.id}`,
     title: `${getDictionary().commands.jumpTo} ${getDictionary().sections[section.id].title}`,
     subtitle: section.id,
-    group: '跳转章节',
+    group: 'navigate',
     keywords: `${section.id} section chapter goto jump navigate ${getDictionary().sections[section.id].title}`,
     icon: ArrowRight,
     hint: section.index,
@@ -201,16 +211,9 @@ export function buildCommands(): Command[] {
 
   const gravityCommands: Command[] = gravityOptions.map(({ mode, icon, keywords }) => ({
     id: `gravity-${mode}`,
-    title: GRAVITY_LABELS[mode],
-    subtitle:
-      mode === 'earth'
-        ? '1.0 g · 恢复默认'
-        : mode === 'zero'
-          ? '0 g · 绳索自由漂浮'
-          : mode === 'moon'
-            ? '0.17 g · 月球表面'
-            : '2.6 g · 绳索绷紧',
-    group: '物理沙盒',
+    title: gravityLabel[mode],
+    subtitle: dict.commands.gravityNotes[mode],
+    group: 'physics',
     keywords: `gravity physics sandbox ${keywords}`,
     icon,
     active: state.gravityMode === mode,
@@ -219,41 +222,31 @@ export function buildCommands(): Command[] {
 
   const accentOptions: Array<{
     theme: AccentTheme
-    title: string
-    subtitle: string
     keywords: string
   }> = [
     {
       theme: 'emerald',
-      title: '翡翠绿',
-      subtitle: 'Emerald · 默认强调色',
       keywords: 'emerald green 翡翠 绿 强调色 accent theme',
     },
     {
       theme: 'violet',
-      title: '赛博紫',
-      subtitle: 'Cyber Violet · 霓虹紫调',
       keywords: 'violet purple cyber 赛博 紫 强调色 accent theme',
     },
     {
       theme: 'amber',
-      title: '钛金橙',
-      subtitle: 'Titanium Amber · 暖金高光',
       keywords: 'amber orange titanium 钛金 橙 强调色 accent theme',
     },
     {
       theme: 'cyan',
-      title: '信号青',
-      subtitle: 'Signal Cyan · 展厅原色',
       keywords: 'cyan teal signal 信号青 青色 原始 accent theme',
     },
   ]
 
   const accentCommands: Command[] = accentOptions.map((option) => ({
     id: `accent-${option.theme}`,
-    title: option.title,
-    subtitle: option.subtitle,
-    group: '主题强调色',
+    title: dict.commands.accents[option.theme].title,
+    subtitle: dict.commands.accents[option.theme].subtitle,
+    group: 'accent',
     keywords: option.keywords,
     icon: Palette,
     swatch: ACCENT_SWATCH[option.theme],
@@ -278,9 +271,9 @@ export function buildCommands(): Command[] {
     const vfxPalette = getVfxPalette(preset)
     return {
       id: `vfx-${preset}`,
-      title: vfxPalette.label,
+      title: dict.palette[vfxLabelKey(preset)],
       subtitle: `Visual Overdrive · ${vfxPalette.primary.toUpperCase()} / ${vfxPalette.secondary.toUpperCase()}`,
-      group: '视觉调色',
+      group: 'palette',
       keywords:
         'vfx visual overdrive palette spectral colour color shader particles 视觉 调色 光谱 粒子 配色',
       icon: Sparkles,
@@ -293,18 +286,18 @@ export function buildCommands(): Command[] {
   const actionCommands: Command[] = [
     {
       id: 'copy-email',
-      title: '复制邮箱',
+      title: dict.commands.copyEmail,
       subtitle: CONTACT_EMAIL,
-      group: '操作',
+      group: 'actions',
       keywords: 'copy email mail contact clipboard 复制 邮箱 联系',
       icon: Copy,
       run: () => copyText(CONTACT_EMAIL),
     },
     {
       id: 'download-resume',
-      title: '下载简历 JSON',
+      title: dict.commands.downloadJson,
       subtitle: 'showroom-resume.json',
-      group: '操作',
+      group: 'actions',
       keywords: 'download resume json cv export save 下载 简历',
       icon: Download,
       run: () => {

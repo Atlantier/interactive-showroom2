@@ -4,6 +4,7 @@ import { damp } from '@/lib/math'
 import { soundEngine } from '@/utils/soundEngine'
 import { useInViewAnimation } from '@/hooks/useInViewAnimation'
 import { reportIkSolve } from '@/lib/perfMetrics'
+import { useI18n } from '@/i18n/useI18n'
 import {
   applyAngleConstraints,
   chainLength,
@@ -1417,6 +1418,7 @@ interface DebugFlags {
 }
 
 export function FabrikCreature({ className }: { className?: string }) {
+  const { t } = useI18n()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
 
@@ -1686,8 +1688,8 @@ export function FabrikCreature({ className }: { className?: string }) {
         role="application"
         aria-label={
           mode === 'arm'
-            ? '六轴机械臂 FABRIK 逆向运动学演示，移动鼠标追踪，点击发射激光'
-            : '程序化步态四足生物演示，移动鼠标以转向行为追踪'
+            ? t.sandbox.fabrikArmAria
+            : t.sandbox.fabrikCreatureAria
         }
       />
 
@@ -1763,7 +1765,7 @@ export function FabrikCreature({ className }: { className?: string }) {
       </div>
 
       <p className="pointer-events-none absolute inset-x-0 bottom-2 text-center font-mono text-[0.55rem] tracking-[0.2em] text-ink-700 uppercase">
-        {mode === 'arm' ? '移动鼠标追踪 · 点击发射激光' : '移动鼠标 · 步态自动规划落脚点'}
+        {mode === 'arm' ? t.sandbox.fabrikArmHint : t.sandbox.fabrikCreatureHint}
       </p>
     </div>
   )

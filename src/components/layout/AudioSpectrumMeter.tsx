@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { cn } from '@/lib/cn'
 import { useAppStore } from '@/store/useAppStore'
 import { SPECTRUM_BANDS, soundEngine } from '@/utils/soundEngine'
+import { useI18n } from '@/i18n/useI18n'
 
 /**
  * AudioSpectrumMeter — a five-column live spectrum readout for the navbar.
@@ -37,6 +38,7 @@ const BAND_COLORS = [
 ] as const
 
 export function AudioSpectrumMeter({ className }: { className?: string }) {
+  const { t } = useI18n()
   const soundEnabled = useAppStore((state) => state.soundEnabled)
   const barRefs = useRef<Array<HTMLSpanElement | null>>([])
 
@@ -111,7 +113,7 @@ export function AudioSpectrumMeter({ className }: { className?: string }) {
       // Decorative: the sound toggle button beside it already conveys the mute
       // state, so announcing five anonymous levels would only add noise.
       aria-hidden
-      title="实时音频频谱"
+      title={t.nav.audioSpectrumTitle}
     >
       {BAND_COLORS.map((color, i) => (
         <span key={color} className="relative h-4 w-[3px] overflow-hidden">

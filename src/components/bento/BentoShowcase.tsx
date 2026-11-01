@@ -7,6 +7,7 @@ import { TerminalTyper } from '@/components/bento/micro/TerminalTyper'
 import { getVfxPalette, type VfxPalette } from '@/lib/vfxPalette'
 import { useAppStore } from '@/store/useAppStore'
 import { cn } from '@/lib/cn'
+import { useI18n } from '@/i18n/useI18n'
 
 /**
  * BentoShowcase — the five-card works matrix.
@@ -65,24 +66,26 @@ function CardFooter({ note, title }: { note: string; title: string }) {
 /*  1. Hero card — 2x2                                                        */
 /* -------------------------------------------------------------------------- */
 function ThroughputCard({ palette }: { palette: VfxPalette }) {
+  const { t } = useI18n()
+
   return (
     <SpotlightCard
       spanClassName="md:col-span-2 md:row-span-2"
-      label="实时推理吞吐"
+      label={t.bento.cardThroughputLabel}
       className="p-4"
       glowColor={palette.glowRgb}
     >
       <CardHeader icon={<Radio className="size-3.5" aria-hidden />} eyebrow="live telemetry" />
 
       <p className="mt-2 text-[0.72rem] leading-relaxed text-ink-500">
-        边缘推理集群的实时吞吐，每 120ms 采样一次，由 canvas 直接绘制。
+        {t.bento.cardThroughputBody}
       </p>
 
       <div className="mt-3 min-h-0 flex-1">
         <TokenThroughputChart baseline={12_400} />
       </div>
 
-      <CardFooter note="实时跳动的 Token 吞吐量折线图" title="推理吞吐监控" />
+      <CardFooter note={t.bento.cardThroughputNote} title={t.bento.cardThroughputTitle} />
     </SpotlightCard>
   )
 }
@@ -91,10 +94,12 @@ function ThroughputCard({ palette }: { palette: VfxPalette }) {
 /*  2. Wide card — 2x1: topology                                              */
 /* -------------------------------------------------------------------------- */
 function TopologyCard({ palette }: { palette: VfxPalette }) {
+  const { t } = useI18n()
+
   return (
     <SpotlightCard
       spanClassName="md:col-span-2"
-      label="架构拓扑"
+      label={t.bento.cardTopologyLabel}
       className="p-4"
       glowColor={palette.glowRgb}
     >
@@ -108,7 +113,7 @@ function TopologyCard({ palette }: { palette: VfxPalette }) {
         <TopologyMini />
       </div>
 
-      <CardFooter note="可点击切换的架构拓扑微缩图" title="分布式推理拓扑" />
+      <CardFooter note={t.bento.cardTopologyNote} title={t.bento.cardTopologyTitle} />
     </SpotlightCard>
   )
 }
@@ -117,10 +122,12 @@ function TopologyCard({ palette }: { palette: VfxPalette }) {
 /*  3. Tall card — 1x2: terminal                                              */
 /* -------------------------------------------------------------------------- */
 function TerminalCard({ palette }: { palette: VfxPalette }) {
+  const { t } = useI18n()
+
   return (
     <SpotlightCard
       spanClassName="md:row-span-2"
-      label="部署终端"
+      label={t.bento.cardTerminalLabel}
       className="p-4"
       glowColor={palette.glowRgb}
     >
@@ -130,7 +137,7 @@ function TerminalCard({ palette }: { palette: VfxPalette }) {
         <TerminalTyper className="h-full" />
       </div>
 
-      <CardFooter note="带打字机特效的终端模拟器" title="一键部署" />
+      <CardFooter note={t.bento.cardTerminalNote} title={t.bento.cardTerminalTitle} />
     </SpotlightCard>
   )
 }
@@ -139,14 +146,16 @@ function TerminalCard({ palette }: { palette: VfxPalette }) {
 /*  4. Small card — 1x1: render stats                                         */
 /* -------------------------------------------------------------------------- */
 function ShaderCard({ palette }: { palette: VfxPalette }) {
+  const { t } = useI18n()
+
   const stats = [
-    { label: 'draw calls', value: '1' },
-    { label: 'particles', value: '8 000' },
-    { label: 'frame', value: '4.0ms' },
+    { label: t.bento.drawCalls, value: '1' },
+    { label: t.bento.particles, value: '8 000' },
+    { label: t.bento.frame, value: '4.0ms' },
   ]
 
   return (
-    <SpotlightCard label="渲染管线" className="p-4" glowColor={palette.glowRgb}>
+    <SpotlightCard label={t.bento.cardRenderLabel} className="p-4" glowColor={palette.glowRgb}>
       <CardHeader
         icon={<Cpu className="size-3.5" aria-hidden />}
         eyebrow="render"
@@ -162,7 +171,7 @@ function ShaderCard({ palette }: { palette: VfxPalette }) {
         ))}
       </dl>
 
-      <CardFooter note="单 draw call 渲染 8000 粒子" title="渲染管线" />
+      <CardFooter note={t.bento.cardRenderNote} title={t.bento.cardRenderTitle} />
 
       {/*
        * Action target for the card's ember field. Anything carrying
@@ -175,7 +184,7 @@ function ShaderCard({ palette }: { palette: VfxPalette }) {
         data-card-action="true"
         className="mt-2.5 inline-flex items-center gap-1.5 self-start rounded-full border border-signal-teal/30 bg-signal-teal/10 px-2.5 py-1 font-mono text-[0.6rem] tracking-wide text-signal-teal transition-colors duration-300 hover:border-signal-teal/70 hover:bg-signal-teal/20"
       >
-        Inspect Architecture
+        {t.bento.inspectArchitecture}
       </button>
     </SpotlightCard>
   )
@@ -185,12 +194,14 @@ function ShaderCard({ palette }: { palette: VfxPalette }) {
 /*  5. Small card — 1x1: uptime                                               */
 /* -------------------------------------------------------------------------- */
 function UptimeCard({ palette }: { palette: VfxPalette }) {
+  const { t } = useI18n()
+
   // Deterministic bar heights: a random block would re-render on every pass and
   // carries no semantic meaning.
   const bars = [38, 52, 44, 61, 55, 70, 64, 78, 72, 86, 80, 92, 88, 96]
 
   return (
-    <SpotlightCard label="在线时长" className="p-4" glowColor={palette.glowRgb}>
+    <SpotlightCard label={t.bento.cardUptimeLabel} className="p-4" glowColor={palette.glowRgb}>
       <CardHeader
         icon={<Radio className="size-3.5" aria-hidden />}
         eyebrow="uptime"
@@ -211,7 +222,7 @@ function UptimeCard({ palette }: { palette: VfxPalette }) {
         ))}
       </div>
 
-      <CardFooter note="过去 14 天的可用性" title="服务健康度" />
+      <CardFooter note={t.bento.cardUptimeNote} title={t.bento.cardUptimeTitle} />
     </SpotlightCard>
   )
 }

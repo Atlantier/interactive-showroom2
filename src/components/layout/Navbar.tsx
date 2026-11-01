@@ -14,7 +14,12 @@ import {
 import { useAppStore } from '@/store/useAppStore'
 import { useFpsMonitor } from '@/hooks/useFpsMonitor'
 import { scrollToTarget } from '@/lib/scrollEngine'
-import { DEFAULT_VFX_PRESET, getNextVfxPreset, getVfxPalette } from '@/lib/vfxPalette'
+import {
+  DEFAULT_VFX_PRESET,
+  getNextVfxPreset,
+  getVfxPalette,
+  vfxLabelKey,
+} from '@/lib/vfxPalette'
 import { cn } from '@/lib/cn'
 import { IconButton, StatusDot } from '@/components/ui/primitives'
 import { ScrollProgressRing } from '@/components/ui/ScrollProgressRing'
@@ -107,7 +112,7 @@ function FpsReadout() {
 
           {/* frame time */}
           <div className="flex items-baseline justify-between">
-            <span className="text-ink-500">帧时间</span>
+            <span className="text-ink-500">{t.nav.frame}</span>
             <span className="tabular-nums text-ink-300">
               <span ref={frameMsRef}>--.--</span>
               <span className="ml-1 text-[0.6rem] text-ink-700">ms</span>
@@ -322,7 +327,7 @@ export function Navbar() {
                 palette exposes direct per-preset selection for anyone who does
                 not want to cycle. */}
             <IconButton
-              label={`${t.nav.paletteCycle} · ${vfxPalette.label}`}
+              label={`${t.nav.paletteCycle} · ${t.palette[vfxLabelKey(vfxPreset)]}`}
               active={vfxPreset !== DEFAULT_VFX_PRESET}
               onClick={() => setVfxPreset(getNextVfxPreset(vfxPreset))}
             >

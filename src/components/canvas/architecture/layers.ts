@@ -9,20 +9,27 @@ import * as THREE from 'three'
  */
 
 export interface LayerTech {
+  /** Technology name. A proper noun, so it is not localised. */
   name: string
-  detail: string
 }
 
+/**
+ * Closed union: every id is also a key into `t.architecture.layers`, so the HUD
+ * cannot ask for copy that does not exist.
+ */
+export type LayerId = 'infra' | 'agents' | 'spatial'
+
 export interface LayerInfo {
-  id: string
+  id: LayerId
   index: string
   /** Display title, e.g. "Infrastructure". */
   title: string
   /** Sub-title shown under the title, e.g. "CUDA Kernel Layer". */
   subtitle: string
-  /** One-line summary for the HUD header. */
-  summary: string
-  /** Technology stack rows for the HUD. */
+  /**
+   * Technology stack rows for the HUD. Names only; the per-row descriptions are
+   * resolved from the dictionary by index so they follow the locale.
+   */
   tech: LayerTech[]
   /** Accent colour for the HUD and the focus ring. */
   accent: string
@@ -39,15 +46,14 @@ export const LAYERS: LayerInfo[] = [
     index: '01',
     title: 'Infrastructure',
     subtitle: 'CUDA Kernel Layer',
-    summary: '高密度计算网格，为每个 token 榨干每一瓦特。',
     accent: '#22d3ee',
     restY: -0.95,
     tech: [
-      { name: 'CUDA Kernels', detail: '自定义 attention / RMSNorm 融合算子' },
-      { name: 'TensorRT-LLM', detail: 'FP8 / INT4 量化 · 动态批处理' },
-      { name: 'NCCL Fabric', detail: '跨节点 all-reduce · 800Gbps RDMA' },
-      { name: 'NVLink', detail: 'GPU 间 900GB/s 直连带宽' },
-      { name: 'Memory', detail: 'HBM3e · 每卡 192GB' },
+      { name: 'CUDA Kernels' },
+      { name: 'TensorRT-LLM' },
+      { name: 'NCCL Fabric' },
+      { name: 'NVLink' },
+      { name: 'Memory' },
     ],
   },
   {
@@ -55,15 +61,14 @@ export const LAYERS: LayerInfo[] = [
     index: '02',
     title: 'Orchestration',
     subtitle: 'Multi-Agent Layer',
-    summary: '互联推理节点，以毫秒级调度编排多智能体协作。',
     accent: '#a78bfa',
     restY: 0,
     tech: [
-      { name: 'Agent Runtime', detail: '有状态工具调用 · 流式输出' },
-      { name: 'Router', detail: '语义路由 · 模型自动降级' },
-      { name: 'Vector Store', detail: 'HNSW 索引 · 千万级 embedding' },
-      { name: 'State Machine', detail: '确定性重放 · 断点续跑' },
-      { name: 'Observability', detail: '全链路 trace · 逐 token 归因' },
+      { name: 'Agent Runtime' },
+      { name: 'Router' },
+      { name: 'Vector Store' },
+      { name: 'State Machine' },
+      { name: 'Observability' },
     ],
   },
   {
@@ -71,15 +76,14 @@ export const LAYERS: LayerInfo[] = [
     index: '03',
     title: 'Spatial Web',
     subtitle: 'UI & Interaction Layer',
-    summary: '磨砂折射界面，把算力以空间化的方式交到人手里。',
     accent: '#5eead4',
     restY: 0.95,
     tech: [
-      { name: 'WebGL 2', detail: '自定义 GLSL · 后处理管线' },
-      { name: 'React 19', detail: '并发渲染 · 零重渲染热路径' },
-      { name: 'Motion', detail: '弹簧物理 · 120Hz 合成层' },
-      { name: 'Lenis', detail: '惯性滚动 · 单主时钟驱动' },
-      { name: 'Accessibility', detail: '键盘可达 · 减少动效适配' },
+      { name: 'WebGL 2' },
+      { name: 'React 19' },
+      { name: 'Motion' },
+      { name: 'Lenis' },
+      { name: 'Accessibility' },
     ],
   },
 ]

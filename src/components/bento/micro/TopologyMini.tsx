@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { cn } from '@/lib/cn'
+import { useI18n } from '@/i18n/useI18n'
 
 /**
  * TopologyMini — a clickable architecture topology diagram.
@@ -19,27 +20,29 @@ import { cn } from '@/lib/cn'
  */
 
 interface TopologyNode {
-  id: string
+  id: TopologyNodeId
   label: string
   x: number
   y: number
   /** Short role caption shown under the diagram when active. */
-  role: string
 }
 
+/** Closed union: every node id is also a key into the localised role table. */
+type TopologyNodeId = 'edge' | 'gateway' | 'router' | 'worker' | 'cache' | 'store'
+
 interface TopologyEdge {
-  from: string
-  to: string
+  from: TopologyNodeId
+  to: TopologyNodeId
 }
 
 /** Hand-authored layout in viewBox units (0 0 240 130). */
 const NODES: TopologyNode[] = [
-  { id: 'edge', label: 'EDGE', x: 30, y: 65, role: '全球接入 · 边缘缓存' },
-  { id: 'gateway', label: 'GW', x: 88, y: 30, role: '请求网关 · 鉴权与限流' },
-  { id: 'router', label: 'ROUTE', x: 88, y: 100, role: '智能路由 · 模型选择' },
-  { id: 'worker', label: 'WORK', x: 150, y: 30, role: '推理工作节点 · 批量调度' },
-  { id: 'cache', label: 'CACHE', x: 150, y: 100, role: '语义缓存 · 命中即返回' },
-  { id: 'store', label: 'STORE', x: 212, y: 65, role: '持久层 · 向量与日志' },
+  { id: 'edge', label: 'EDGE', x: 30, y: 65 },
+  { id: 'gateway', label: 'GW', x: 88, y: 30 },
+  { id: 'router', label: 'ROUTE', x: 88, y: 100 },
+  { id: 'worker', label: 'WORK', x: 150, y: 30 },
+  { id: 'cache', label: 'CACHE', x: 150, y: 100 },
+  { id: 'store', label: 'STORE', x: 212, y: 65 },
 ]
 
 const EDGES: TopologyEdge[] = [
@@ -57,7 +60,8 @@ interface TopologyMiniProps {
 }
 
 export function TopologyMini({ className }: TopologyMiniProps) {
-  const [activeId, setActiveId] = useState<string>('worker')
+  const { t } = useI18n()
+  const [activeId, setActiveId] = useState<TopologyNodeId>('worker')
 
   const nodeById = (id: string): TopologyNode | undefined =>
     NODES.find((n) => n.id === id)
@@ -73,14 +77,14 @@ export function TopologyMini({ className }: TopologyMiniProps) {
         <span className="font-mono text-[0.6rem] tracking-[0.2em] text-ink-700 uppercase">
           topology
         </span>
-        <span className="font-mono text-[0.55rem] text-ink-700">点击节点</span>
+        <span className="font-mono text-[0.55rem] text-ink-700">{t.bento.topologyHint}</span>
       </div>
 
       <svg
         viewBox="0 0 240 130"
         className="mt-2 w-full flex-1"
         role="img"
-        aria-label="架构拓扑图，可点击节点查看职责"
+        aria-label={t.bento.topologyAria}
       >
         {/* Edges first so nodes paint on top. */}
         {EDGES.map((edge) => {
@@ -111,7 +115,7 @@ export function TopologyMini({ className }: TopologyMiniProps) {
               onClick={() => setActiveId(node.id)}
               role="button"
               tabIndex={0}
-              aria-label={`查看 ${node.label} 的职责`}
+              aria-label={`${node.label} — ${t.bento.topologyRoles[node.id]}`}
               aria-pressed={active}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
@@ -159,7 +163,7 @@ export function TopologyMini({ className }: TopologyMiniProps) {
       <p className="mt-1 min-h-4 font-mono text-[0.6rem] text-ink-500">
         <span className="text-signal-teal">{activeNode?.label}</span>
         <span className="mx-1.5 text-ink-700">·</span>
-        {activeNode?.role}
+        {activeNode ? t.bento.topologyRoles[activeNode.id] : ''}
       </p>
     </div>
   )

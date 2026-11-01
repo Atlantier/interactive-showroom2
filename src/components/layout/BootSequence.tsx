@@ -227,7 +227,7 @@ export function BootSequence() {
         wordmark. Removed with the veil, so nothing lingers.
       */}
       <span role="status" className="sr-only">
-        正在加载展馆
+        {t.boot.announce}
       </span>
     </>
   )
