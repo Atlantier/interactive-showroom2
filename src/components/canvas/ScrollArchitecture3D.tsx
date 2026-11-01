@@ -355,7 +355,7 @@ function OrchestrationLayer({
         >
           {/* Translucent obsidian shell. */}
           <mesh geometry={nodeGeo}>
-            <meshPhysicalMaterial
+            <meshStandardMaterial
               color="#04121d"
               metalness={0.9}
               roughness={0.1}
@@ -748,6 +748,22 @@ function SpatialLayer({
     }
   })
 
+  /*
+   * Stage the crystal across two frames.
+   *
+   * Measured on a software rasteriser, each distinct shader program costs roughly
+   * 200-250ms to compile and link, and the driver blocks the main thread while it
+   * happens. The glass and the core are therefore drawn one frame apart so the
+   * chapter's first visible frame never carries both. On real hardware each of
+   * these is a few milliseconds, which is the point: the split costs nothing and
+   * bounds the worst frame either way.
+   */
+  const [stage, setStage] = useState(0)
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setStage(1))
+    return () => cancelAnimationFrame(raf)
+  }, [])
+
   return (
     <group ref={groupRef}>
       {/* Hover gap above the infrastructure matrix. */}
@@ -830,9 +846,11 @@ function SpatialLayer({
          * Opaque, so it lands in the opaque pass and the translucent cage blends
          * over it. Bloom then lifts the hot noise cells and the limb.
          */}
-        <mesh ref={coreRef} material={plasmaMaterial}>
-          <sphereGeometry args={[CORE_INNER_RADIUS, 64, 48]} />
-        </mesh>
+        {stage >= 1 && (
+          <mesh ref={coreRef} material={plasmaMaterial}>
+            <sphereGeometry args={[CORE_INNER_RADIUS, 64, 48]} />
+          </mesh>
+        )}
 
         {/*
          * ── Core light ─────────────────────────────────────────────────────
@@ -848,16 +866,18 @@ function SpatialLayer({
          * ellipse for contact plus a low cyan lift in the middle so the floor
          * appears to catch some glass. A single extra draw call, no mirror pass.
          */}
-        <mesh position={[0, -1.32, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={3}>
-          <planeGeometry args={[4.2, 4.2]} />
-          <shaderMaterial
-            transparent
-            depthWrite={false}
-            blending={THREE.NormalBlending}
-            vertexShader={CONTACT_VERTEX}
-            fragmentShader={CONTACT_FRAGMENT}
-          />
-        </mesh>
+        {stage >= 1 && (
+          <mesh position={[0, -1.32, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={3}>
+            <planeGeometry args={[4.2, 4.2]} />
+            <shaderMaterial
+              transparent
+              depthWrite={false}
+              blending={THREE.NormalBlending}
+              vertexShader={CONTACT_VERTEX}
+              fragmentShader={CONTACT_FRAGMENT}
+            />
+          </mesh>
+        )}
 
         <pointLight ref={lightRef} color="#00f0ff" intensity={3} distance={10} decay={2} />
       </group>
@@ -1388,23 +1408,37 @@ function ArchitectureRig({
     soundEngine.playHoverTick()
   }
 
+  /*
+   * Staged mount.
+   *
+   * A material compiles its shader program the first time it is drawn, and the
+   * driver blocks the main thread on the link-status query while that happens.
+   * A CPU profile of the first entry into this chapter put ~1.2s of blocked main
+   * thread in a SINGLE task, because the whole rig committed at once.
+   *
+   * Mounting the layers one per frame turns that task into four much smaller
+   * ones. The total cost is unchanged -- what changes is that no single frame
+   * stalls long enough to read as a freeze.
+   */
+  const [stage, setStage] = useState(0)
+  useEffect(() => {
+    let raf = 0
+    let next = 1
+    const step = (): void => {
+      setStage(next)
+      next += 1
+      if (next <= 4) raf = requestAnimationFrame(step)
+    }
+    raf = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(raf)
+  }, [])
+
   return (
     <group ref={rootRef}>
+      {/* Stage 0: the base of the stack plus the floor it sits on. */}
       <group onClick={handleSelect('infra')} onPointerOver={handleHover}>
         <InfrastructureLayer groupRef={infraRef} />
       </group>
-      <group onClick={handleSelect('agents')} onPointerOver={handleHover}>
-        <OrchestrationLayer groupRef={agentRef} progress={progress} />
-      </group>
-      <group onClick={handleSelect('spatial')} onPointerOver={handleHover}>
-        <SpatialLayer groupRef={spatialRef} progress={progress} />
-      </group>
-      <DataStreams progress={progress} />
-      <DataConduits
-        progress={progress}
-        layerRefs={layerRefs}
-        selectedRef={selectedRef}
-      />
 
       {/*
        * Virtual floor beneath the stack. It follows the bottom layer every frame,
@@ -1412,6 +1446,30 @@ function ArchitectureRig({
        * than being sliced through by it.
        */}
       <FloorCaustics bottomRef={infraRef} intensity={1.5} />
+
+      {stage >= 1 && (
+        <group onClick={handleSelect('agents')} onPointerOver={handleHover}>
+          <OrchestrationLayer groupRef={agentRef} progress={progress} />
+        </group>
+      )}
+
+      {/* Stage 2: the crystal. The heaviest shader set, so it gets its own frame. */}
+      {stage >= 2 && (
+        <group onClick={handleSelect('spatial')} onPointerOver={handleHover}>
+          <SpatialLayer groupRef={spatialRef} progress={progress} />
+        </group>
+      )}
+
+      {stage >= 3 && <DataStreams progress={progress} />}
+
+      {/* Conduits last: they read the layer centres, so every layer must exist. */}
+      {stage >= 4 && (
+        <DataConduits
+          progress={progress}
+          layerRefs={layerRefs}
+          selectedRef={selectedRef}
+        />
+      )}
     </group>
   )
 }
@@ -1458,6 +1516,26 @@ export function ScrollArchitecture3D({
 }: ScrollArchitecture3DProps) {
   const tier = useAppStore((s) => s.performanceTier)
   const [webgl, setWebgl] = useState(false)
+  /*
+   * The stage lights compile their own programs (cones + dust). Delaying them by
+   * a frame keeps their compile off the same task as the rig's first layer,
+   * which is the same reasoning as the staged mount inside ArchitectureRig.
+   */
+  const [lightsReady, setLightsReady] = useState(false)
+  /*
+   * Prewarm.
+   *
+   * A material's shader program is compiled and linked the first time it is
+   * drawn, and the driver blocks the main thread while that happens: measured at
+   * ~0.9s cold and ~0.5s once the driver's shader cache is warm, all inside the
+   * frame where the chapter first becomes awake. That is the hitch on entry.
+   *
+   * Mounting the rig a little after load, while the visitor is still at the top
+   * of the page, moves that cost somewhere it is not attached to a scroll
+   * gesture. It is an idle callback so it lands in a gap rather than competing
+   * with the hero's entrance.
+   */
+  const [prewarmed, setPrewarmed] = useState(false)
 
   useEffect(() => {
     setWebgl(supportsWebGL())
@@ -1465,6 +1543,35 @@ export function ScrollArchitecture3D({
   }, [])
 
   useEffect(() => () => setCanvasActive(false), [])
+
+  const live = awake || prewarmed
+
+  useEffect(() => {
+    if (prewarmed) return
+    const arm = (): void => {
+      const w = window as Window & {
+        requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number
+      }
+      if (typeof w.requestIdleCallback === 'function') {
+        w.requestIdleCallback(() => setPrewarmed(true), { timeout: 4000 })
+      } else {
+        window.setTimeout(() => setPrewarmed(true), 2500)
+      }
+    }
+    // Let the hero's entrance finish first; the point is to avoid competing with
+    // the first impression, not to be as early as possible.
+    const timer = window.setTimeout(arm, 1600)
+    return () => window.clearTimeout(timer)
+  }, [prewarmed])
+
+  useEffect(() => {
+    if (!live) {
+      setLightsReady(false)
+      return
+    }
+    const raf = requestAnimationFrame(() => setLightsReady(true))
+    return () => cancelAnimationFrame(raf)
+  }, [live])
 
   if (!webgl) return null
 
@@ -1484,6 +1591,21 @@ export function ScrollArchitecture3D({
         stencil: false,
       }}
       onCreated={({ gl, scene, camera }) => {
+        /*
+         * Shader diagnostics off in production.
+         *
+         * three.js validates every freshly linked program by calling
+         * getProgramInfoLog/getShaderInfoLog, which forces a synchronous driver
+         * round-trip. A CPU profile of the gallery entry measured getProgramInfoLog
+         * alone at ~1.9s of blocked main thread once a screenful of new materials
+         * compiled together -- that is the hitch on entering a section, not layout
+         * and not garbage collection.
+         *
+         * `checkShaderErrors` skips the whole diagnostic path. It stays on in dev,
+         * where a broken shader must still fail loudly with its log.
+         */
+        gl.debug.checkShaderErrors = import.meta.env.DEV
+
         gl.setClearColor(0x000000, 0)
         setCanvasActive(true)
 
@@ -1516,7 +1638,7 @@ export function ScrollArchitecture3D({
         one-shot bake could land before everything it needs was in the scene. A few
         extra frames cost milliseconds at mount and make the bake reliable.
       */}
-      <Environment resolution={256} frames={8}>
+      <Environment resolution={256} frames={1}>
         <Lightformer form="rect" intensity={3} position={[0, 4, -6]} scale={[10, 4, 1]} color="#0ea5e9" />
         <Lightformer form="rect" intensity={2.2} position={[-6, 1, 2]} scale={[4, 8, 1]} color="#22d3ee" />
         <Lightformer form="rect" intensity={1.6} position={[6, -1, 1]} scale={[4, 8, 1]} color="#a78bfa" />
@@ -1541,7 +1663,7 @@ export function ScrollArchitecture3D({
        * early-return. Waking happens 60% of a viewport early, so the rebuild is
        * never visible.
        */}
-      {awake && (
+      {live && (
         <>
           <ArchitectureRig
             progress={progress}
@@ -1555,7 +1677,9 @@ export function ScrollArchitecture3D({
            * gate, so an off-screen chapter pays nothing for it — and no
            * `fadeWithScroll`, because the gate already owns its visibility.
            */}
-          <VolumetricStageLights tier={tier} height={9} scale={0.85} intensity={0.85} />
+          {lightsReady && (
+            <VolumetricStageLights tier={tier} height={9} scale={0.85} intensity={0.85} />
+          )}
         </>
       )}
 

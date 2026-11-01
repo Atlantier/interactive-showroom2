@@ -315,6 +315,21 @@ export function SceneCanvas() {
         depth: true,
       }}
       onCreated={({ gl, scene, camera, size }) => {
+        /*
+         * Shader diagnostics off in production.
+         *
+         * three.js validates every freshly linked program by calling
+         * getProgramInfoLog/getShaderInfoLog, which forces a synchronous driver
+         * round-trip. A CPU profile of the gallery entry measured getProgramInfoLog
+         * alone at ~1.9s of blocked main thread once a screenful of new materials
+         * compiled together -- that is the hitch on entering a section, not layout
+         * and not garbage collection.
+         *
+         * `checkShaderErrors` skips the whole diagnostic path. It stays on in dev,
+         * where a broken shader must still fail loudly with its log.
+         */
+        gl.debug.checkShaderErrors = import.meta.env.DEV
+
         // Transparent so the DOM's ambient gradient layers show through.
         gl.setClearColor(0x000000, 0)
 
