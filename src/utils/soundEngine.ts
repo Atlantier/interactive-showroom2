@@ -503,6 +503,48 @@ class SoundEngine {
    *
    * @param out - Destination array; must be at least `SPECTRUM_BANDS` long.
    */
+  /** Time-domain scratch for `readEnergy`; allocated on first use. */
+  private timeScratch: Uint8Array | null = null
+
+  /**
+   * Instantaneous loudness envelope, normalised to 0..1.
+   *
+   * Uses the TIME-DOMAIN signal (RMS of the waveform), not the frequency
+   * spectrum. For a visual envelope the question is "how loud is it right now",
+   * and RMS answers exactly that; peak-per-band would make a single bright bin
+   * read as a full-scale pulse. It is also cheaper: one pass over `fftSize`
+   * samples with no per-band binning.
+   *
+   * The 3.2 gain maps a typical UI blip — which peaks well below full scale —
+   * onto most of the range, so the visuals respond to ordinary interactions
+   * rather than only to the loudest cue in the set.
+   *
+   * Returns 0 when audio is not running, which is what makes the whole
+   * audio-reactive layer degrade silently rather than freezing at some value.
+   */
+  readEnergy(): number {
+    const analyser = this.analyser
+    if (!analyser) return 0
+
+    const bins = analyser.fftSize
+    if (!this.timeScratch || this.timeScratch.length !== bins) {
+      this.timeScratch = new Uint8Array(bins)
+    }
+    analyser.getByteTimeDomainData(this.timeScratch)
+
+    const data = this.timeScratch
+    let sum = 0
+    for (let i = 0; i < bins; i++) {
+      // 128 is silence in unsigned 8-bit audio.
+      const v = (data[i] - 128) / 128
+      sum += v * v
+    }
+
+    const rms = Math.sqrt(sum / bins)
+    const energy = rms * 3.2
+    return energy > 1 ? 1 : energy
+  }
+
   readSpectrum(out: Uint8Array): boolean {
     const analyser = this.analyser
     const ctx = this.ctx

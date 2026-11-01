@@ -5,6 +5,7 @@ import { buildCurlVolume, sampleCurl, type CurlVolume } from '@/lib/curlNoise'
 import { createSpring, stepSpring } from '@/lib/math'
 import { getTransient } from '@/store/useAppStore'
 import { reportParticles } from '@/lib/perfMetrics'
+import { soundEngine } from '@/utils/soundEngine'
 import type { PerformanceTier } from '@/types'
 
 /**
@@ -388,6 +389,8 @@ const FRAGMENT_SHADER = /* glsl */ `
 
   // Streak width in NDC-ish sprite units at full warp.
   uniform float uStreakWidth;
+  // Live audio envelope (0..1), already smoothed on the CPU.
+  uniform float uAudioEnergy;
   // Recoil amount (0..1). Rises as the streaks spring back past rest, producing
   // a brief bright flash that reads as elastic energy releasing.
   uniform float uRecoil;
@@ -445,6 +448,10 @@ const FRAGMENT_SHADER = /* glsl */ `
     // sprite above 1.0 in HDR gives the bright cores real headroom, which is
     // what turns the motes into glowing points rather than flat dots.
     float emission = 1.0 + core * 1.35;
+    // Audio-reactive lift: up to +85% brightness on a loud transient. Applied to
+    // the emission rather than the colour so the hue stays on-palette and only
+    // the intensity breathes.
+    emission *= 1.0 + uAudioEnergy * 0.85;
     // Streaks carry more energy, so they bloom harder.
     emission *= 1.0 + vStretch * 0.8;
     // Recoil pulse.
@@ -615,6 +622,14 @@ export function FlowFieldParticles({
       uMaxStretch: { value: WARP_MAX_STRETCH },
       /** Capsule half-width at full warp, in normalised sprite units. */
       uStreakWidth: { value: WARP_STREAK_WIDTH },
+      /**
+       * Live audio envelope, 0..1, sampled from the SoundEngine's AnalyserNode
+       * once per frame. Drives an extra emissive boost so the nebula breathes
+       * with UI blips, laser fire and impact sounds.
+       */
+      uAudioEnergy: { value: 0 },
+      /** Smoothed envelope, so the response swells instead of strobing. */
+      uAudioSmooth: { value: 0 },
     }),
     [],
   )
@@ -766,6 +781,24 @@ export function FlowFieldParticles({
     else if (warp < 0) warp = 0
 
     uniforms.uWarp.value = warp
+
+    /*
+     * Audio-reactive glow.
+     *
+     * The raw RMS envelope is far too spiky to drive emissive brightness
+     * directly: a single click would flash the whole nebula for one frame and
+     * read as a dropped frame rather than as a response. Two different time
+     * constants keep it musical — a fast attack so the flash starts on the same
+     * frame as the sound, and a slower release so it decays like a lit object
+     * cooling rather than snapping off.
+     */
+    const audioTarget = soundEngine.readEnergy()
+    const attack = 1 - Math.exp(-dt * 26)
+    const release = 1 - Math.exp(-dt * 5.5)
+    const smoothed = uniforms.uAudioSmooth.value
+    uniforms.uAudioSmooth.value =
+      smoothed + (audioTarget - smoothed) * (audioTarget > smoothed ? attack : release)
+    uniforms.uAudioEnergy.value = uniforms.uAudioSmooth.value
 
     /**
      * Recoil pulse — the visible half of the spring-back.
