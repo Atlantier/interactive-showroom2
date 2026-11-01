@@ -812,6 +812,7 @@ function SpatialLayer({
         <group ref={shellRef}>
           <mesh geometry={shellGeo}>
             <meshPhysicalMaterial
+              userData={{ noExitFade: true }}
               color="#031525"
               metalness={0.9}
               roughness={0.1}
@@ -832,6 +833,7 @@ function SpatialLayer({
            */}
           <lineSegments geometry={edgeGeo} renderOrder={4}>
             <lineBasicMaterial
+              userData={{ noExitFade: true }}
               color="#00f0ff"
               toneMapped={false}
               transparent
@@ -1333,6 +1335,15 @@ function ArchitectureRig({
       for (const m of list) {
         const anyMat = m as THREE.Material & { opacity: number; transparent: boolean }
         if (typeof anyMat.opacity !== 'number') continue
+        /*
+         * Opt-out for the spatial layer's hero surfaces. They must stay at their
+         * design opacity for the whole chapter: the plasma core is a custom
+         * ShaderMaterial that computes its own alpha, so it never participates in
+         * this fade. Dimming only the shell and its edge lattice produced the
+         * reported 'the sphere recovered but the shell is still dark' look --
+         * a bright core sitting inside an almost invisible cage.
+         */
+        if (m.userData?.noExitFade) continue
         /*
          * Scale the material's OWN opacity instead of overwriting it.
          *
