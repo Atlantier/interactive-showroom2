@@ -207,9 +207,14 @@ export function writePointer(clientX: number, clientY: number): void {
   writeNormalizedMouse((localX / width) * 2 - 1, -((localY / height) * 2 - 1))
   writePixelMouse(clientX, clientY)
   transient.mouse.active = true
-  // Any real pointer input re-arms the influence target immediately; the ease is
-  // only ever used to release it.
-  transient.mouse.strength = Math.max(transient.mouse.strength, 1)
+  /*
+   * `strength` is deliberately NOT forced to 1 here.
+   *
+   * Forcing it made the influence snap on at full weight the instant the pointer
+   * came back, so a re-entry still read as a pop even though the position now
+   * eases. Leaving it to the engine's ease means the effect ramps in from where
+   * the release left it, which is what makes re-entry continuous.
+   */
 }
 
 /** Write the smoothed scroll progress (p ∈ [0,1]) and its velocity. */
