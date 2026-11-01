@@ -86,10 +86,14 @@ const EDGE_FRAGMENT = /* glsl */ `
     // Three pulses spaced evenly, travelling toward increasing "along".
     float travel = fract(vAlong * 1.0 - uTime * 0.45);
     // Sharp leading edge: the band is bright at travel≈ and decays fast.
-    float pulse = pow(1.0 - travel, 14.0);
+    // Wider band than before (8 instead of 14): at 14 only a few pixels of each
+    // link ever lit up, which is why the network read as dim static wires.
+    float pulse = pow(1.0 - travel, 8.0);
 
     vec3 col = mix(uColorEdge, uColorCore, pulse);
-    float alpha = (0.16 + pulse * 0.95) * uIntensity;
+    // Resting alpha raised from 0.16 to 0.34 so the topology stays readable
+    // between pulses, not only where the travelling band happens to be.
+    float alpha = (0.34 + pulse * 0.9) * uIntensity;
 
     gl_FragColor = vec4(col, alpha);
   }
@@ -186,6 +190,21 @@ function InfrastructureLayer({ groupRef }: { groupRef: React.RefObject<THREE.Gro
 /*  Layer 2 —Multi-agent orchestration                                       */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * The multi-agent layer: floating obsidian shards wired together by flowing
+ * light.
+ *
+ * Each node is three nested objects rather than one mesh, because no single
+ * material can be dark, translucent, rim-lit and self-lit at once:
+ *
+ *   shell   translucent metal — catches the environment, lets starlight through
+ *   edges   twelve bright lines — this is what makes a shard legible at distance
+ *   core    a small emissive point that breathes, seeding Bloom inside the shell
+ *
+ * The previous version was one flat-shaded octahedron per node with an emissive
+ * tint; at this size it read as a matte coloured block, which is what the brief
+ * asked to replace.
+ */
 function OrchestrationLayer({
   groupRef,
   progress,
@@ -195,53 +214,90 @@ function OrchestrationLayer({
 }) {
   const edgeGeo = useMemo(() => buildEdgeGeometry(), [])
   const nodeGeo = useMemo(() => new THREE.OctahedronGeometry(0.34, 0), [])
+  /** The octahedron's 12 hard edges — the neon outline. */
+  const nodeEdgeGeo = useMemo(() => new THREE.EdgesGeometry(nodeGeo), [nodeGeo])
 
   const edgeUniforms = useMemo(
     () => ({
       uTime: { value: 0 },
-      uIntensity: { value: 1 },
-      uColorCore: { value: new THREE.Color('#a5f3fc') },
-      uColorEdge: { value: new THREE.Color('#22d3ee') },
+      uIntensity: { value: 1.2 },
+      uColorCore: { value: new THREE.Color('#a5f3ff') },
+      uColorEdge: { value: new THREE.Color('#00e5ff') },
     }),
     [],
   )
 
-  const nodeRefs = useRef<Array<THREE.Mesh | null>>([])
+  const nodeRefs = useRef<Array<THREE.Group | null>>([])
+  const coreRefs = useRef<Array<THREE.Mesh | null>>([])
 
   useEffect(
     () => () => {
       edgeGeo.dispose()
       nodeGeo.dispose()
+      nodeEdgeGeo.dispose()
     },
-    [edgeGeo, nodeGeo],
+    [edgeGeo, nodeGeo, nodeEdgeGeo],
   )
 
   useFrame((state) => {
     const t = state.clock.elapsedTime
     edgeUniforms.uTime.value = t
 
-    // Nodes breathe in scale, each on its own offset so the group does not
-    // pulse in unison (which reads as a loading animation, not intelligence).
     const p = progress.get()
     const focus = ramp(p, 0.45, 0.72) // brighten as the camera arrives
+
     for (let i = 0; i < nodeRefs.current.length; i++) {
-      const mesh = nodeRefs.current[i]
-      if (!mesh) continue
+      const node = nodeRefs.current[i]
+      if (!node) continue
       const spec = AGENT_NODES[i]
       if (!spec) continue
-      const breathe = 1 + Math.sin(t * 1.6 + i * 1.7) * 0.09
-      mesh.scale.setScalar(spec.scale * (breathe + focus * 0.18))
-      mesh.rotation.y = t * (0.5 + i * 0.06)
-      mesh.rotation.x = Math.sin(t * 0.7 + i) * 0.4
+
+      /*
+       * Per-node phase offset `index * 0.7`, as specified. Two shards sharing a
+       * phase read as one rigid body; staggering them is the cheapest way to
+       * make the constellation look independently suspended.
+       *
+       * Amplitudes are deliberately small. The layer sits at y = 0 while the
+       * wireframe floor is at -0.95, and the lowest shard rests around -0.6, so
+       * a ±0.085 drift keeps every node clear of the matrix at all times — no
+       * clipping, and the hover gap survives the whole scroll range.
+       */
+      const offset = i * 0.7
+
+      node.position.y = spec.position[1] + Math.sin(t * 0.9 + offset) * 0.085
+      node.rotation.y = t * (0.32 + i * 0.05)
+      node.rotation.x = Math.sin(t * 0.45 + offset) * 0.16
+      node.rotation.z = Math.sin(t * 0.62 + offset) * 0.11
+
+      const breathe = 1 + Math.sin(t * 1.6 + offset) * 0.06
+      node.scale.setScalar(spec.scale * (breathe + focus * 0.14))
+
+      // Inner core pulses on its own, faster cycle so the shard twinkles from
+      // the inside rather than scaling as one rigid piece.
+      const core = coreRefs.current[i]
+      if (core) {
+        const material = core.material as THREE.MeshStandardMaterial
+        material.emissiveIntensity =
+          1.4 + (0.5 + 0.5 * Math.sin(t * 2.1 + offset)) * 1.6
+      }
     }
 
-    edgeUniforms.uIntensity.value = 0.85 + focus * 0.6
+    edgeUniforms.uIntensity.value = 1.15 + focus * 0.7
   })
 
   return (
     <group ref={groupRef}>
-      {/* Connections, drawn beneath the nodes. */}
-      <lineSegments geometry={edgeGeo}>
+      {/*
+       * Data links.
+       *
+       * Still a custom shader rather than `LineDashedMaterial`. This three
+       * release has no `dashOffset` on that material — only scale, dashSize and
+       * gapSize — so a marching pattern cannot be built by animating it. The
+       * shader below produces the same travelling pulse via
+       * `fract(along - time)`, as a soft gradient rather than hard dashes, which
+       * also survives Bloom far better than a dashed line does.
+       */}
+      <lineSegments geometry={edgeGeo} renderOrder={2}>
         <shaderMaterial
           vertexShader={EDGE_VERTEX}
           fragmentShader={EDGE_FRAGMENT}
@@ -253,36 +309,67 @@ function OrchestrationLayer({
         />
       </lineSegments>
 
-      {/* Octahedron nodes. */}
       {AGENT_NODES.map((spec, i) => (
-        <mesh
+        <group
           key={i}
           ref={(el) => {
             nodeRefs.current[i] = el
           }}
-          geometry={nodeGeo}
           position={spec.position}
         >
+          {/* Translucent obsidian shell. */}
+          <mesh geometry={nodeGeo}>
+            <meshPhysicalMaterial
+              color="#04121d"
+              metalness={0.9}
+              roughness={0.1}
+              transparent
+              opacity={0.35}
+              side={THREE.DoubleSide}
+              /*
+               * No depth write: the shell must not occlude the core sitting
+               * inside it, and these shards overlap the links behind them.
+               */
+              depthWrite={false}
+              envMapIntensity={1.5}
+            />
+          </mesh>
+
+          {/* Neon edges: twelve lines per shard. */}
+          <lineSegments geometry={nodeEdgeGeo} renderOrder={3}>
+            <lineBasicMaterial
+              color="#00f0ff"
+              transparent
+              opacity={0.9}
+              toneMapped={false}
+              depthWrite={false}
+            />
+          </lineSegments>
+
           {/*
-           * Emissive intensity is deliberately modest. At 2.4 with
-           * `toneMapped: false` the facets saturated to a flat colour, so the
-           * octahedra read as solid squares instead of faceted solids —the
-           * shading that gives them their form was clipped away. A lower
-           * emissive plus real metalness/roughness keeps the facet gradients.
-           * Bloom still provides the glow, which is where the brightness belongs.
+           * Inner micro-core.
+           *
+           * Radius 0.1 against an octahedron of circumradius 0.34 — the
+           * octahedron's inradius is 0.34 / sqrt(3) ~ 0.196, so the sphere sits
+           * comfortably inside and never pokes through a facet.
            */}
-          <meshStandardMaterial
-            color="#0e7490"
-            emissive="#22d3ee"
-            emissiveIntensity={i === 0 ? 0.85 : 0.55}
-            metalness={0.75}
-            roughness={0.18}
-            flatShading
-          />
-        </mesh>
+          <mesh
+            ref={(el) => {
+              coreRefs.current[i] = el
+            }}
+          >
+            <sphereGeometry args={[0.1, 16, 12]} />
+            <meshStandardMaterial
+              color="#bae6fd"
+              emissive="#38bdf8"
+              emissiveIntensity={2}
+              toneMapped={false}
+            />
+          </mesh>
+        </group>
       ))}
 
-      {/* Hub glow: a soft additive sprite behind node 0. */}
+      {/* Hub glow: a soft additive light behind node 0. */}
       <pointLight position={[0, 0, 0]} intensity={9} distance={7} color="#22d3ee" />
     </group>
   )
