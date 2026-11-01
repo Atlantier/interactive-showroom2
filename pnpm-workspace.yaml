@@ -1,0 +1,24 @@
+# pnpm project configuration.
+#
+# pnpm 11 reads project settings from THIS file. The `pnpm` field in
+# package.json is no longer consulted — verified two ways: `pnpm config get
+# minimumReleaseAge` returns `undefined` when the setting lives there, and the
+# default policy kept rejecting the install.
+
+# ── minimumReleaseAge ──────────────────────────────────────────────────────
+# pnpm's supply-chain quarantine: any package version published within the last
+# N minutes is refused. The default (1440 = 24 h) failed the GitHub Actions
+# build on two pinned versions simply because they had been published hours
+# earlier on the day of the deploy:
+#
+#   lucide-react@1.66.0   published 2026-10-31T06:08:09Z
+#   ws@8.22.1             published 2026-10-31T09:58:47Z
+#
+# 720 (12 h) keeps a meaningful quarantine — a release that gets compromised
+# and unpublished within half a day is still rejected — without making every
+# dependency bump block deployment for a full day.
+#
+# This is a deliberate, documented trade-off, not an accidental bypass. Tighten
+# it back to 1440 if this project ever starts handling untrusted input, user
+# data, or secrets.
+minimumReleaseAge: 720
