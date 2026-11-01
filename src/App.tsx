@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect } from 'react'
 import { SmoothScroll } from '@/components/layout/SmoothScroll'
 import { Navbar } from '@/components/layout/Navbar'
+import { ClickRipple } from '@/components/layout/ClickRipple'
 import { ScrollTelemetryHud } from '@/components/layout/ScrollTelemetryHud'
 import {
   PerfNoticeToast,
@@ -141,6 +142,9 @@ function App() {
 
         {/* ── Navigation ──────────────────────────────────────────────── */}
         <Navbar />
+
+        {/* Global click feedback: a single thin ripple, nothing else. */}
+        <ClickRipple />
 
         {/* ── Content ─────────────────────────────────────────────────── */}
         <main className="relative z-20">

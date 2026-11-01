@@ -101,13 +101,6 @@ const FALLOFF = 6.0
 
 /* ── Shockwave ─────────────────────────────────────────────────────────────── */
 
-/** Sparks per click, as specified. */
-const BURST_COUNT = 150
-
-/** Initial spark speed range, world units per second of "flight". */
-const BURST_SPEED_MIN = 3.4
-const BURST_SPEED_MAX = 8.2
-
 /** Seconds a ripple ring takes to expand and vanish. */
 const RING_LIFE = 0.72
 
@@ -677,25 +670,16 @@ export function CursorStardustTrail({
     [geometry, particleMaterial, ribbon, ribbonMaterial, ringMaterials],
   )
 
-  /* ── pointerdown → queue a burst ───────────────────────────────────────── */
-  useEffect(() => {
-    const onPointerDown = (event: PointerEvent): void => {
-      // Left button only; the audience right-clicks rarely, and a secondary
-      // button on touch hardware would fire spuriously.
-      if (event.button !== 0) return
-      // Screen → NDC here rather than reading the transient store: the store is
-      // updated by a throttled pointermove listener, so at click time it can
-      // still hold the previous position.
-      const x = (event.clientX / window.innerWidth) * 2 - 1
-      const y = -(event.clientY / window.innerHeight) * 2 + 1
-      sim.pendingBurst.active = true
-      sim.pendingBurst.x = x
-      sim.pendingBurst.y = y
-    }
-
-    window.addEventListener('pointerdown', onPointerDown)
-    return () => window.removeEventListener('pointerdown', onPointerDown)
-  }, [sim])
+  /*
+   * Click feedback deliberately lives elsewhere now.
+   *
+   * This component used to listen for `pointerdown` and fire a 150-spark sphere
+   * burst plus an expanding holographic ring. That read as a game effect: on a
+   * dark page the ring, the glow and the sparks all landed at once and competed
+   * with the content the user had just clicked. The replacement is a single thin
+   * Material-style ripple (src/components/layout/ClickRipple.tsx) — one ring, no
+   * particles, no flash. Nothing here should re-introduce a click response.
+   */
 
   /* ── Dev-only probe ────────────────────────────────────────────────────── */
   useEffect(() => {
@@ -787,55 +771,9 @@ export function CursorStardustTrail({
       sim.hasPrev = false
     }
 
-    /* 4. Consume a queued click: 150 sparks on a sphere + one ripple ring. */
-    if (sim.pendingBurst.active) {
-      sim.pendingBurst.active = false
+    /* 4. (was: consume a queued click — see the note where the listener used to
+     *    live; click feedback is now a single thin ripple outside WebGL.) */
 
-      const bx = sim.pendingBurst.x
-      const by = sim.pendingBurst.y
-      ndc.set(bx, by)
-      ray.setFromCamera(ndc, camera)
-
-      if (ray.ray.intersectPlane(plane, hit)) {
-        for (let k = 0; k < BURST_COUNT; k++) {
-          const slot = sim.cursor
-          sim.cursor = slot + 1 === count ? 0 : slot + 1
-
-          const i3 = slot * 3
-          position[i3] = hit.x
-          position[i3 + 1] = hit.y
-          position[i3 + 2] = hit.z
-
-          // Uniform point on a sphere: z uniform in [-1, 1], azimuth uniform.
-          const cz = sim.rand() * 2 - 1
-          const phi = sim.rand() * Math.PI * 2
-          const sr = Math.sqrt(Math.max(0, 1 - cz * cz))
-          const speed = BURST_SPEED_MIN + sim.rand() * (BURST_SPEED_MAX - BURST_SPEED_MIN)
-
-          velocity[i3] = Math.cos(phi) * sr * speed
-          velocity[i3 + 1] = Math.sin(phi) * sr * speed
-          velocity[i3 + 2] = cz * speed
-
-          kind[slot] = 1
-          life[slot] = 1
-          seed[slot] = sim.rand()
-        }
-        sim.bursts += 1
-        spawned = true
-
-        // Hand the click to a free ripple ring, or recycle the oldest.
-        let choice = 0
-        let lowest = rings[0].life
-        for (let r = 1; r < rings.length; r++) {
-          if (rings[r].life < lowest) {
-            lowest = rings[r].life
-            choice = r
-          }
-        }
-        rings[choice].life = 1
-        rings[choice].position.copy(hit)
-      }
-    }
 
     /* 5. Upload the particle buffers. */
     if (spawned) {
