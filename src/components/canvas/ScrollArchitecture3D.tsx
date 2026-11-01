@@ -1445,29 +1445,6 @@ export interface ScrollArchitecture3DProps {
   onSelectLayer: (id: string | null) => void
 }
 
-/**
- * Suppresses R3F's own draw for this root while the chapter is off screen.
- *
- * Only mounted when the composer is NOT: while the chapter is awake the
- * `EffectComposer` registers a positive render priority and owns the render
- * pass entirely, so writing the priority here as well would make R3F draw the
- * scene a second time. Keeping the two mechanisms mutually exclusive is what
- * makes this safe.
- *
- * Without it, an off-screen chapter still pays one `gl.render()` per frame for
- * an empty scene — no draw calls, but a full clear plus a redundant submission.
- */
-function OffscreenRenderGate() {
-  const get = useThree((state) => state.get)
-
-  useFrame(() => {
-    const state = get()
-    if (state.internal.priority !== 1) state.internal.priority = 1
-  })
-
-  return null
-}
-
 export function ScrollArchitecture3D({
   progress,
   inViewRef,
@@ -1560,13 +1537,6 @@ export function ScrollArchitecture3D({
        * early-return. Waking happens 60% of a viewport early, so the rebuild is
        * never visible.
        */}
-      {/*
-       * Mutually exclusive with the composer below: exactly one of them is in the
-       * tree at any moment, so R3F's own draw and the post-processing pass can
-       * never both run.
-       */}
-      {!awake && <OffscreenRenderGate />}
-
       {awake && (
         <>
           <ArchitectureRig
