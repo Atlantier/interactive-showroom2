@@ -521,31 +521,39 @@ void main() {
   // Volumetric falloff: densest where the surface faces the viewer, fading to
   // the rim. Reads as light inside a volume, not as a painted sphere.
   /*
-   * Fresnel volume term.
+   * Volumetric core, matched to the reference render.
    *
-   * The old shader mixed toward a dark teal at the limb, which is exactly the
-   * hard black ring the brief calls out: a dark band between glow and glass
-   * reads as a mask, not a surface. Inverting it -- ice cyan in the body,
-   * near-white at the grazing angle -- is what makes it read as light inside a
-   * volume.
+   * What the reference actually shows, in order of brightness:
+   *   1. the LIMB is the brightest thing -- a near-white rim right at the
+   *      silhouette, brighter than any point in the middle,
+   *   2. the interior is a milky, desaturated cyan with soft cloud structure,
+   *   3. outside the limb a wide white halo fades into the background.
+   *
+   * The previous revision got (1) backwards: it put the near-white in the centre
+   * and the cyan at the limb, which is why it read as a soft ball rather than a
+   * glowing one.
    */
-  float fresnel = pow(1.0 - abs(dot(normalize(vNormalW), normalize(vViewDir))), 2.5);
+  float facing = clamp(dot(normalize(vNormalW), normalize(vViewDir)), 0.0, 1.0);
+
+  // 0 at the centre, 1 at the silhouette.
+  float fresnel = pow(1.0 - facing, 2.5);
 
   float t = uTime * 0.11;
   float n = vnoise(vNormalW * 1.5 + vec3(t, t * 0.6, -t * 0.4));
   n = n * 0.65 + vnoise(vNormalW * 2.9 - vec3(t * 0.7)) * 0.35;
 
+  // Milky interior: pale cyan in the middle, drifting toward the near-white rim.
+  vec3 col = mix(uDeep, uHot, fresnel);
+
+  // Cloud structure modulates BRIGHTNESS only, and by a small amount. Modulating
+  // colour instead is what previously produced the cratered, lunar look.
+  col *= 0.86 + 0.14 * n;
+
   /*
-   * Centre to limb, not limb to centre.
-   *
-   * The previous mix put the SATURATED cyan in the middle and the near-white at
-   * the grazing angle, which is what made it read as a hard cyan bulb with a
-   * bright ring. A volume of glowing gas is the other way round: dense and
-   * near-white in the middle, thinning out to a pale cyan where the path length
-   * through the medium gets short.
+   * No extra additive limb term: the mix above already reaches pure white at the
+   * silhouette, so a second white term double-counted it and blew the sphere --
+   * and through the glass the whole crystal -- out to flat white.
    */
-  vec3 col = mix(uDeep, uHot, pow(1.0 - fresnel, 1.6));
-  col *= mix(0.94, 1.0, n);
 
   gl_FragColor = vec4(col * uIntensity, 1.0);
 }
@@ -669,9 +677,14 @@ function SpatialLayer({
        * down from 2.2 -- at that level the sphere clipped to a flat, glaring disc
        * with no visible falloff.
        */
-      uDeep: { value: new THREE.Color('#f2feff') },
-      uHot: { value: new THREE.Color('#8fc9d4') },
-      uIntensity: { value: 1.15 },
+      /*
+       * `uDeep` is the milky interior and `uHot` the limb, chosen so the most
+       * saturated colour anywhere on the sphere is a desaturated cyan: the limb is
+       * pure white, which is what the reference shows at the silhouette.
+       */
+      uDeep: { value: new THREE.Color('#7fd8e4') },
+      uHot: { value: new THREE.Color('#ffffff') },
+      uIntensity: { value: 0.92 },
     }),
     [],
   )
@@ -777,7 +790,7 @@ function SpatialLayer({
 
       // Drives overall plasma brightness; the shader owns the colour mix.
       // 6 s breathing cycle, +/-10%: no flicker, no pulse.
-      plasmaUniforms.uIntensity.value = 1.15 * (1 + 0.1 * Math.sin((t * Math.PI * 2) / 6))
+      plasmaUniforms.uIntensity.value = 0.92 * (1 + 0.1 * Math.sin((t * Math.PI * 2) / 6))
 
       /*
        * The dispersion shell is a ShaderMaterial, so the rig's `material.opacity`
@@ -899,7 +912,7 @@ function SpatialLayer({
               * a second ring.
               */}
             <mesh renderOrder={1}>
-              <sphereGeometry args={[CORE_INNER_RADIUS * 1.55, 48, 32]} />
+              <sphereGeometry args={[CORE_INNER_RADIUS * 1.35, 48, 32]} />
               <shaderMaterial
                 transparent
                 depthWrite={false}
@@ -1872,11 +1885,15 @@ const CORE_HALO_FRAGMENT = `
 
   void main() {
     float f = 1.0 - clamp(dot(normalize(vRimN), normalize(vRimV)), 0.0, 1.0);
-    f = pow(f, 1.6);
 
-    // Pale, low-saturation cyan so the halo never introduces saturated colour of
-    // its own; the core supplies the hue and this only supplies the falloff.
-    vec3 col = vec3(0.74, 0.92, 0.94);
-    gl_FragColor = vec4(col * f * 0.55, 1.0);
+    // Low exponent and a wide shell: the halo has to look like bloom spreading
+    // out of the limb, not like a second sphere sitting around the core. A high
+    // exponent is what made the previous revision legible as an extra ball.
+    f = pow(f, 1.5);
+
+    // Near-white, because the reference's outer glow is white -- it is the
+    // limb's own light, not a cyan halo.
+    vec3 col = vec3(0.88, 0.97, 0.99);
+    gl_FragColor = vec4(col * f * 0.22, 1.0);
   }
 `
