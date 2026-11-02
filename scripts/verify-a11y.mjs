@@ -180,6 +180,18 @@ try {
   }
   await sleep(2500)
 
+  /* 0. WCAG 3.1.1 — the document language must match the interface's default. */
+  const docLang = await evaluate(`({
+    lang: document.documentElement.lang,
+    title: document.title.trim(),
+  })`)
+  check(
+    'language-of-page: <html lang> is "en" (the default locale)',
+    docLang.lang === 'en',
+    `lang="${docLang.lang}"`,
+  )
+  check('title: document.title is localised and non-empty', docLang.title.length > 0, `"${docLang.title}"`)
+
   /* 1. WCAG 1.4.3 — the smallest text must clear 4.5:1 against its own background. */
   const contrast = await evaluate(`(() => {
     const parse = (c) => c.match(/\\d+(\\.\\d+)?/g).slice(0, 3).map(Number)
