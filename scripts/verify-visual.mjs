@@ -58,7 +58,7 @@ import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { PNG } from 'pngjs'
 import WebSocket from 'ws'
-import { finish } from './lib/verify.mjs'
+import { findMissing, finish } from './lib/verify.mjs'
 
 const CANDIDATES = [
   process.env.CHROME_PATH,
@@ -182,6 +182,29 @@ function blockMeans(png) {
   }
 
   return { cols, rows, data: out }
+}
+
+/**
+ * Difference between two block grids with no masking.
+ *
+ * Used by the settle loop to decide whether the picture has stopped moving, which is a
+ * different question from "does it match the baseline".
+ */
+function compareStrict(a, b) {
+  let worst = 0
+  let total = 0
+  let counted = 0
+  for (let i = 0; i < a.data.length; i += 3) {
+    const delta = Math.max(
+      Math.abs(a.data[i] - b.data[i]),
+      Math.abs(a.data[i + 1] - b.data[i + 1]),
+      Math.abs(a.data[i + 2] - b.data[i + 2]),
+    )
+    if (delta > worst) worst = delta
+    total += delta
+    counted++
+  }
+  return { worst, mean: counted > 0 ? total / counted : 0 }
 }
 
 /**
@@ -342,6 +365,36 @@ try {
   await send('Page.enable')
   await send('Runtime.enable')
   await send('Emulation.setDeviceMetricsOverride', VIEW)
+
+  /*
+   * Deterministic randomness, installed BEFORE the app boots.
+   *
+   * The nebula seeds 8000 particles from `Math.random()`, the bento cards pick their ember
+   * positions the same way, and the two sandboxes jitter their tags -- so two runs of the
+   * same build drew different pictures and the comparison could not mean anything (measured:
+   * cross-run worst block 86, larger than a real accent-colour change at 59).
+   *
+   * Overriding `Math.random` for the test documents is deliberate and blunt: it reaches the
+   * particle initialisers, anything three.js does internally, and any future code that
+   * forgets to take a seed. It is installed through `Page.addScriptToEvaluateOnNewDocument`,
+   * which runs before any page script and disappears with the tab, so production is untouched
+   * and nothing needs a test-only branch.
+   */
+  await send('Page.addScriptToEvaluateOnNewDocument', {
+    source: `(() => {
+      let s = 0x9e3779b9
+      const next = () => {
+        // mulberry32: 32-bit state, good enough to scatter particles, tiny and dependency-free.
+        s |= 0
+        s = (s + 0x6d2b79f5) | 0
+        let t = Math.imul(s ^ (s >>> 15), 1 | s)
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+      }
+      Math.random = next
+    })()`,
+  })
+
   await send('Page.navigate', { url: base })
 
   for (let attempt = 0; attempt < 60; attempt++) {
@@ -404,7 +457,10 @@ try {
       if (!document.getElementById('visual-freeze')) {
         const style = document.createElement('style')
         style.id = 'visual-freeze'
-        style.textContent = '*, *::before, *::after { animation-play-state: paused !important; transition: none !important; }'
+        // animation:none, not animation-play-state:paused -- pausing freezes each animation
+        // at whatever phase it had reached, which differs run to run; removing it puts every
+        // element back at its unanimated base state, which does not.
+        style.textContent = '*, *::before, *::after { animation: none !important; transition: none !important; }'
         document.head.appendChild(style)
       }
       return true
@@ -419,10 +475,46 @@ try {
       total: document.documentElement.scrollHeight,
     })`)
 
-    const frames = []
-    const shots = update ? CALIBRATION_FRAMES : 1
-    for (let f = 0; f < shots; f++) {
-      if (f > 0) await sleep(700)
+    /*
+     * Wait for the picture to STOP CHANGING, then use that frame.
+     *
+     * Freezing the clocks is not enough on its own: framer-motion reveals, the camera's
+     * easing and the two sandboxes settle over different numbers of frames depending on how
+     * fast the page loaded, so "2.6 s after the scroll" still caught different intermediate
+     * states (measured: worst block 60 between two runs of the same build). Instead of
+     * guessing a delay, capture repeatedly until two consecutive captures agree -- that IS
+     * the definition of a steady state -- and record how many attempts it took.
+     */
+    const settleFrames = []
+    let stableShot = null
+    for (let attempt = 0; attempt < 14; attempt++) {
+      const shot = await send('Page.captureScreenshot', { format: 'png' })
+      const png = PNG.sync.read(Buffer.from(shot.data, 'base64'))
+      const grid = blockMeans(png)
+      const prior = settleFrames[settleFrames.length - 1]
+      settleFrames.push({ png, grid })
+      if (prior) {
+        const delta = compareStrict(prior.grid, grid)
+        if (delta.worst <= 1 && delta.mean <= 0.15) {
+          stableShot = { png, grid, attempts: attempt + 1 }
+          break
+        }
+      }
+      await sleep(300)
+    }
+    if (!stableShot) {
+      // Never settled. Use the last frame and REPORT that, rather than calling it stable.
+      const last = settleFrames[settleFrames.length - 1]
+      stableShot = { png: last.png, grid: last.grid, attempts: settleFrames.length }
+      failures.push({
+        text: `${view.name}: picture never settled in ${settleFrames.length} captures`,
+      })
+    }
+    console.log(`        ${view.name}: settled after ${stableShot.attempts} capture(s)`)
+
+    const frames = [{ png: stableShot.png, grid: stableShot.grid }]
+    for (let f = 1; update && f < CALIBRATION_FRAMES; f++) {
+      await sleep(250)
       const shot = await send('Page.captureScreenshot', { format: 'png' })
       const png = PNG.sync.read(Buffer.from(shot.data, 'base64'))
       frames.push({ png, grid: blockMeans(png) })
@@ -567,4 +659,9 @@ try {
   await rm(profile, { recursive: true, force: true }).catch(() => {})
 }
 
-finish({ label: 'visual', exceptions, consoleErrors, failures })
+finish({
+  failures: [...failures, ...findMissing(report)],
+  label: 'visual',
+  exceptions,
+  consoleErrors,
+})

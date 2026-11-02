@@ -16,7 +16,7 @@
 import { setTimeout as sleep } from 'node:timers/promises'
 import { writeFileSync, mkdirSync } from 'node:fs'
 import WebSocket from 'ws'
-import { finish } from './lib/verify.mjs'
+import { findMissing, finish } from './lib/verify.mjs'
 
 const CDP_HTTP = process.env.CDP_HTTP ?? 'http://127.0.0.1:9340'
 const URL_TO_TEST = process.argv[2] ?? 'http://127.0.0.1:5262'
@@ -313,5 +313,14 @@ report.consoleErrors = consoleErrors
 writeFileSync('screenshots/architecture-report.json', JSON.stringify(report, null, 2))
 console.log(JSON.stringify(report, null, 2))
 
-finish({ label: 'architecture', exceptions, consoleErrors, report })
+finish({
+  // `A4_scene` reads `window.__showroomScene`, which only exists in a dev build. Reporting it
+  // as "not found" against the production bundle is correct and expected, so it is excluded
+  // rather than treated as a failure -- every other probe must find its element.
+  failures: findMissing(report, { ignore: ['A4_scene'] }),
+  label: 'architecture',
+  exceptions,
+  consoleErrors,
+  report,
+})
 ws.close()

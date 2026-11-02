@@ -13,6 +13,7 @@ import { writeFileSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { findMissing } from './verify.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const VERIFY = join(HERE, 'verify.mjs')
@@ -37,6 +38,31 @@ function exitCodeOf(file) {
   } catch (error) {
     return typeof error.status === 'number' ? error.status : -1
   }
+}
+
+/*
+ * `findMissing` is the part that decides whether a probe found the app, so it gets its own
+ * cases: it must flag the two "not here" conventions, ignore the keys a script opts out of
+ * (dev-only hooks that cannot exist in a production bundle), and stay quiet about normal
+ * measurements.
+ */
+const findMissingCases = [
+  [
+    'flags found:false and ok:false',
+    { a: { found: false }, b: { ok: false, reason: 'x' }, c: { ok: true } },
+    [],
+    ['a', 'b'],
+  ],
+  ['honours the ignore list', { dev: { ok: false }, real: { found: false } }, ['dev'], ['real']],
+  ['ignores numbers, arrays and nulls', { n: 0, arr: [1], z: null, deep: { value: 3 } }, [], []],
+]
+
+let findMissingFailed = 0
+for (const [name, report, ignore, expected] of findMissingCases) {
+  const actual = findMissing(report, { ignore })
+  const ok = JSON.stringify(actual) === JSON.stringify(expected)
+  if (!ok) findMissingFailed++
+  console.log(`${ok ? 'PASS' : 'FAIL'}  findMissing: ${name}: ${JSON.stringify(actual)}`)
 }
 
 const cases = [
@@ -69,8 +95,14 @@ for (const [name, call, expected] of cases) {
 
 rmSync(scratch, { recursive: true, force: true })
 
+if (findMissingFailed > 0) {
+  failed += findMissingFailed
+}
+
 if (failed > 0) {
   console.error(`::error::verify selftest: ${failed}/${cases.length} cases failed`)
   process.exit(1)
 }
-console.log(`verify selftest OK — ${cases.length} cases`)
+console.log(
+  `verify selftest OK — ${cases.length} verdict cases + ${findMissingCases.length} findMissing cases`,
+)

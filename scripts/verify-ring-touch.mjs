@@ -10,7 +10,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { writeFileSync, mkdirSync } from 'node:fs'
 import WebSocket from 'ws'
 import { PAGE_HELPERS, scrollTo } from './page-helpers.mjs'
-import { finish } from './lib/verify.mjs'
+import { findMissing, finish } from './lib/verify.mjs'
 
 const CDP_HTTP = process.env.CDP_HTTP ?? 'http://127.0.0.1:9334'
 const URL_TO_TEST = process.argv[2] ?? 'http://127.0.0.1:5250'
@@ -200,5 +200,5 @@ report.consoleErrors = consoleErrors
 writeFileSync('screenshots/ring-report.json', JSON.stringify(report, null, 2))
 console.log(JSON.stringify(report, null, 2))
 
-finish({ label: 'ring-touch', exceptions, consoleErrors, report })
+finish({ failures: findMissing(report), label: 'ring-touch', exceptions, consoleErrors, report })
 ws.close()

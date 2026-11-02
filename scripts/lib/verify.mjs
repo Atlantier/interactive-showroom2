@@ -55,6 +55,31 @@ function summarise(entries) {
  * Call it once, last. It never throws: a probe that already reached its report should
  * always produce a verdict rather than a stack trace.
  */
+/**
+ * Names of the probes that reported "my element is not here".
+ *
+ * A probe script knows how to ask the page specific questions, and almost all of them already
+ * answer "not found" in a consistent way (`{ found: false }` for the canvas probes, `{ ok:
+ * false, reason }` for the scene probes). This turns those answers into the one thing the
+ * verdict layer understands -- an assertion failure -- so pointing a script at the wrong URL
+ * is red instead of green.
+ *
+ * Deliberately NOT a heuristic on the report as a whole: an earlier attempt tried to infer
+ * "nothing was measured" from the shape of the report and could not, because a blank page
+ * still yields numbers (`targetP: 0`, `scrollY: 0`) and arrays of nulls. Per-probe markers are
+ * precise; report-shape guessing is not.
+ */
+export function findMissing(report, { ignore = [] } = {}) {
+  if (!report || typeof report !== 'object') return []
+  const missing = []
+  for (const [key, value] of Object.entries(report)) {
+    if (ignore.includes(key)) continue
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue
+    if (value.found === false || value.ok === false) missing.push(key)
+  }
+  return missing
+}
+
 export function finish({
   label = 'verify',
   exceptions = [],
