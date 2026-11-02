@@ -62,7 +62,14 @@ if (!chromePath) {
  * different style. Asserting it now would just paint CI red for a known defect; it is
  * listed here so the exclusion is visible instead of forgotten.
  */
-const KNOWN_OPEN = ['UI-10 topology focus ring (needs a <button> overlay, not an SVG group)']
+/*
+ * Failures that are known and deliberately not asserted yet.
+ *
+ * Empty since UI-10 was closed by measurement: the ring had been rendering all along,
+ * and the three "it does not work" results were probes that selected the page's first
+ * `[role=button]` (a different card) instead of a node inside this SVG.
+ */
+const KNOWN_OPEN = []
 
 const port = 9450 + Math.floor(Math.random() * 90)
 const profile = await mkdtemp(join(tmpdir(), 'showroom-a11y-'))
@@ -376,6 +383,104 @@ try {
     'aria: topology container is a labelled group (buttons inside role=img are invalid)',
     !topology.found || (topology.role !== 'img' && topology.buttons > 0),
     topology.found ? `role=${topology.role}, buttons=${topology.buttons}` : 'not found',
+  )
+
+  /*
+   * 4d. WCAG 2.4.7 — a focused topology node must show something.
+   *
+   * UI-10 was reported as "the focus ring was deleted" and then bounced through three
+   * failed attempts to bring it back; two of those failures were the test's fault (the
+   * probe selected the page's first `[role=button]`, which is not in this diagram). This
+   * assertion scopes everything from the labelled SVG, focuses the third node, and counts
+   * the ring elements that exist afterwards -- plus checks the ring has a non-zero box,
+   * so "present but collapsed to nothing" cannot pass.
+   */
+  const ring = await evaluate(`(async () => {
+    const svg = document.querySelector('svg[aria-label*="topology" i]')
+    if (!svg) return { found: false }
+    const nodes = [...svg.querySelectorAll('g[role="button"]')]
+    if (nodes.length < 3) return { found: true, nodes: nodes.length }
+    const node = nodes[2]
+    const rings = () => [...svg.querySelectorAll('circle[stroke-dasharray]')]
+    const before = rings().length
+    node.focus()
+    // One frame for the React state update that renders the ring.
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    await new Promise((r) => setTimeout(r, 120))
+    const after = rings()
+    const first = after[0]
+    const box = first ? first.getBoundingClientRect() : null
+    const paint = first ? getComputedStyle(first) : null
+    node.blur()
+    return {
+      found: true,
+      nodes: nodes.length,
+      focused: true,
+      before,
+      after: after.length,
+      visible: Boolean(box && box.width > 4 && box.height > 4),
+      stroke: paint ? paint.stroke : null,
+      width: paint ? paint.strokeWidth : null,
+    }
+  })()`)
+  check(
+    'focus: the focused topology node paints a ring (WCAG 2.4.7)',
+    Boolean(
+      ring.found &&
+        ring.before === 0 &&
+        ring.after >= 1 &&
+        ring.visible &&
+        ring.stroke !== 'none' &&
+        Number.parseFloat(ring.width) >= 1,
+    ),
+    ring.found
+      ? `nodes ${ring.nodes}, rings ${ring.before} -> ${ring.after}, visible ${ring.visible}, stroke ${ring.stroke} @ ${ring.width}`
+      : 'svg not found',
+  )
+
+  /*
+   * 4e. WCAG 2.4.7 — the terminal's real input is 1px and transparent.
+   *
+   * It has to be (it is what gives the demo a caret, IME and a mobile keyboard), but
+   * `opacity: 0` hides its own outline too, so tabbing into the terminal left a keyboard
+   * user with nothing on screen. The ring now lives on the terminal card, and this checks
+   * the proxy actually appears when the input takes focus.
+   */
+  const terminalRing = await evaluate(`(async () => {
+    const root = document.querySelector('[data-terminal="root"]')
+    const input = root?.querySelector('input')
+    if (!root || !input) return { found: false }
+    const before = getComputedStyle(root).outlineStyle
+    input.focus()
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    /*
+     * Snapshot the properties NOW.
+     *
+     * getComputedStyle returns a LIVE declaration object: reading it after the blur
+     * below reported outline-style none, which looked like the fix had not worked when
+     * the ring had in fact been painted the whole time. Same class of mistake as the
+     * topology probe that selected the wrong element.
+     */
+    const paint = getComputedStyle(root)
+    const focused = document.activeElement === input
+    const after = paint.outlineStyle
+    const width = paint.outlineWidth
+    const color = paint.outlineColor
+    input.blur()
+    return { found: true, focused, before, after, width, color }
+  })()`)
+  check(
+    'focus: terminal input paints its ring on the card (WCAG 2.4.7)',
+    Boolean(
+      terminalRing.found &&
+        terminalRing.focused &&
+        terminalRing.before === 'none' &&
+        terminalRing.after !== 'none' &&
+        Number.parseFloat(terminalRing.width) >= 2,
+    ),
+    terminalRing.found
+      ? `outline ${terminalRing.before} -> ${terminalRing.after} ${terminalRing.width} ${terminalRing.color}`
+      : 'terminal not found',
   )
 
   /* 5. WCAG 2.5.8 — the two controls that measured under 24px. */

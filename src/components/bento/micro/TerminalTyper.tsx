@@ -302,8 +302,21 @@ export function TerminalTyper({ className }: TerminalTyperProps) {
 
   return (
     <div
+      // Test hook: the focus ring lives on this element, not on the input inside it,
+      // so an assertion has to be able to find it without guessing at class names.
+      data-terminal="root"
       className={cn(
         'flex h-full flex-col overflow-hidden rounded-md border border-void-600/60 bg-void-950/70',
+        /*
+         * The blur/focus ring goes here, not on the input.
+         *
+         * The real `<input>` is 1px and `opacity-0` — it exists for the caret, IME and
+         * mobile keyboards, and `opacity: 0` would hide its own outline along with it,
+         * so tabbing into the terminal used to leave a keyboard user with no visible
+         * focus at all (WCAG 2.4.7). The ring belongs on the thing the user thinks they
+         * are typing into. Inset offset because `overflow-hidden` is on this element.
+         */
+        'focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-signal-cyan',
         className,
       )}
       // Clicking anywhere in the terminal focuses the input; this is what makes
