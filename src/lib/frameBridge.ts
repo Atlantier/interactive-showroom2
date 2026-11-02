@@ -10,6 +10,8 @@
  * ~700 kB three.js graph is parsed, and a WebGL-less environment must still be
  * able to run the DOM experience.
  */
+import { isStill, stillClock } from '@/lib/testHooks'
+
 type AdvanceFn = (timestampSeconds: number) => void
 
 let advanceFn: AdvanceFn | null = null
@@ -104,6 +106,19 @@ export function getActiveCanvasCount(): number {
  */
 export function advanceR3F(timestampMs: number): void {
   if (activeCanvases <= 0 || !advanceFn) return
+  /*
+   * Visual regression gate (see lib/testHooks.ts).
+   *
+   * A pinned clock wins over a plain freeze: feeding the same seconds value to every frame
+   * makes the shaders evaluate one fixed phase, so two runs render the same picture. A bare
+   * freeze would only hold whichever phase that run happened to reach.
+   */
+  const pinned = stillClock()
+  if (pinned !== null) {
+    advanceFn(pinned)
+    return
+  }
+  if (isStill()) return
 
   if (originMs === null) {
     originMs = timestampMs

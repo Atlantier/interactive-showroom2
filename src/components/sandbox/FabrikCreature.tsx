@@ -6,6 +6,7 @@ import { soundEngine } from '@/utils/soundEngine'
 import { useInViewAnimation } from '@/hooks/useInViewAnimation'
 import { reportIkSolve } from '@/lib/perfMetrics'
 import { useI18n } from '@/i18n/useI18n'
+import { isStill } from '@/lib/testHooks'
 import { isScrollBusy } from '@/lib/scrollEngine'
 import { createFixedStepClock, type FixedStepClock } from '@/lib/fixedStep'
 import {
@@ -1541,6 +1542,8 @@ export function FabrikCreature({ className }: { className?: string }) {
         clock.skip(now)
         return
       }
+      // Visual regression gate: hold the current frame (see lib/testHooks.ts).
+      if (isStill()) return
       // Same scroll-busy stand-down as the lanyard sandbox -- see the note there.
       if (isScrollBusy()) {
         clock.skip(now)

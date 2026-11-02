@@ -33,6 +33,7 @@ import { reportPhysicsSolve } from '@/lib/perfMetrics'
 import { GRAVITY_SCALE, useAppStore } from '@/store/useAppStore'
 import { useI18n } from '@/i18n/useI18n'
 
+import { isStill } from '@/lib/testHooks'
 import { isScrollBusy } from '@/lib/scrollEngine'
 import { createFixedStepClock, type FixedStepClock } from '@/lib/fixedStep'
 /**
@@ -472,6 +473,8 @@ export function VerletLanyard({ className }: { className?: string }) {
         clock.skip(now)
         return
       }
+      // Visual regression gate: hold the current frame (see lib/testHooks.ts).
+      if (isStill()) return
       /*
        * Scroll-busy gate.
        *
