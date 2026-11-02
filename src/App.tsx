@@ -45,6 +45,19 @@ function App() {
   const setReducedMotion = useAppStore((state) => state.setReducedMotion)
 
   /*
+   * While the command palette is open, everything it covers is `inert`.
+   *
+   * The panel already traps Tab and restores focus, but those only stop the KEYBOARD.
+   * `inert` is what makes the rest of the page properly unavailable: assistive tech
+   * stops seeing it as reachable, pointer events are swallowed, and the browser's own
+   * sequential focus navigation refuses to enter the subtree -- so it can no longer
+   * disagree with our hand-written trap.
+   *
+   * React 19 supports `inert` as a plain boolean prop, so no attribute juggling.
+   */
+  const paletteOpen = useAppStore((state) => state.commandPaletteOpen)
+
+  /*
    * Keep the store in step with the OS setting.
    *
    * macOS exposes this in the menu bar and it can change while the page is open; the
@@ -159,6 +172,7 @@ function App() {
           className="pointer-events-none fixed inset-0 z-15 bg-gradient-to-b from-transparent via-void-950/55 to-void-950/85"
         />
 
+        <div inert={paletteOpen}>
         {/* ── Navigation ──────────────────────────────────────────────── */}
         <Navbar />
 
@@ -181,6 +195,7 @@ function App() {
           <ArchiveSection />
           <ContactSection />
         </main>
+        </div>
 
         {/* ── HUD ─────────────────────────────────────────────────────── */}
         <ScrollTelemetryHud />
