@@ -395,6 +395,12 @@ export function Navbar() {
 
         {/* ── Mobile sheet ───────────────────────────────────────────── */}
         <div
+            /*
+             * The drawer stays in the DOM when closed (it animates on max-height), so
+             * its links were still in the Tab order and still read by assistive tech
+             * even while invisible. `inert` takes the whole subtree out of both.
+             */
+            inert={!mobileOpen}
           className={cn(
             'overflow-hidden border-t border-void-600/40 bg-void-950/96 transition-[max-height,opacity] duration-400 lg:hidden',
             mobileOpen ? 'max-h-80 opacity-100' : 'max-h-0 opacity-0',

@@ -276,13 +276,19 @@ try {
       })()`),
     )
   }
-  const inertDuring = await evaluate(`document.querySelectorAll('main[inert], [inert] main, [inert]').length > 0`)
+  /*
+   * Look at <main> specifically, not at "how many inert elements exist".
+   *
+   * The closed mobile drawer is legitimately inert at all times, so a global count can
+   * never go back to zero -- the first version of this assertion failed for that reason.
+   */
+  const inertDuring = await evaluate(`Boolean(document.getElementById('main')?.closest('[inert]'))`)
   await press('Escape', 27)
   await sleep(400)
   const restored = await evaluate(`({
     gone: !document.querySelector('input[role="combobox"]'),
     backOnButton: /command palette|命令面板/i.test(document.activeElement?.getAttribute?.('aria-label') || ''),
-    inertCleared: document.querySelectorAll('[inert]').length === 0,
+    inertCleared: !document.getElementById('main')?.closest('[inert]'),
   })`)
   check(
     'modal: focus starts inside, Tab never escapes, Escape restores focus',
@@ -297,6 +303,21 @@ try {
     `start ${trapped.startInside}, trapped ${tabsInside.filter(Boolean).length}/6`,
   )
   check('modal: background is inert while open and cleared after', inertDuring && restored.inertCleared)
+
+  /* 4b. WCAG 2.4.3 — the closed mobile drawer must not be reachable. */
+  const drawer = await evaluate(`(() => {
+    const sheet = document.querySelector('nav[aria-label]')?.closest('[inert]')
+    const navs = [...document.querySelectorAll('nav')]
+    // The mobile sheet is the nav that is hidden at lg+ widths (lg:hidden).
+    const mobile = navs.find((n) => getComputedStyle(n).display === 'none')
+    const host = mobile?.closest('[inert]')
+    return { found: Boolean(mobile), inert: Boolean(host) }
+  })()`)
+  check(
+    'drawer: closed mobile sheet is inert (no hidden tab stops)',
+    !drawer.found || drawer.inert,
+    drawer.found ? 'sheet present, inert ' + drawer.inert : 'sheet not rendered',
+  )
 
   /* 5. WCAG 2.5.8 — the two controls that measured under 24px. */
   const targets = await evaluate(`(() => {
