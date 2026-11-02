@@ -1707,7 +1707,21 @@ export function ScrollArchitecture3D({
     preloadR3FAdvance()
   }, [])
 
-  useEffect(() => () => setCanvasActive(false), [])
+  /*
+   * Canvas registration is PAIRED here, not split across lifecycles.
+   *
+   * `+1` used to come from the Canvas' `onCreated` (a layout effect inside R3F) while
+   * `-1` came from this component's passive cleanup. Those two are not guaranteed to
+   * run in matching counts -- a canvas that unmounts before `onCreated` fires, or a
+   * StrictMode double-invoke, decrements without a matching increment. Once the
+   * counter reaches zero the master clock stops calling `advance()`, so every canvas
+   * on the page freezes with no error and no way back.
+   */
+  useEffect(() => {
+    if (!webgl) return
+    setCanvasActive(true)
+    return () => setCanvasActive(false)
+  }, [webgl])
 
   const live = awake || prewarmed
 
@@ -1828,8 +1842,6 @@ export function ScrollArchitecture3D({
         gl.transmissionResolutionScale = 0.35
 
         gl.setClearColor(0x000000, 0)
-        setCanvasActive(true)
-
         // Dev-only inspection handle, mirroring SceneCanvas. Exposes the
         // architecture scene separately so verification scripts can drive the
         // conduit shader and camera without guessing which canvas is which.

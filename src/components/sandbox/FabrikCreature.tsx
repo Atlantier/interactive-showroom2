@@ -1532,9 +1532,17 @@ export function FabrikCreature({ className }: { className?: string }) {
       raf = requestAnimationFrame(frame)
       // Sleep when off screen; the loop keeps its rAF handle so waking is a
       // single flag flip with no observer round-trip.
-      if (!inViewRef.current) return
+      if (!inViewRef.current) {
+        // Rebase the clock: see the note in VerletLanyard. Off-screen time must not
+        // be replayed as a burst of catch-up steps when the sandbox wakes.
+        last = now
+        return
+      }
       // Same scroll-busy stand-down as the lanyard sandbox -- see the note there.
-      if (isScrollBusy()) return
+      if (isScrollBusy()) {
+        last = now
+        return
+      }
 
       const dt = last === 0 ? FIXED : Math.min((now - last) / 1000, 0.1)
       last = now
@@ -1571,6 +1579,10 @@ export function FabrikCreature({ className }: { className?: string }) {
         accRef.current -= FIXED
         steps++
       }
+
+      // See the note in VerletLanyard: an uncapped accumulator turns sustained low
+      // frame rates into permanent slow motion instead of a brief lag.
+      accRef.current = Math.min(accRef.current, FIXED * 4)
 
       if (steps > 0) {
         reportIkSolve(performance.now() - ikStart, ikChains)

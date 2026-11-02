@@ -410,7 +410,13 @@ export function VerletLanyard({ className }: { className?: string }) {
       rafId = requestAnimationFrame(frame)
       // Sleep when off screen. The loop still schedules itself (so waking is
       // instant and needs no observer callback), but does no work at all.
-      if (!inViewRef.current) return
+      if (!inViewRef.current) {
+        // Rebase the clock. Without this the first frame back on screen sees a
+        // `now - lastTime` equal to the whole time spent off screen, clamped to the
+        // 0.1 s ceiling and then replayed as a visible 66 ms hop of the ropes.
+        lastTime = now
+        return
+      }
       /*
        * Scroll-busy gate.
        *
@@ -422,7 +428,10 @@ export function VerletLanyard({ className }: { className?: string }) {
        * perceptible -- the canvas keeps its last frame -- and hands that time back
        * to the frames that are being composited.
        */
-      if (isScrollBusy()) return
+      if (isScrollBusy()) {
+        lastTime = now
+        return
+      }
 
       const sim = simRef.current
       if (!sim) return
@@ -483,6 +492,20 @@ export function VerletLanyard({ className }: { className?: string }) {
         accRef.current -= FIXED_DT
         steps++
       }
+
+      /*
+       * Cap the accumulated debt.
+       *
+       * The loop spends at most MAX_STEPS_PER_FRAME steps per frame but the
+       * accumulator keeps whatever it could not spend. Below roughly 15 fps that
+       * leftover grows without bound, so the simulation's time falls permanently
+       * behind wall-clock time and never catches up -- the ropes look like they are
+       * moving in slow motion, and the gap widens for the rest of the session.
+       * Clamping to one frame's worth of steps makes the sim fall behind under load
+       * and then keep the correct RATE, which is the behaviour you want from a
+       * fixed-step integrator.
+       */
+      accRef.current = Math.min(accRef.current, FIXED_DT * MAX_STEPS_PER_FRAME)
 
       if (steps > 0) {
         reportPhysicsSolve(
