@@ -246,7 +246,13 @@ export function Navbar() {
 
       <header
         className={cn(
-          'fixed inset-x-0 top-0 z-90 transition-all duration-500',
+          /*
+         * `pt-[env(safe-area-inset-top)]`: the document sets `viewport-fit=cover`, so
+         * on a notched phone the bar was drawn UNDER the status bar and the dynamic
+         * island. The padding extends the bar's own background into that area while
+         * pushing the controls below it.
+         */
+        'fixed inset-x-0 top-0 z-90 pt-[env(safe-area-inset-top)] transition-all duration-500',
           scrolled
             ? 'border-b border-void-600/50 bg-void-950/95'
             : 'border-b border-transparent bg-transparent',

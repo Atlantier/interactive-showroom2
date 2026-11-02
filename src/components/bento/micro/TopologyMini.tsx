@@ -123,7 +123,20 @@ export function TopologyMini({ className }: TopologyMiniProps) {
                   setActiveId(node.id)
                 }
               }}
-              className="cursor-pointer focus-visible:outline-none"
+              /*
+               * The focus ring was explicitly removed here, which left keyboard users
+               * with no indication of which node they were on (WCAG 2.4.7). The ring
+               * is drawn on the circle below via `focus-visible` rather than the SVG
+               * group, because outlines on SVG shapes are unreliable across engines.
+               */
+              /*
+               * `focus:` rather than `focus-visible:` on purpose. This node is only
+               * reachable by keyboard (it is a `role=button` group with a tabIndex),
+               * so there is no "mouse focus" case to suppress -- and `focus-visible`
+               * does not match reliably on SVG groups, which is how the ring ended up
+               * measuring `outline-style: none` while the element was focused.
+               */
+              className="cursor-pointer rounded-sm focus:outline-2 focus:outline-offset-2 focus:outline-signal-cyan"
             >
               {/* Halo */}
               <circle
