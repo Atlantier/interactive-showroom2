@@ -162,6 +162,16 @@ jobs:
           done
           pnpm verify:a11y --base http://127.0.0.1:4173
 
+      - name: Visual regression (UI layer)
+        # Compares six scroll positions against visual-baselines/. The baselines were captured
+        # on Windows, and headless Chromium does not rasterise the same pixels on Linux, so on
+        # this runner the script prints a skip reason and exits 0 -- failing instead would be a
+        # red build for a platform difference. It gates locally, which is where UI changes are
+        # made; capture Linux baselines inside this image when that coverage is wanted.
+        env:
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+        run: pnpm verify:visual --base http://127.0.0.1:4173
+
       - name: Verify build output
         # A build that silently emits nothing (or only the HTML shell) would
         # deploy a blank page. Fail loudly here instead of after publishing.

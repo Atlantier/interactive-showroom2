@@ -121,25 +121,23 @@ const BLOCK = 96
  * coverage is visible instead of silent.
  */
 /*
- * Calibrated against the MEASURED cross-run noise floor of this build, not chosen by taste.
+ * Calibrated against the MEASURED cross-run noise floor, with the animated backdrop masked.
  *
- * Measured over repeated runs on an unchanged build (96 px blocks, pinned clock, frozen
- * page): worst block 1-81, mean 0.1-12.6, "bad" block ratio 0-37%. The spread has three
- * causes, all of them page-load nondeterminism rather than animation:
+ * Two runs of the same build, after the freeze and the masking described above, agree to:
  *
- *   1. the nebula seeds its 8000 particles from Math.random() on mount
- *   2. the two 2D sandboxes are frozen at whatever simulation phase they reached
- *   3. the web fonts load asynchronously, so text renders in the fallback face on some runs
+ *     worst block 0-6, mean 0.00-0.29, blocks 4 of 6 views byte-identical
  *
- * The thresholds therefore sit above that floor with about 1.6x margin and the gate is a
- * STRUCTURE gate: it catches a section that disappeared, a colour scheme that flipped, a
- * layout that moved by a block -- it does NOT catch a two-pixel shift, and it cannot be used
- * to approve a subtle canvas change. Closing that gap needs deterministic boot (seeded RNG,
- * blocking fonts), which is a project of its own and is recorded as such in the plan.
+ * The thresholds sit about 2x above that. Before the backdrop mask the same measurement was
+ * 30-90, which is why this gate only became usable once the background was excluded: its
+ * particles are emitted on a wall clock, so the frame it freezes on can never be reproduced.
+ *
+ * What this gate therefore covers: layout, spacing, typography, colour, and the presence or
+ * absence of elements in the UI layer. What it does NOT cover: anything that lives only in a
+ * shader or an animated canvas. Say that out loud when using it to approve a change.
  */
-const MAX_BLOCK_DELTA = 110
-const MAX_MEAN_DELTA = 20
-const MAX_BAD_BLOCK_RATIO = 0.5
+const MAX_BLOCK_DELTA = 14
+const MAX_MEAN_DELTA = 2
+const MAX_BAD_BLOCK_RATIO = 0.005
 
 /** A block is stable when its three calibration frames agree to within this many levels. */
 const STABLE_SPREAD = 8
@@ -456,6 +454,27 @@ try {
       window.__still = true
       // Tell components that own their own timers to snap to a canonical state.
       window.dispatchEvent(new Event('still'))
+
+      /*
+       * Hide the animated backdrop and anything that opted out.
+       *
+       * The background WebGL canvas streams particles: how many have been emitted by the time
+       * the page freezes depends on how long the load took, so its pixels cannot be reproduced
+       * across runs no matter what the clock does (measured: 30-90 level differences spread
+       * across the whole frame). Hiding it turns that region into flat page background.
+       *
+       * The trade is explicit and belongs in the gate's description: this compares the UI layer
+       * -- layout, typography, colour, spacing, presence of elements -- and NOT the animated
+       * backdrop. A change that lives purely in a shader will not be caught here.
+       */
+      const viewportArea = window.innerWidth * window.innerHeight
+      for (const canvas of document.querySelectorAll('canvas')) {
+        const box = canvas.getBoundingClientRect()
+        if (box.width * box.height >= viewportArea * 0.6) canvas.style.visibility = 'hidden'
+      }
+      for (const node of document.querySelectorAll('[data-visual-ignore]')) {
+        node.style.visibility = 'hidden'
+      }
       if (!document.getElementById('visual-freeze')) {
         const style = document.createElement('style')
         style.id = 'visual-freeze'
