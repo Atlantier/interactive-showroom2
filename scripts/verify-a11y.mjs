@@ -234,6 +234,36 @@ try {
     }
   }
 
+  /*
+   * 0c. Link previews (review UI-07): the static document must carry a complete Open
+   * Graph set. A missing og:url or og:locale is invisible in the app and only shows up
+   * when someone pastes the link somewhere, which is exactly the kind of thing that
+   * rots unnoticed.
+   */
+  const social = await evaluate(`(() => {
+    const meta = (selector) => document.querySelector(selector)?.getAttribute('content')?.trim() || ''
+    return {
+      type: meta('meta[property="og:type"]'),
+      url: meta('meta[property="og:url"]'),
+      locale: meta('meta[property="og:locale"]'),
+      title: meta('meta[property="og:title"]'),
+      description: meta('meta[property="og:description"]'),
+      twitterCard: meta('meta[name="twitter:card"]'),
+    }
+  })()`)
+  check(
+    'meta: Open Graph / Twitter cards are complete',
+    Boolean(
+      social.type &&
+        social.url.startsWith('https://') &&
+        social.locale &&
+        social.title.length > 0 &&
+        social.description.length > 0 &&
+        social.twitterCard,
+    ),
+    `type=${social.type} locale=${social.locale} url=${social.url} card=${social.twitterCard}`,
+  )
+
   /* 1. WCAG 1.4.3 — the smallest text must clear 4.5:1 against its own background. */
   const contrast = await evaluate(`(() => {
     const parse = (c) => c.match(/\\d+(\\.\\d+)?/g).slice(0, 3).map(Number)
