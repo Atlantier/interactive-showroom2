@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware'
 import type { PerformanceTier, TransientState } from '@/types'
 import type { VfxPreset } from '@/lib/vfxPalette'
 import { clamp, safeNumber } from '@/lib/math'
-import { detectPerformanceTier } from '@/lib/device'
+import { detectPerformanceTier, prefersReducedMotion } from '@/lib/device'
 
 import { getDictionary } from '@/i18n/useI18n'
 /* -------------------------------------------------------------------------- */
@@ -90,6 +90,16 @@ export interface AppState {
   preferredTier: PerformanceTier | null
   /** Undo an automatic downgrade once frame pacing recovers. */
   restorePerformanceTier: () => void
+  /**
+   * Whether the visitor asked for reduced motion.
+   *
+   * Mirrored into the store because the 3D scenes cannot see a CSS media query: the
+   * camera parallax, particle motion and lights all ran at full speed while the
+   * documentation claimed a "calm camera". Not persisted -- it is an OS setting that
+   * is re-read every load, and a stale copy would fight the real preference.
+   */
+  reducedMotion: boolean
+  setReducedMotion: (reduced: boolean) => void
   /** Accent colour theme (翡翠绿 / 赛博紫 / 钛金橙). */
   accentTheme: AccentTheme
   /**
@@ -331,6 +341,7 @@ export const useAppStore = create<AppState>()(
       fpsMonitorEnabled: false,
       performanceTier: detectPerformanceTier(),
       preferredTier: null,
+      reducedMotion: prefersReducedMotion(),
       activeSection: DEFAULT_SECTION,
       perfHudOpen: false,
       perfNotice: null,
@@ -414,6 +425,11 @@ export const useAppStore = create<AppState>()(
         // Only clear the notice that is currently showing, so a stale timer
         // cannot dismiss a newer one.
         if (get().perfNotice) set({ perfNotice: null })
+      },
+
+      setReducedMotion: (reduced) => {
+        if (get().reducedMotion === reduced) return
+        set({ reducedMotion: reduced })
       },
 
       setAccentTheme: (theme) => set({ accentTheme: theme }),

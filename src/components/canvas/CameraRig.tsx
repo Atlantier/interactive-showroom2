@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { createSpring, stepSpring } from '@/lib/math'
-import { getTransient } from '@/store/useAppStore'
+import { getTransient, useAppStore } from '@/store/useAppStore'
 
 /**
  * CameraRig — scroll- and pointer-driven cinematic camera.
@@ -65,6 +65,14 @@ export function CameraRig() {
     [],
   )
 
+  /*
+   * Read reactively, not inside `useFrame`.
+   *
+   * The preference changes at most a few times per session, so a re-render is free --
+   * and reading it here keeps the per-frame path free of store lookups.
+   */
+  const reducedMotion = useAppStore((state) => state.reducedMotion)
+
   useFrame((_, rawDelta) => {
     // Defensive clamp: a backgrounded tab must never teleport the camera.
     const dt = Math.min(rawDelta, 1 / 20)
@@ -92,9 +100,20 @@ export function CameraRig() {
     const { mouse, scroll } = getTransient()
     const progress = scroll.progress
 
+    /*
+     * Reduced motion: no pointer parallax and no aim offset.
+     *
+     * Scroll still drives the dolly (it is the page's own motion, and the chapters are
+     * authored around it), but the camera stops chasing the cursor -- which is the part
+     * that produces vestibular discomfort. The springs keep easing toward the unmodified
+     * target, so the change is a glide rather than a snap.
+     */
+    const sway = reducedMotion ? 0 : 1
+
     // Smoothed target for each axis.
-    const targetX = BASE_POSITION.x + mouse.x * MOUSE_TRAVEL_X
-    const targetY = BASE_POSITION.y + mouse.y * MOUSE_TRAVEL_Y + progress * SCROLL_TRAVEL_Y
+    const targetX = BASE_POSITION.x + mouse.x * MOUSE_TRAVEL_X * sway
+    const targetY =
+      BASE_POSITION.y + mouse.y * MOUSE_TRAVEL_Y * sway + progress * SCROLL_TRAVEL_Y
     const targetZ = BASE_POSITION.z - progress * SCROLL_TRAVEL_Z
 
     stepSpring(springs.x, targetX, dt, SPRING)
@@ -104,7 +123,7 @@ export function CameraRig() {
     camera.position.set(springs.x.value, springs.y.value, springs.z.value)
 
     // Gentle aim offset so the scene parallaxes instead of feeling locked.
-    lookAt.set(mouse.x * 0.18, mouse.y * 0.14, 0)
+    lookAt.set(mouse.x * 0.18 * sway, mouse.y * 0.14 * sway, 0)
     camera.lookAt(lookAt)
   })
 

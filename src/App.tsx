@@ -19,7 +19,7 @@ import { ArchitectureNarrative } from '@/components/sections/ArchitectureNarrati
 import { CommandPalette } from '@/components/command/CommandPalette'
 import { useSectionObserver } from '@/hooks/useSectionObserver'
 import { SECTION_IDS } from '@/config/sections'
-import { supportsWebGL } from '@/lib/device'
+import { onReducedMotionChange, supportsWebGL } from '@/lib/device'
 import { useAppStore } from '@/store/useAppStore'
 import { soundEngine } from '@/utils/soundEngine'
 
@@ -41,6 +41,16 @@ function App() {
    * actually needs. `supportsWebGL` also caches internally now.
    */
   const [webgl] = useState(supportsWebGL)
+
+  const setReducedMotion = useAppStore((state) => state.setReducedMotion)
+
+  /*
+   * Keep the store in step with the OS setting.
+   *
+   * macOS exposes this in the menu bar and it can change while the page is open; the
+   * CSS media query in index.css handles the DOM, but nothing told the 3D scenes.
+   */
+  useEffect(() => onReducedMotionChange(setReducedMotion), [setReducedMotion])
   const soundEnabled = useAppStore((state) => state.soundEnabled)
   const accentTheme = useAppStore((state) => state.accentTheme)
 
