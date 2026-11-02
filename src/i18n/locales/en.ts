@@ -252,6 +252,15 @@ export const en = {
     fabrikShowVectors: 'Show IK vectors',
     fabrikLaserHint: 'Click to fire the ion beam',
     fabrikBurnHint: 'Burns cool over three seconds',
+    verletKeys:
+      'Keyboard: Enter or Space grabs the nearest badge, the arrow keys swing it, Shift moves further, Escape lets go',
+    fabrikKeysArm:
+      'Keyboard: the arrow keys steer the arm, Enter or Space fires the ion beam',
+    fabrikKeysCreature:
+      'Keyboard: the arrow keys steer the point the creature walks toward',
+    kbdGrab: 'Badge grabbed. Arrow keys swing it, Escape lets go.',
+    kbdRelease: 'Badge released.',
+    kbdFire: 'Ion beam fired.',
     gravityEarth: 'Earth gravity',
     gravityZero: 'Zero gravity',
     gravityMoon: 'Lunar gravity',

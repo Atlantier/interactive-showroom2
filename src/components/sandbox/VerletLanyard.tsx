@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { cn } from '@/lib/cn'
+import { announce } from '@/lib/announce'
 import { soundEngine } from '@/utils/soundEngine'
 import {
   BREAK_STRAIN,
@@ -66,6 +67,46 @@ const LANYARD_SPECS: LanyardSpec[] = [
 
 /** Max simulation steps per frame (protects against tab-switch catch-up). */
 const MAX_STEPS_PER_FRAME = 4
+
+/** Pixels the held badge travels per arrow-key press; Shift multiplies it. */
+const KEY_STEP = 14
+const KEY_STEP_COARSE = 56
+
+/**
+ * Hold a point inside the canvas by half a badge on each side.
+ *
+ * The tag eases toward the drag target and nothing else bounds it, so a target past
+ * the edge used to carry the badge outside the sandbox entirely -- the canvas clips
+ * it mid-drag and it can be left stranded out there on release, with only the rope
+ * still attached. Clamping the TARGET rather than the tag keeps the physics honest:
+ * the rope constraint still resolves normally, the badge simply cannot be dragged
+ * somewhere it cannot be seen.
+ *
+ * Shared by the pointer path and the keyboard path so both obey one rule; the two
+ * drifting apart is how a keyboard user ends up able to lose a badge off-screen.
+ */
+function clampBadgePoint(
+  canvas: HTMLCanvasElement,
+  sim: LanyardSimulation,
+  x: number,
+  y: number,
+): { x: number; y: number } {
+  const rect = canvas.getBoundingClientRect()
+  let halfW = 0
+  let halfH = 0
+  for (const l of sim.lanyards) {
+    halfW = Math.max(halfW, l.tag.width / 2)
+    halfH = Math.max(halfH, l.tag.height / 2)
+  }
+  // A canvas smaller than one badge cannot satisfy both bounds; fall back to
+  // the free position rather than producing an inverted range.
+  if (rect.width <= halfW * 2 || rect.height <= halfH * 2) return { x, y }
+
+  return {
+    x: Math.min(Math.max(x, halfW), rect.width - halfW),
+    y: Math.min(Math.max(y, halfH), rect.height - halfH),
+  }
+}
 
 /* -------------------------------------------------------------------------- */
 /*  VFX layer — tuning, module-level scratch, snap-effect pool                 */
@@ -598,21 +639,8 @@ export function VerletLanyard({ className }: { className?: string }) {
       const x = e.clientX - rect.left
       const y = e.clientY - rect.top
       if (!clampToTag) return { x, y }
-
-      let halfW = 0
-      let halfH = 0
-      for (const l of simRef.current?.lanyards ?? []) {
-        halfW = Math.max(halfW, l.tag.width / 2)
-        halfH = Math.max(halfH, l.tag.height / 2)
-      }
-      // A canvas smaller than one badge cannot satisfy both bounds; fall back to
-      // the free position rather than producing an inverted range.
-      if (rect.width <= halfW * 2 || rect.height <= halfH * 2) return { x, y }
-
-      return {
-        x: Math.min(Math.max(x, halfW), rect.width - halfW),
-        y: Math.min(Math.max(y, halfH), rect.height - halfH),
-      }
+      const sim = simRef.current
+      return sim ? clampBadgePoint(canvas, sim, x, y) : { x, y }
     }
 
     const onDown = (e: PointerEvent): void => {
@@ -679,6 +707,107 @@ export function VerletLanyard({ className }: { className?: string }) {
     }
   }, [])
 
+  /* ── Keyboard interaction (PB-05) ─────────────────────────────────────── */
+  /**
+   * The sandbox was pointer-only: a keyboard or switch user could focus the card
+   * and reach the buttons, but could not touch the toy itself.
+   *
+   * Keyboard parity is a grab/release model rather than a synthetic pointer, because
+   * the simulation only has one gesture (`pointerDown` / `pointerMove` / `pointerUp`)
+   * and driving that same path is the only way to be sure the two input methods
+   * cannot diverge.
+   *
+   *   Enter / Space   grab the nearest badge, or let go of the held one
+   *   Arrow keys      swing the held badge (Shift = 4× step)
+   *   Escape          let go
+   *
+   * Arrows are only swallowed while a badge is held. This canvas is ~52vh tall, so
+   * eating the page's arrow-key scrolling just because the sandbox has focus would
+   * re-create, for keyboard users, the scroll trap that `touch-action: pan-y` fixed
+   * for phones.
+   */
+  const keyboardHand = useRef({ x: 0, y: 0 })
+
+  /** Grab the badge closest to the invisible keyboard hand. */
+  const grabNearestBadge = (): boolean => {
+    const sim = simRef.current
+    const canvas = canvasRef.current
+    if (!sim || !canvas || sim.lanyards.length === 0) return false
+
+    const hand = keyboardHand.current
+    // Start from the middle of the sandbox the first time; afterwards continue from
+    // wherever the last release left off, so a second grab is not a jump back.
+    if (hand.x === 0 && hand.y === 0) {
+      const rect = canvas.getBoundingClientRect()
+      hand.x = rect.width / 2
+      hand.y = rect.height / 2
+    }
+
+    let best: LanyardState | null = null
+    let bestDist = Infinity
+    for (const l of sim.lanyards) {
+      // A snapped rope has no tag to hold; aim at a live one instead of a corpse.
+      if (l.broken) continue
+      const dx = l.tag.x - hand.x
+      const dy = l.tag.y - hand.y
+      const d = dx * dx + dy * dy
+      if (d < bestDist) {
+        bestDist = d
+        best = l
+      }
+    }
+    if (!best) return false
+
+    // Grab at the tag's own centre: `pointerDown` hit-tests, and a stale hand
+    // position is exactly the case where the hit test would miss.
+    if (!sim.pointerDown(best.tag.x, best.tag.y)) return false
+    hand.x = best.tag.x
+    hand.y = best.tag.y
+    return true
+  }
+
+  const onCanvasKeyDown = (e: KeyboardEvent<HTMLCanvasElement>): void => {
+    const sim = simRef.current
+    const canvas = canvasRef.current
+    if (!sim || !canvas) return
+
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      if (sim.isDragging) {
+        sim.pointerUp()
+        announce(t.sandbox.kbdRelease)
+      } else if (grabNearestBadge()) {
+        announce(t.sandbox.kbdGrab)
+      }
+      return
+    }
+
+    if (e.key === 'Escape') {
+      if (!sim.isDragging) return
+      e.preventDefault()
+      sim.pointerUp()
+      announce(t.sandbox.kbdRelease)
+      return
+    }
+
+    const step = e.shiftKey ? KEY_STEP_COARSE : KEY_STEP
+    let dx = 0
+    let dy = 0
+    if (e.key === 'ArrowLeft') dx = -step
+    else if (e.key === 'ArrowRight') dx = step
+    else if (e.key === 'ArrowUp') dy = -step
+    else if (e.key === 'ArrowDown') dy = step
+    else return
+
+    if (!sim.isDragging) return
+    e.preventDefault()
+    const hand = keyboardHand.current
+    const next = clampBadgePoint(canvas, sim, hand.x + dx, hand.y + dy)
+    hand.x = next.x
+    hand.y = next.y
+    sim.pointerMove(hand.x, hand.y)
+  }
+
   /* ── Re-forge ─────────────────────────────────────────────────────────── */
   const reforge = (): void => {
     const sim = simRef.current
@@ -731,8 +860,19 @@ export function VerletLanyard({ className }: { className?: string }) {
      */
     style={{ touchAction: 'pan-y' }}
         role="application"
+        // `tabIndex=0` is what makes the toy reachable at all (PB-05); the global
+        // `:focus-visible` rule in index.css supplies the ring, which SVG `<g>` could
+        // not do (see UI-10) but a canvas can.
+        tabIndex={0}
         aria-label={t.sandbox.verletAria}
+        aria-describedby="sandbox-verlet-keys"
+        onKeyDown={onCanvasKeyDown}
       />
+      {/* Instructions live here rather than in the accessible name: a name that reads
+          out four key bindings stops being a name. */}
+      <p id="sandbox-verlet-keys" className="sr-only">
+        {t.sandbox.verletKeys}
+      </p>
 
       {/* ── HUD ─────────────────────────────────────────────────────────── */}
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-3">

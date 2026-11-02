@@ -377,6 +377,92 @@ try {
     !touchAction.values.includes('none'),
     touchAction.values.join(', ') || 'all auto',
   )
+
+  /*
+   * 7. PB-05 — keyboard parity for the two physics sandboxes.
+   *
+   * Both toys used to be pointer-only, so the "drag a badge" and "steer the arm"
+   * interactions were unreachable without a mouse. Three properties are asserted, and
+   * the third is the one that matters most:
+   *
+   *   a. both canvases are in the tab order and carry a name plus a description
+   *   b. Enter/Escape actually drive the simulation (the announcement proves the
+   *      handler reached `pointerDown`/`pointerUp`)
+   *   c. arrows are only swallowed while something is held — an idle sandbox with
+   *      focus must still let the page scroll
+   *
+   * `dispatchEvent` returns false when the handler called `preventDefault`, which is
+   * exactly the "consumed" signal (c) needs; no pixel inspection involved.
+   */
+  const keyboardTargets = await evaluate(`(() => {
+    const out = []
+    for (const canvas of document.querySelectorAll('canvas[role="application"]')) {
+      const describedBy = canvas.getAttribute('aria-describedby')
+      const hint = describedBy ? document.getElementById(describedBy) : null
+      canvas.focus()
+      out.push({
+        id: describedBy,
+        label: (canvas.getAttribute('aria-label') || '').trim().length,
+        hint: (hint?.textContent || '').trim().length,
+        tabIndex: canvas.tabIndex,
+        focused: document.activeElement === canvas,
+      })
+    }
+    return out
+  })()`)
+  check(
+    'keyboard: both sandbox canvases are tabbable, named and described',
+    keyboardTargets.length === 2 &&
+      keyboardTargets.every((c) => c.tabIndex === 0 && c.focused && c.label > 20 && c.hint > 20),
+    keyboardTargets.map((c) => `${c.id} tabIndex=${c.tabIndex} name=${c.label} hint=${c.hint}`).join(' | ') ||
+      'no role=application canvas',
+  )
+
+  const lanyardKeys = await evaluate(`(async () => {
+    const canvas = document.querySelector('canvas[aria-describedby="sandbox-verlet-keys"]')
+    if (!canvas) return { found: false }
+    canvas.focus()
+    // A synthetic keydown bubbles to React's root listener exactly like a real one.
+    const fire = (key) => canvas.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+    const announce = () => document.getElementById('a11y-announcer')?.textContent || ''
+    const idleArrowScrollsPage = fire('ArrowRight')
+    fire('Enter')
+    await new Promise((r) => setTimeout(r, 220))
+    const grabbed = announce()
+    const heldArrowConsumed = fire('ArrowLeft') === false
+    fire('Escape')
+    await new Promise((r) => setTimeout(r, 220))
+    return { found: true, idleArrowScrollsPage, grabbed, heldArrowConsumed, released: announce() }
+  })()`)
+  check(
+    'keyboard: lanyard grabs, swings and releases from the keyboard',
+    Boolean(
+      lanyardKeys.found &&
+        lanyardKeys.idleArrowScrollsPage &&
+        /grabbed|抓住/i.test(lanyardKeys.grabbed) &&
+        lanyardKeys.heldArrowConsumed &&
+        /released|松手/i.test(lanyardKeys.released),
+    ),
+    lanyardKeys.found
+      ? `idle arrow scrolls=${lanyardKeys.idleArrowScrollsPage}, grabbed "${lanyardKeys.grabbed}", held arrow consumed=${lanyardKeys.heldArrowConsumed}, released "${lanyardKeys.released}"`
+      : 'canvas not found',
+  )
+
+  const armKeys = await evaluate(`(async () => {
+    const canvas = document.querySelector('canvas[aria-describedby="sandbox-fabrik-keys"]')
+    if (!canvas) return { found: false }
+    canvas.focus()
+    const fire = (key) => canvas.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+    const arrowConsumed = fire('ArrowUp') === false
+    fire('Enter')
+    await new Promise((r) => setTimeout(r, 220))
+    return { found: true, arrowConsumed, fired: document.getElementById('a11y-announcer')?.textContent || '' }
+  })()`)
+  check(
+    'keyboard: arm steers with arrows and fires with Enter',
+    Boolean(armKeys.found && armKeys.arrowConsumed && /fired|发射/i.test(armKeys.fired)),
+    armKeys.found ? `arrow consumed=${armKeys.arrowConsumed}, "${armKeys.fired}"` : 'canvas not found',
+  )
 } catch (error) {
   check('harness', false, String(error?.message ?? error))
 } finally {

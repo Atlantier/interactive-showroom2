@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { cn } from '@/lib/cn'
 import { damp } from '@/lib/math'
+import { announce } from '@/lib/announce'
 import { soundEngine } from '@/utils/soundEngine'
 import { useInViewAnimation } from '@/hooks/useInViewAnimation'
 import { reportIkSolve } from '@/lib/perfMetrics'
@@ -1679,6 +1680,54 @@ export function FabrikCreature({ className }: { className?: string }) {
     }
   }, [])
 
+  /* ── Keyboard interaction (PB-05) ─────────────────────────────────────── */
+  /**
+   * Keyboard parity for the two rigs.
+   *
+   * Both rigs read the same two inputs: one tracked point (the arm's IK target, the
+   * creature's steering target) and, in arm mode only, a click that fires the laser.
+   * So the keyboard mapping is exactly those two things — arrows move the point,
+   * Enter/Space fires — and no solver or gait code has to know the input changed.
+   *
+   * Same pixel steps as the lanyard sandbox (14, or 56 with Shift) so the two toys
+   * feel like one family. The point is clamped to the canvas because the creature
+   * steers toward it: an unclamped target walks the body into a wall and pins it.
+   */
+  const onCanvasKeyDown = (e: KeyboardEvent<HTMLCanvasElement>): void => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    if (e.key === 'Enter' || e.key === ' ') {
+      // Space would otherwise scroll the page while the sandbox holds focus.
+      e.preventDefault()
+      const arm = armRef.current
+      if (arm && modeRef.current === 'arm') {
+        fireArm(arm)
+        announce(t.sandbox.kbdFire)
+      }
+      return
+    }
+
+    const step = e.shiftKey ? 56 : 14
+    let dx = 0
+    let dy = 0
+    if (e.key === 'ArrowLeft') dx = -step
+    else if (e.key === 'ArrowRight') dx = step
+    else if (e.key === 'ArrowUp') dy = -step
+    else if (e.key === 'ArrowDown') dy = step
+    else return
+
+    e.preventDefault()
+    const rect = canvas.getBoundingClientRect()
+    pointerRef.current = {
+      x: Math.min(Math.max(pointerRef.current.x + dx, 0), rect.width),
+      y: Math.min(Math.max(pointerRef.current.y + dy, 0), rect.height),
+    }
+    // Without this the rigs keep idling at their default target, so a keyboard user
+    // would be moving a point that nothing reads.
+    pointerSeenRef.current = true
+  }
+
   /* ── Mode switching resets the rig being entered ──────────────────────── */
   const switchMode = (next: RideMode): void => {
     setMode(next)
@@ -1713,12 +1762,20 @@ export function FabrikCreature({ className }: { className?: string }) {
        and `none` made it a dead zone for page scrolling on touch devices. */
     style={{ touchAction: 'pan-y', cursor: mode === 'arm' ? 'crosshair' : 'default' }}
         role="application"
+        // Reachable and operable from the keyboard (PB-05); the ring comes from the
+        // global `:focus-visible` rule in index.css.
+        tabIndex={0}
         aria-label={
           mode === 'arm'
             ? t.sandbox.fabrikArmAria
             : t.sandbox.fabrikCreatureAria
         }
+        aria-describedby="sandbox-fabrik-keys"
+        onKeyDown={onCanvasKeyDown}
       />
+      <p id="sandbox-fabrik-keys" className="sr-only">
+        {mode === 'arm' ? t.sandbox.fabrikKeysArm : t.sandbox.fabrikKeysCreature}
+      </p>
 
       {/* ── Control bar ──────────────────────────────────────────────────── */}
       <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-wrap items-start justify-between gap-3 p-3">
