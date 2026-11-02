@@ -1,6 +1,7 @@
 import js from '@eslint/js'
 import tseslint from 'typescript-eslint'
 import reactHooks from 'eslint-plugin-react-hooks'
+import jsxA11y from 'eslint-plugin-jsx-a11y'
 
 /**
  * ESLint 10 flat config.
@@ -29,7 +30,7 @@ export default tseslint.config(
   {
     files: ['src/**/*.{ts,tsx}'],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
-    plugins: { 'react-hooks': reactHooks },
+    plugins: { 'react-hooks': reactHooks, 'jsx-a11y': jsxA11y },
     languageOptions: {
       parserOptions: {
         ecmaFeatures: { jsx: true },
@@ -112,6 +113,17 @@ export default tseslint.config(
        * The two rules that do not depend on that trade-off stay on: `rules-of-hooks`
        * and `exhaustive-deps`.
        */
+      /*
+       * jsx-a11y: the static half of the accessibility work.
+       *
+       * The browser gate (`verify:a11y`, 19 checks including a full axe scan) is the
+       * authority -- it measures real computed styles, focus behaviour and target sizes.
+       * This plugin's value is that it runs in 2 seconds on every commit and catches the
+       * markup mistakes before they ever reach a browser, so the expensive gate stays a
+       * regression net rather than a first responder.
+       */
+      ...jsxA11y.flatConfigs.recommended.rules,
+
       'react-hooks/immutability': 'off',
       'react-hooks/refs': 'off',
       'react-hooks/set-state-in-effect': 'off',

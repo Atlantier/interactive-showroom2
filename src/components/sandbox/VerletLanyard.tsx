@@ -855,6 +855,11 @@ export function VerletLanyard({ className }: { className?: string }) {
          * swipes scroll. Vertical badge dragging is now a mouse/pen gesture.
          */
         style={{ touchAction: 'pan-y' }}
+        /* eslint-disable-next-line jsx-a11y/no-interactive-element-to-noninteractive-role --
+           The plugin's role table files `application` under non-interactive; WAI-ARIA
+           defines it as a composite widget container, which is exactly what this is: the
+           page hands raw arrow/Enter keys to the sandbox and the sandbox implements the
+           interaction model itself (grab, swing, release). */
         role="application"
         // `tabIndex=0` is what makes the toy reachable at all (PB-05); the global
         // `:focus-visible` rule in index.css supplies the ring, which SVG `<g>` could

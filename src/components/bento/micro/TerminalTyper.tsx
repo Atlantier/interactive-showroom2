@@ -301,6 +301,12 @@ export function TerminalTyper({ className }: TerminalTyperProps) {
   )
 
   return (
+    /* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions --
+       The interactive element is the real <input> inside this card: keyboard users tab
+       straight into it (the browser gate asserts it is focusable and that focus lands on
+       it). This click handler is a mouse convenience that forwards a click anywhere in the
+       terminal to that input, so giving the wrapper a second keyboard path would create
+       two ways to do one thing. */
     <div
       // Test hook: the focus ring lives on this element, not on the input inside it,
       // so an assertion has to be able to find it without guessing at class names.

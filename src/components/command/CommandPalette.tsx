@@ -381,6 +381,13 @@ export function CommandPalette() {
                       const isActive = item.cmd.id === activeId
                       const Icon = item.cmd.icon
                       return (
+                        /* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/interactive-supports-focus --
+                           ARIA combobox pattern: focus never leaves the input. The rows are
+                           addressed by `aria-activedescendant` (see the input above), which is
+                           exactly why they must NOT be focusable -- making them tab stops would
+                           break both the arrow-key model and the focus trap. Keyboard operation
+                           is asserted in the browser gate (8 Tab presses never escape,
+                           Escape restores focus to the trigger). */
                         <div
                           key={item.cmd.id}
                           id={`command-row-${item.cmd.id}`}

@@ -1752,6 +1752,9 @@ export function FabrikCreature({ className }: { className?: string }) {
         /* `pan-y` for the same reason as the lanyard sandbox: this canvas covers ~48vh,
        and `none` made it a dead zone for page scrolling on touch devices. */
         style={{ touchAction: 'pan-y', cursor: mode === 'arm' ? 'crosshair' : 'default' }}
+        /* eslint-disable-next-line jsx-a11y/no-interactive-element-to-noninteractive-role --
+           Same as the lanyard sandbox: `application` is a composite widget role, and the rig
+           handles the arrow/Enter keys itself. See the note in VerletLanyard.tsx. */
         role="application"
         // Reachable and operable from the keyboard (PB-05); the ring comes from the
         // global `:focus-visible` rule in index.css.
