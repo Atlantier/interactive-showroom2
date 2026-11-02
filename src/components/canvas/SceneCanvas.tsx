@@ -12,7 +12,7 @@ import { BlendFunction, type ChromaticAberrationEffect } from 'postprocessing'
 import { preloadR3FAdvance, setCanvasActive } from '@/lib/frameBridge'
 import { setShaderPassCount } from '@/lib/perfMetrics'
 import { supportsWebGL } from '@/lib/device'
-import { getTransient, useAppStore } from '@/store/useAppStore'
+import { getTransient, registerPointerCanvas, useAppStore } from '@/store/useAppStore'
 import { CameraRig } from '@/components/canvas/CameraRig'
 import { AuroraCurtain } from '@/components/canvas/AuroraCurtain'
 import { FlowFieldParticles } from '@/components/canvas/FlowFieldParticles'
@@ -342,6 +342,15 @@ export function SceneCanvas() {
         gl.setClearColor(0x000000, 0)
 
         setCanvasActive(true)
+
+        /*
+         * Hand the pointer pipeline the real canvas element.
+         *
+         * Otherwise `writePointer` has to discover it with a document-wide query on
+         * every mouse move -- and that query was also picking "the first canvas in
+         * the document", which is only accidentally correct.
+         */
+        registerPointerCanvas(gl.domElement)
 
         // Mirror the mounted pass count into the perf registry here too: this
         // closure can run before the quality-publication effect above, and the

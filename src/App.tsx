@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { SmoothScroll } from '@/components/layout/SmoothScroll'
 import { Navbar } from '@/components/layout/Navbar'
 import { ClickRipple } from '@/components/layout/ClickRipple'
@@ -32,7 +32,15 @@ const Scene = lazy(() => import('@/components/canvas/Scene'))
 
 function App() {
   useSectionObserver(SECTION_IDS)
-  const webgl = supportsWebGL()
+  /*
+   * Probed once, in a state initialiser.
+   *
+   * This used to run during render, which meant every re-render of the shell
+   * created a fresh <canvas> and a real GL context. With browsers capping live
+   * contexts at 8-16, the probe was competing with the two contexts this page
+   * actually needs. `supportsWebGL` also caches internally now.
+   */
+  const [webgl] = useState(supportsWebGL)
   const soundEnabled = useAppStore((state) => state.soundEnabled)
   const accentTheme = useAppStore((state) => state.accentTheme)
 

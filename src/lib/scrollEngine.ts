@@ -1,7 +1,7 @@
 import Lenis from 'lenis'
 import { clamp, createSpring, resetSpring, safeNumber, stepSpring } from '@/lib/math'
 import { advanceR3F } from '@/lib/frameBridge'
-import { writeScroll, transient } from '@/store/useAppStore'
+import { invalidatePointerBox, transient, writeScroll } from '@/store/useAppStore'
 
 /**
  * Scroll engine — the single clock of the application.
@@ -281,4 +281,6 @@ export function startScroll(): void {
 
 export function resizeScroll(): void {
   instance?.resize()
+  // The canvas box may have changed with the viewport; drop the cached projection.
+  invalidatePointerBox()
 }

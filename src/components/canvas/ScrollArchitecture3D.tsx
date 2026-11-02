@@ -555,8 +555,17 @@ void main() {
   float sn = sin(spin);
   float drift = uTime * 0.35;
 
+  /*
+   * Three steps, not five.
+   *
+   * Each step runs two 8-tap sin-hash noise lookups, i.e. ~16 sin() calls, and the
+   * sphere covers a large part of the frame in this chapter -- five steps was up to
+   * 80 sin() per fragment. Three still resolves the front/back halves of the volume
+   * (the thing the march exists for) at 40% less cost; the difference is invisible
+   * through the glass and under the contact glow.
+   */
   float density = 0.0;
-  const int STEPS = 5;
+  const int STEPS = 3;
 
   for (int i = 0; i < STEPS; i++) {
     float u = (float(i) + 0.5) / float(STEPS);

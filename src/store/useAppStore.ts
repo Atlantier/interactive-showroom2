@@ -78,6 +78,18 @@ export interface AppState {
    * overriding an explicit choice would make the manual control feel broken.
    */
   autoDowngradeArmed: boolean
+  /**
+   * The tier the VISITOR chose, or null if they never did. This is the only tier
+   * that is persisted.
+   *
+   * `performanceTier` above is what is actually running and may have been lowered by
+   * the adaptive monitor. Persisting that value meant one slow boot -- a cold shader
+   * compile storm, which is exactly when the monitor fires -- pinned the visitor to
+   * `medium` forever, with no path back even on a machine that was never struggling.
+   */
+  preferredTier: PerformanceTier | null
+  /** Undo an automatic downgrade once frame pacing recovers. */
+  restorePerformanceTier: () => void
   /** Accent colour theme (翡翠绿 / 赛博紫 / 钛金橙). */
   accentTheme: AccentTheme
   /**
@@ -194,16 +206,69 @@ export function writePixelMouse(px: number, py: number): void {
  *
  * Falls back to the window box when no canvas exists yet (pre-mount events).
  */
-export function writePointer(clientX: number, clientY: number): void {
-  // The render canvas is the authority for the projection box.
-  const canvas =
-    typeof document !== 'undefined' ? document.querySelector('canvas') : null
-  const rect = canvas?.getBoundingClientRect()
+/*
+ * ── Cached projection box ───────────────────────────────────────────────────
+ * `writePointer` runs on every accepted pointermove, i.e. up to 120 times a second.
+ * It used to do a document-wide `querySelector('canvas')` plus a
+ * `getBoundingClientRect()` per call -- the query walks the tree and the rect read
+ * forces a style/layout flush, so the parallax was paying for a layout on every
+ * mouse move.
+ *
+ * The box only changes on resize (the hero canvas is fixed to the viewport), so it is
+ * measured once, cached, and invalidated explicitly: on window resize here, and from
+ * `resizeScroll()` for programmatic resizes.
+ */
+interface PointerBox {
+  left: number
+  top: number
+  width: number
+  height: number
+}
 
-  const left = rect?.left ?? 0
-  const top = rect?.top ?? 0
-  const width = rect && rect.width > 0 ? rect.width : (window.innerWidth || 1)
-  const height = rect && rect.height > 0 ? rect.height : (window.innerHeight || 1)
+const pointerBox: PointerBox = { left: 0, top: 0, width: 1, height: 1 }
+let pointerCanvas: HTMLCanvasElement | null = null
+let pointerBoxDirty = true
+let pointerResizeBound = false
+
+/** Mark the cached projection box stale. */
+export function invalidatePointerBox(): void {
+  pointerBoxDirty = true
+}
+
+/**
+ * Tell the pointer pipeline which canvas defines the projection.
+ *
+ * Called from the canvas' `onCreated`, which also stops the code from guessing via
+ * `querySelector` once a real element is known.
+ */
+export function registerPointerCanvas(canvas: HTMLCanvasElement | null): void {
+  pointerCanvas = canvas
+  pointerBoxDirty = true
+
+  if (pointerResizeBound || typeof window === 'undefined') return
+  pointerResizeBound = true
+  window.addEventListener('resize', invalidatePointerBox, { passive: true })
+}
+
+function ensurePointerBox(): PointerBox {
+  if (!pointerBoxDirty) return pointerBox
+
+  const element =
+    pointerCanvas ??
+    (typeof document !== 'undefined' ? document.querySelector('canvas') : null)
+  const rect = element?.getBoundingClientRect()
+
+  pointerBox.left = rect?.left ?? 0
+  pointerBox.top = rect?.top ?? 0
+  pointerBox.width = rect && rect.width > 0 ? rect.width : (window.innerWidth || 1)
+  pointerBox.height = rect && rect.height > 0 ? rect.height : (window.innerHeight || 1)
+  pointerBoxDirty = false
+  return pointerBox
+}
+
+export function writePointer(clientX: number, clientY: number): void {
+  // The render canvas is the authority for the projection box, cached above.
+  const { left, top, width, height } = ensurePointerBox()
 
   // Position relative to the canvas, then to NDC.
   const localX = clientX - left
@@ -265,6 +330,7 @@ export const useAppStore = create<AppState>()(
       soundEnabled: false,
       fpsMonitorEnabled: false,
       performanceTier: detectPerformanceTier(),
+      preferredTier: null,
       activeSection: DEFAULT_SECTION,
       perfHudOpen: false,
       perfNotice: null,
@@ -282,9 +348,10 @@ export const useAppStore = create<AppState>()(
       toggleFpsMonitor: () =>
         set((state) => ({ fpsMonitorEnabled: !state.fpsMonitorEnabled })),
 
-      // A manual choice disarms the adaptive monitor for the session.
+      // A manual choice disarms the adaptive monitor for the session, and is the
+      // only thing that gets persisted.
       setPerformanceTier: (tier) =>
-        set({ performanceTier: tier, autoDowngradeArmed: false }),
+        set({ performanceTier: tier, preferredTier: tier, autoDowngradeArmed: false }),
 
       /**
        * Automatic downgrade, driven by the frame-rate monitor.
@@ -308,11 +375,30 @@ export const useAppStore = create<AppState>()(
       },
 
       cyclePerformanceTier: () =>
-        set((state) => ({
-          performanceTier: state.performanceTier === 'high' ? 'medium' : 'high',
-          // Cycling is a manual decision, so the monitor stands down.
-          autoDowngradeArmed: false,
-        })),
+        set((state) => {
+          const next: PerformanceTier = state.performanceTier === 'high' ? 'medium' : 'high'
+          return {
+            performanceTier: next,
+            preferredTier: next,
+            // Cycling is a manual decision, so the monitor stands down.
+            autoDowngradeArmed: false,
+          }
+        }),
+
+      /*
+       * Recovery path.
+       *
+       * The monitor could only ever go DOWN, so a single hitch (or a cold shader
+       * compile) was a one-way trip. On an incline back to comfortable frame pacing
+       * the tier returns to whatever the visitor chose, or to what the device
+       * deserves if they never chose.
+       */
+      restorePerformanceTier: () => {
+        const state = get()
+        if (!state.autoDowngradeArmed) return
+        const target = state.preferredTier ?? detectPerformanceTier()
+        if (state.performanceTier !== target) set({ performanceTier: target })
+      },
 
       setActiveSection: (sectionId) => {
         if (sectionId === get().activeSection) return
@@ -344,6 +430,7 @@ export const useAppStore = create<AppState>()(
           soundEnabled: false,
           fpsMonitorEnabled: false,
           performanceTier: detectPerformanceTier(),
+          preferredTier: null,
           activeSection: DEFAULT_SECTION,
           perfHudOpen: false,
           perfNotice: null,
@@ -366,10 +453,22 @@ export const useAppStore = create<AppState>()(
       // the boot default ('emerald-cyber') and no version bump / migration is
       // needed — bumping without a `migrate` would only discard the other saved
       // preferences for no benefit.
+      /*
+       * Apply the restored preference once hydration lands.
+       *
+       * Without this the store would boot at the device default and a visitor who
+       * had explicitly picked `medium` would silently get `high` again.
+       */
+      onRehydrateStorage: () => (state) => {
+        if (state?.preferredTier) state.performanceTier = state.preferredTier
+      },
       partialize: (state) => ({
         soundEnabled: state.soundEnabled,
         fpsMonitorEnabled: state.fpsMonitorEnabled,
-        performanceTier: state.performanceTier,
+        // The effective tier is deliberately absent: it is re-derived per load
+        // (preferredTier, else the device probe) instead of being frozen by one
+        // bad session.
+        preferredTier: state.preferredTier,
         accentTheme: state.accentTheme,
         vfxPreset: state.vfxPreset,
         gravityMode: state.gravityMode,
