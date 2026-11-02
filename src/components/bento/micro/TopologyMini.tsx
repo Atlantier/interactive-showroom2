@@ -62,6 +62,16 @@ interface TopologyMiniProps {
 export function TopologyMini({ className }: TopologyMiniProps) {
   const { t } = useI18n()
   const [activeId, setActiveId] = useState<TopologyNodeId>('worker')
+  /*
+   * Which node holds keyboard focus.
+   *
+   * Driven by React state rather than CSS on purpose: two measured attempts at a
+   * CSS-only ring failed on this element (`focus:outline-*` resolved to
+   * `outline-style: none`, and an injected `:focus > circle` rule did not match at
+   * all). An explicit element cannot be defeated by an engine's SVG quirks, and it is
+   * verifiable: focus a node and count rings.
+   */
+  const [focusedId, setFocusedId] = useState<TopologyNodeId | null>(null)
 
   const nodeById = (id: string): TopologyNode | undefined =>
     NODES.find((n) => n.id === id)
@@ -136,8 +146,28 @@ export function TopologyMini({ className }: TopologyMiniProps) {
                * does not match reliably on SVG groups, which is how the ring ended up
                * measuring `outline-style: none` while the element was focused.
                */
-              className="cursor-pointer rounded-sm focus:outline-2 focus:outline-offset-2 focus:outline-signal-cyan"
+              onFocus={() => setFocusedId(node.id)}
+              onBlur={() => setFocusedId(null)}
+              className="cursor-pointer"
             >
+              {/*
+                * Focus ring. A real element, so no engine can refuse to paint it.
+                * Dashed so it reads as "keyboard focus" rather than as the active
+                * state, which is already shown by the halo below.
+                */}
+              {focusedId === node.id && (
+                <circle
+                  cx={node.x}
+                  cy={node.y}
+                  r={15}
+                  fill="none"
+                  stroke="#22d3ee"
+                  strokeWidth={1.5}
+                  strokeDasharray="3 2.5"
+                  className="pointer-events-none"
+                />
+              )}
+
               {/* Halo */}
               <circle
                 cx={node.x}
