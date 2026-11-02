@@ -57,6 +57,17 @@ export interface VerletPoint {
   /** Previous position — this is where the implicit velocity lives. */
   px: number
   py: number
+  /**
+   * Position at the START of the last integration step.
+   *
+   * Distinct from `px`/`py`: those are the solver's own history and change meaning
+   * inside `relaxConstraints`, while this is purely a render snapshot. The draw path
+   * interpolates between `rx/ry` and `x/y` by the accumulator's leftover fraction, so a
+   * chord drawn on a 144 Hz display moves every frame instead of stepping at the 60 Hz
+   * physics rate. Layout memory, not behaviour: it is written once per step.
+   */
+  rx: number
+  ry: number
   /** Accumulated acceleration for the next integration only. */
   ax: number
   ay: number
@@ -108,6 +119,8 @@ export function createPoint(x: number, y: number, pinned = false): VerletPoint {
     y,
     px: x,
     py: y,
+    rx: x,
+    ry: y,
     ax: 0,
     ay: 0,
     invMass: pinned ? 0 : 1,
@@ -170,6 +183,9 @@ export function integratePoints(
   const dt2 = dt * dt
   for (let i = 0; i < points.length; i++) {
     const p = points[i]
+    // Render snapshot, taken before anything moves this step (see `rx`/`ry`).
+    p.rx = p.x
+    p.ry = p.y
     if (p.pinned) {
       // Pinned points still need their history reset, or they would accumulate
       // a phantom velocity and yank the rope when unpinned.

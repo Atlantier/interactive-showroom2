@@ -546,7 +546,7 @@ export function VerletLanyard({ className }: { className?: string }) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.clearRect(0, 0, cssW, cssH)
 
-      drawSandbox(ctx, sim, cssW, cssH, renderTime(timeRef.current), vfx)
+      drawSandbox(ctx, sim, cssW, cssH, renderTime(timeRef.current), vfx, clock.alpha())
 
       // Push HUD numbers ~6×/s rather than every frame: this is a readout, and
       // re-rendering React at 60fps for it would defeat the point of the canvas.
@@ -1325,6 +1325,8 @@ function drawSandbox(
   height: number,
   time: number,
   vfx: LanyardVfx,
+  /** Leftover accumulator fraction, in [0,1). See `PB-03` in 修改计划.md. */
+  interpolation: number,
 ): void {
   void height
 
@@ -1340,7 +1342,7 @@ function drawSandbox(
   ctx.stroke()
 
   for (const l of sim.lanyards) {
-    if (!l.broken || l.ropeAlpha > 0.01) drawRope(ctx, l, time)
+    if (!l.broken || l.ropeAlpha > 0.01) drawRope(ctx, l, time, interpolation)
   }
 
   for (const l of sim.lanyards) {
@@ -1467,7 +1469,11 @@ function drawRope(
   ctx: CanvasRenderingContext2D,
   l: LanyardState,
   time: number,
+  interpolation: number,
 ): void {
+  // NOTE: `smooth` rather than `alpha` -- this function already uses `alpha` for the
+  // rope's own fade-in factor, and shadowing it would have broken the fade silently.
+  const smooth = interpolation
   const alpha = l.ropeAlpha
   if (alpha <= 0.01) return
 
@@ -1508,8 +1514,11 @@ function drawRope(
   for (let i = 0; i < points.length; i++) {
     const source = points[i]
     const slot = ropeFitScratch[i] ?? (ropeFitScratch[i] = { x: 0, y: 0 })
-    slot.x = source.x + jx
-    slot.y = source.y + jy
+    // Interpolate from the position at the start of the last step to the current one.
+    // At 144 Hz most frames execute zero physics steps, so the un-interpolated rope
+    // only moved 60 times a second -- visibly steppy against a 144 Hz cursor and camera.
+    slot.x = source.rx + (source.x - source.rx) * smooth + jx
+    slot.y = source.ry + (source.y - source.ry) * smooth + jy
   }
   ropeFitScratch.length = points.length
   const segments = catmullRomToBezier(ropeFitScratch, 0.5)
