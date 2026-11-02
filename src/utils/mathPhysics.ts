@@ -469,16 +469,24 @@ export function bezierPathLength(segments: BezierSegment[]): number {
 export function sampleBezier(
   s: BezierSegment,
   t: number,
+  out: { x: number; y: number } = { x: 0, y: 0 },
 ): { x: number; y: number } {
   const mt = 1 - t
   const a = mt * mt * mt
   const b = 3 * mt * mt * t
   const c = 3 * mt * t * t
   const d = t * t * t
-  return {
-    x: a * s.x0 + b * s.x1 + c * s.x2 + d * s.x3,
-    y: a * s.y0 + b * s.y1 + c * s.y2 + d * s.y3,
-  }
+  /*
+   * Optional output object.
+   *
+   * This runs once per weave mark per cord per frame -- three calls each, dozens of
+   * marks, four cords -- so returning a fresh `{x, y}` per call was one of the larger
+   * sources of per-frame garbage on the sandbox's hot path. Callers on that path pass a
+   * reused scratch object; the default keeps every other call site unchanged.
+   */
+  out.x = a * s.x0 + b * s.x1 + c * s.x2 + d * s.x3
+  out.y = a * s.y0 + b * s.y1 + c * s.y2 + d * s.y3
+  return out
 }
 
 /* -------------------------------------------------------------------------- */

@@ -217,6 +217,14 @@ const ACCENT_RGB: [number, number, number][] = LANYARD_SPECS.map((spec) =>
   hexToRgb(spec.accent),
 )
 
+/* ── Reused draw-path scratch (module scope: zero per-frame garbage) ──────── */
+/** Fit points for the current cord; grown once, then reused. */
+const ropeFitScratch: Array<{ x: number; y: number }> = []
+/** Bezier samples for the weave marks: position plus the two tangent taps. */
+const bezierP = { x: 0, y: 0 }
+const bezierQ = { x: 0, y: 0 }
+const bezierR = { x: 0, y: 0 }
+
 /** `#rrggbb` → `[r, g, b]`. Module-load only. */
 function hexToRgb(hex: string): [number, number, number] {
   const value = Number.parseInt(hex.slice(1), 16)
@@ -1481,8 +1489,23 @@ function drawRope(
   /* ── Fit the curve through the particles ─────────────────────────────── */
   // The jitter is applied to the sampled points, not after fitting, so the whole
   // cord shivers coherently rather than the texture sliding over a still strap.
-  const fitted = l.points.map((p) => ({ x: p.x + jx, y: p.y + jy }))
-  const segments = catmullRomToBezier(fitted, 0.5)
+  /*
+   * Reused fit buffer.
+   *
+   * `l.points.map(...)` allocated one array plus one object per particle on every
+   * frame for every lanyard -- roughly 740 objects per frame across the four cords,
+   * which is the exact thing this file's header promises not to do. The particles'
+   * count is fixed, so one growable array of plain points is enough.
+   */
+  const points = l.points
+  for (let i = 0; i < points.length; i++) {
+    const source = points[i]
+    const slot = ropeFitScratch[i] ?? (ropeFitScratch[i] = { x: 0, y: 0 })
+    slot.x = source.x + jx
+    slot.y = source.y + jy
+  }
+  ropeFitScratch.length = points.length
+  const segments = catmullRomToBezier(ropeFitScratch, 0.5)
   if (segments.length === 0) return
 
   /* ── Stress palette ──────────────────────────────────────────────────── */
@@ -1606,10 +1629,12 @@ function drawRope(
     const seg = segments[segIndex]
     if (!seg) continue
 
-    const p = sampleBezier(seg, localT)
+    // Scratch objects, reused across marks: three allocations per mark per cord per
+    // frame adds up fast. Consumed immediately below, before the next iteration.
+    const p = sampleBezier(seg, localT, bezierP)
     // Tangent from a finite difference on the same segment.
-    const q = sampleBezier(seg, Math.min(1, localT + 0.02))
-    const r = sampleBezier(seg, Math.max(0, localT - 0.02))
+    const q = sampleBezier(seg, Math.min(1, localT + 0.02), bezierQ)
+    const r = sampleBezier(seg, Math.max(0, localT - 0.02), bezierR)
     const tx = q.x - r.x
     const ty = q.y - r.y
     const tl = Math.hypot(tx, ty) || 1
