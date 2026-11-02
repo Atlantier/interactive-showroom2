@@ -46,6 +46,7 @@ export const en = {
     frame: 'frame',
     worst: 'worst',
     viewport: 'viewport',
+    skipToContent: 'Skip to content',
     backToTop: 'Back to top',
     scrollProgressTitle: 'Scroll progress · click to return to the top',
     audioSpectrumTitle: 'Live audio spectrum',

@@ -41,6 +41,7 @@ export const zh: Dictionary = {
     frame: '单帧',
     worst: '峰值',
     viewport: '视口',
+    skipToContent: '跳到主要内容',
     backToTop: '回到顶部',
     scrollProgressTitle: '滚动进度 · 点击回到顶部',
     audioSpectrumTitle: '实时音频频谱',

@@ -14,6 +14,7 @@ import { useAppStore } from '@/store/useAppStore'
 import { soundEngine } from '@/utils/soundEngine'
 
 import { useI18n } from '@/i18n/useI18n'
+import { announce } from '@/lib/announce'
 /**
  * CommandPalette — the Cmd/Ctrl+K palette.
  *
@@ -191,6 +192,9 @@ export function CommandPalette() {
       return
     }
 
+    // Announce the outcome: the panel is about to close, and a screen-reader user
+    // gets no other signal that the command ran (the page changes underneath).
+    announce(cmd.title)
     soundEngine.playCardActivate()
     // Navigation and setting changes close the panel; `run` itself may already
     // have closed it (the section jump does).

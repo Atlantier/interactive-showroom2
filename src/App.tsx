@@ -23,6 +23,7 @@ import { onReducedMotionChange, supportsWebGL } from '@/lib/device'
 import { useAppStore } from '@/store/useAppStore'
 import { soundEngine } from '@/utils/soundEngine'
 
+import { useI18n } from '@/i18n/useI18n'
 /**
  * The WebGL scene is code-split: the DOM shell must be interactive long before
  * three.js is parsed. `Scene` is a fixed, pointer-events-none layer that sits
@@ -56,6 +57,9 @@ function App() {
    * React 19 supports `inert` as a plain boolean prop, so no attribute juggling.
    */
   const paletteOpen = useAppStore((state) => state.commandPaletteOpen)
+
+  // The skip link is the first focusable thing on the page, so it needs the copy here.
+  const { t } = useI18n()
 
   /*
    * Keep the store in step with the OS setting.
@@ -172,6 +176,18 @@ function App() {
           className="pointer-events-none fixed inset-0 z-15 bg-gradient-to-b from-transparent via-void-950/55 to-void-950/85"
         />
 
+        {/*
+         * Bypass block (WCAG 2.4.1). Without it a keyboard user has to Tab through the
+         * whole navbar -- nine controls plus six chapter links -- before reaching the
+         * content on every single page load.
+         */}
+        <a
+          href="#main"
+          className="sr-only rounded bg-void-900 px-3 py-2 text-sm text-signal-cyan focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[300] focus:outline focus:outline-2 focus:outline-signal-cyan"
+        >
+          {t.nav.skipToContent}
+        </a>
+
         <div inert={paletteOpen}>
         {/* ── Navigation ──────────────────────────────────────────────── */}
         <Navbar />
@@ -187,7 +203,9 @@ function App() {
         <BootSequence />
 
         {/* ── Content ─────────────────────────────────────────────────── */}
-        <main className="relative z-20">
+        {/* `tabIndex={-1}` so the skip link can actually move focus here: an <a href="#id">
+            only scrolls, it does not focus a non-interactive element. */}
+        <main id="main" tabIndex={-1} className="relative z-20 focus:outline-none">
           <HeroSection />
           <GallerySection />
           <ArchitectureNarrative />

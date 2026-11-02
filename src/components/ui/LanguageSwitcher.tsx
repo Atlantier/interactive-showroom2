@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion'
 import { useI18n, type Locale } from '@/i18n/useI18n'
 import { soundEngine } from '@/utils/soundEngine'
+import { announce } from '@/lib/announce'
 import { cn } from '@/lib/cn'
 
 /**
@@ -53,6 +54,13 @@ export function LanguageSwitcher({ className }: { className?: string }) {
     if (next === locale) return
     setLocale(next)
     soundEngine.playLocaleConfirm()
+    /*
+     * Announce it. A screen reader user gets no other signal that the interface just
+     * changed language -- the visual text swaps silently, and `documentElement.lang`
+     * only affects pronunciation of what is read next. The endonym is used so the
+     * message is meaningful in whichever language is now active.
+     */
+    announce(t.nav[next === 'en' ? 'languageEnglish' : 'languageChinese'])
   }
 
   return (
