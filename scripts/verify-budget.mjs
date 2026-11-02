@@ -34,19 +34,28 @@ try {
   process.exit(1)
 }
 
+/**
+ * Collect referenced JS by FILE NAME, not by path.
+ *
+ * The document's asset URLs are prefixed with the deploy base path (`/` locally,
+ * `/interactive-showroom2/` on GitHub Pages), so matching `/assets/...` literally
+ * works locally and finds nothing in CI -- which is exactly how the first version of
+ * this script failed the deploy job it was added to protect.
+ */
+const assetPattern = /(?:href|src)="[^"]*\/assets\/([^"/]+\.js)"/g
+
 /** Entry scripts: what the document executes. */
-const entry = [...html.matchAll(/<script[^>]+src="(\/assets\/[^"]+\.js)"/g)].map((m) => m[1])
+const entry = [...html.matchAll(/<script[^>]+src="[^"]*\/assets\/([^"/]+\.js)"/g)].map((m) => m[1])
 
 /** Everything the document preloads: fetched on the critical path all the same. */
-const preloads = [...html.matchAll(/<link[^>]+modulepreload[^>]+href="(\/assets\/[^"]+\.js)"/g)].map(
-  (m) => m[1],
-)
-// Attribute order is not guaranteed; catch href-before-rel too.
-preloads.push(
-  ...[...html.matchAll(/<link[^>]+href="(\/assets\/[^"]+\.js)"[^>]+modulepreload/g)].map(
-    (m) => m[1],
-  ),
-)
+const preloads = []
+for (const match of html.matchAll(/<link[^>]*>/g)) {
+  const tag = match[0]
+  if (!tag.includes('modulepreload')) continue
+  const href = assetPattern.exec(tag)
+  assetPattern.lastIndex = 0
+  if (href) preloads.push(href[1])
+}
 
 const critical = [...new Set([...entry, ...preloads])].sort()
 
@@ -55,22 +64,16 @@ if (critical.length === 0) {
   process.exit(1)
 }
 
-/**
- * Deferred chunks: every emitted JS asset that is NOT on the critical path.
- *
- * Read from the output directory rather than from index.html: lazy chunks are never
- * referenced there, so scanning the HTML reported "0 KB deferred" even while a 1 MB
- * lazy chunk existed.
- */
+/** Deferred chunks: every emitted JS asset that is NOT on the critical path. */
 const emitted = readdirSync(resolve('dist/assets'))
   .filter((f) => f.endsWith('.js'))
-  .map((f) => '/assets/' + f)
+  .map((f) => f)
 const deferred = emitted.filter((f) => !critical.includes(f))
 
 let criticalGzip = 0
 const rows = []
 for (const file of critical) {
-  const abs = resolve('dist', '.' + file)
+  const abs = resolve('dist/assets', file)
   let raw = 0
   let gzip = 0
   try {
@@ -78,7 +81,7 @@ for (const file of critical) {
     raw = statSync(abs).size
     gzip = gzipSync(buf).length
   } catch {
-    console.error(`::error::preloaded asset missing on disk: ${file}`)
+    console.error(`::error::preloaded asset missing on disk: dist/assets/${file}`)
     process.exit(1)
   }
   criticalGzip += gzip
@@ -88,7 +91,7 @@ for (const file of critical) {
 let deferredGzip = 0
 for (const file of deferred) {
   try {
-    deferredGzip += gzipSync(readFileSync(resolve('dist', '.' + file))).length
+    deferredGzip += gzipSync(readFileSync(resolve('dist/assets', file))).length
   } catch {
     // Referenced by name only (e.g. inside a comment in the HTML): ignore.
   }
