@@ -21,6 +21,7 @@
  * Exit code 1 on any violated threshold.
  */
 import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -91,7 +92,7 @@ function argValue(flag, fallback) {
 /* -------------------------------------------------------------------------- */
 
 const base = argValue('--base', 'http://127.0.0.1:4173')
-const chromePath = findChrome()
+const chromePath = CANDIDATES.find((c) => typeof c === 'string' && c.length > 0 && existsSync(c))
 if (!chromePath) {
   console.error('::error::no Chrome/Chromium found; set CHROME_PATH')
   process.exit(1)

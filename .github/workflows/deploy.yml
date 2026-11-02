@@ -108,9 +108,13 @@ jobs:
       # `setup-chrome` exports CHROME_PATH, which is what the script looks for.
       # NOTE: these actions still use movable tags; pinning them to SHAs is UI-17.
       - name: Setup Chrome
+        id: chrome
         uses: browser-actions/setup-chrome@v1
 
       - name: Accessibility assertions
+        env:
+          # The action exports its path as an output, not as CHROME_PATH.
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
         run: |
           pnpm preview --port 4173 --strictPort &
           for i in $(seq 1 30); do

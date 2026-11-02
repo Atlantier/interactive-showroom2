@@ -17,6 +17,7 @@
  * Each check prints PASS/FAIL with the measured value, and any failure sets exit 1.
  */
 import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -33,7 +34,14 @@ const CANDIDATES = [
   '/usr/bin/chromium-browser',
 ]
 
-const chromePath = CANDIDATES.find((c) => typeof c === 'string' && c.length > 0)
+/*
+ * First candidate that actually EXISTS on this machine.
+ *
+ * Checking only for a non-empty string is not enough: the Windows install paths are
+ * non-empty everywhere, so on the Linux CI runner the script happily tried to spawn
+ * `C:/Program Files/...` and died with ENOENT. Existence is the whole question.
+ */
+const chromePath = CANDIDATES.find((c) => typeof c === 'string' && c.length > 0 && existsSync(c))
 const base = (() => {
   const i = process.argv.indexOf('--base')
   return i !== -1 && process.argv[i + 1] ? process.argv[i + 1] : 'http://127.0.0.1:4173'
