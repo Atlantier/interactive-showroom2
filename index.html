@@ -42,12 +42,14 @@
       content="An immersive personal showroom: one clock drives the page, the camera and the GPU."
     />
 
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
+    <!--
+      Fonts are self-hosted (src/styles/fonts.css, 62 KB of latin-subset variable WOFF2).
+
+      This used to be three requests to fonts.googleapis.com / fonts.gstatic.com: two
+      preconnects, two TLS handshakes and a render-blocking stylesheet from a third party
+      before any text could be painted. On a network where that host is unreachable the
+      stylesheet stalls until timeout and the page visibly reflows when it finally gives up.
+    -->
   </head>
   <body>
     <div id="root"></div>

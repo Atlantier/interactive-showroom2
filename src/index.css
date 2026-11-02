@@ -1,4 +1,6 @@
 @import 'tailwindcss';
+/* Self-hosted variable fonts -- see src/styles/fonts.css for why they are not on a CDN. */
+@import './styles/fonts.css';
 
 /* -------------------------------------------------------------------------- */
 /*  Design tokens — deep-space black / geek terminal                            */

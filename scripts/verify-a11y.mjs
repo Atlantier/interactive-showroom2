@@ -184,6 +184,16 @@ try {
 
   await send('Page.enable')
   await send('Runtime.enable')
+  // LD-04: the page must not need a third-party host to paint its text. Requests are
+  // recorded here and asserted at the end.
+  await send('Network.enable')
+  const requestedUrls = []
+  ws.on('message', (raw) => {
+    const message = JSON.parse(raw.toString())
+    if (message.method === 'Network.requestWillBeSent') {
+      requestedUrls.push(message.params.request.url)
+    }
+  })
   await send('Emulation.setDeviceMetricsOverride', {
     width: 1600,
     height: 900,
@@ -656,6 +666,28 @@ try {
     armKeys.found
       ? `arrow consumed=${armKeys.arrowConsumed}, "${armKeys.fired}"`
       : 'canvas not found',
+  )
+  /*
+   * 8. LD-04 — self-hosted fonts.
+   *
+   * The page used to fetch a Google Fonts stylesheet plus two font files from two
+   * third-party hosts before it could paint text; on a network where those hosts are
+   * unreachable the stylesheet stalls and the page reflows when it gives up. The fonts are
+   * now bundled (62 KB of latin-subset variable WOFF2), so this asserts both halves:
+   * nothing is requested from the old hosts, and the families really are the page's own.
+   */
+  const thirdPartyFonts = requestedUrls.filter((url) =>
+    /fonts\.(googleapis|gstatic)\.com/.test(url),
+  )
+  const bundledFonts = requestedUrls.filter((url) => url.endsWith('.woff2'))
+  const fontFaces = await evaluate(`(() => ({
+    space: getComputedStyle(document.body).fontFamily.includes('Space Grotesk'),
+    mono: [...document.fonts].some((face) => face.family.includes('JetBrains') && face.status === 'loaded'),
+  }))()`)
+  check(
+    'fonts: self-hosted, no third-party requests, families applied',
+    thirdPartyFonts.length === 0 && bundledFonts.length >= 2 && fontFaces.space && fontFaces.mono,
+    `third-party ${thirdPartyFonts.length}, bundled ${bundledFonts.length}, body uses Space Grotesk ${fontFaces.space}, mono loaded ${fontFaces.mono}`,
   )
 } catch (error) {
   check('harness', false, String(error?.message ?? error))

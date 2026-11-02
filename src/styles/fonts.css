@@ -1,0 +1,54 @@
+/**
+ * Self-hosted fonts (LD-04).
+ *
+ * ── Why not the Google Fonts <link> ─────────────────────────────────────────
+ * The app used to load two families from `fonts.googleapis.com` + `fonts.gstatic.com`.
+ * That is three extra DNS lookups, two TLS handshakes and a render-blocking stylesheet
+ * retrieved from a third party before the first text can paint — and on networks where
+ * `fonts.googleapis.com` is unreachable (China, corporate proxies, offline demos) the
+ * stylesheet hangs until timeout, so the page paints in a fallback face and then reflows.
+ * For a page whose entire identity is typography, that reflow is the most visible defect
+ * a first-time visitor can be shown.
+ *
+ * ── What these files are ────────────────────────────────────────────────────
+ * The two families the design uses, latin subset only, as served by Google Fonts:
+ *
+ *   Space Grotesk    22 288 B   variable, weights 300-700
+ *   JetBrains Mono   40 404 B   variable, weights 300-700
+ *
+ * 62 KB total, same-origin, immutable (Vite fingerprints them), and both families carry
+ * all five weights from ONE file each because they are variable fonts — nine `@font-face`
+ * rules would have been nine files if the static cuts had been fetched instead.
+ *
+ * ── Licensing ───────────────────────────────────────────────────────────────
+ * Both are licensed under the SIL Open Font License 1.1, which permits bundling and
+ * self-hosting. `unicode-range` is copied from Google's own latin subset so a Cyrillic or
+ * Greek glyph still falls back to a system face instead of forcing a 62 KB download for
+ * text this site never renders.
+ */
+
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  /* One variable file covers the whole weight axis. */
+  font-weight: 300 700;
+  /* `swap`: paint immediately in the fallback, swap when the file arrives. The app is a
+     dark, text-light page -- a 100 ms invisible-text window is more noticeable than a
+     one-frame face change. */
+  font-display: swap;
+  src: url('../assets/fonts/space-grotesk-latin.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('../assets/fonts/jetbrains-mono-latin.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
