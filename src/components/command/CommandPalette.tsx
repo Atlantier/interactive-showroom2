@@ -235,6 +235,47 @@ export function CommandPalette() {
 
   const activeId = flat[activeIndex]?.cmd.id
 
+  /*
+   * ── Focus management ───────────────────────────────────────────────────
+   * The panel declared `aria-modal="true"` but nothing enforced it: Tab walked out
+   * of the dialog into the navbar behind the backdrop, and on close the focused
+   * element unmounted, dropping focus onto <body> so the next Tab restarted at the
+   * top of the page. Both are WCAG 2.4.3 failures.
+   */
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const restoreFocusRef = useRef<HTMLElement | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    restoreFocusRef.current = document.activeElement as HTMLElement | null
+    const raf = requestAnimationFrame(() => inputRef.current?.focus())
+    return () => {
+      cancelAnimationFrame(raf)
+      // Runs on close AND on unmount: the element that opened the palette gets focus
+      // back, so keyboard users resume where they were.
+      restoreFocusRef.current?.focus?.()
+    }
+  }, [open])
+
+  const trapFocus = useCallback((event: React.KeyboardEvent) => {
+    if (event.key !== 'Tab') return
+    const root = dialogRef.current
+    if (!root) return
+    const nodes = root.querySelectorAll<HTMLElement>(
+      'input, button, [href], [tabindex]:not([tabindex="-1"])',
+    )
+    if (nodes.length === 0) return
+    const first = nodes[0]
+    const last = nodes[nodes.length - 1]
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault()
+      last.focus()
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault()
+      first.focus()
+    }
+  }, [])
+
   return (
     <AnimatePresence>
       {open && (
@@ -253,6 +294,8 @@ export function CommandPalette() {
           />
 
           <motion.div
+            ref={dialogRef}
+            onKeyDown={trapFocus}
             role="dialog"
             aria-modal="true"
             aria-label={t.commands.dialogAria}
@@ -315,9 +358,27 @@ export function CommandPalette() {
                 </div>
               ) : (
                 grouped.map((section) => (
-                  <div key={section.group} className="mb-1 last:mb-0">
-                    <div className="px-2.5 pt-2 pb-1 font-mono text-[0.55rem] tracking-[0.18em] text-ink-700 uppercase">
-                      {section.group}
+                  /*
+                   * ARIA: a listbox may only contain options or groups. The header used
+                   * to be a bare <div> straight inside the listbox, which Chrome
+                   * flattens -- the reader announced a 19-item list with five
+                   * unlabelled text runs spliced in, and the arrow-key index no longer
+                   * matched the reported position.
+                   */
+                  <div
+                    key={section.group}
+                    role="group"
+                    aria-labelledby={`command-group-${section.group}`}
+                    className="mb-1 last:mb-0"
+                  >
+                    <div
+                      id={`command-group-${section.group}`}
+                      role="presentation"
+                      className="px-2.5 pt-2 pb-1 font-mono text-[0.55rem] tracking-[0.18em] text-ink-700 uppercase"
+                    >
+                      {/* UI-06: this printed the internal token ("navigate") instead
+                          of the localised group name the dictionary already had. */}
+                      {t.commands.groups[section.group]}
                     </div>
                     {section.items.map((item) => {
                       const isActive = item.cmd.id === activeId
