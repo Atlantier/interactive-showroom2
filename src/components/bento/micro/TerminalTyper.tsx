@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/cn'
 import { getDictionary, useI18n } from '@/i18n/useI18n'
+import { onStillChange } from '@/lib/testHooks'
 import {
   HELP_ART,
   buildHelpRows,
@@ -115,6 +116,31 @@ export function TerminalTyper({ className }: TerminalTyperProps) {
   }, [])
 
   /* ── Demo loop (only while the visitor has not taken over) ─────────────── */
+  /*
+   * Visual gate: this demo types forever, so a capture at an arbitrary moment catches an
+   * arbitrary prefix of an arbitrary line. On freeze it snaps to a fixed transcript -- two
+   * finished lines and one command mid-typing -- which is what makes the card comparable
+   * between runs. Nothing changes for a visitor: the event is only dispatched by
+   * scripts/verify-visual.mjs.
+   */
+  useEffect(
+    () =>
+      onStillChange(() => {
+        setLines(
+          buildDemoScript()
+            .slice(0, 2)
+            .map((line, index) => ({
+              ...line,
+              id: index,
+              tone: (line.tone ?? 'dim') as TerminalTone,
+            })),
+        )
+        if (promptRef.current) promptRef.current.textContent = '$ '
+        if (liveRef.current) liveRef.current.textContent = 'showroom deploy --env ed'
+      }),
+    [],
+  )
+
   useEffect(() => {
     if (interactive) return
 

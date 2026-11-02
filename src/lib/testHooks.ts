@@ -47,6 +47,26 @@ export function isStill(): boolean {
  * time-driven shader evaluates the same phase on every run, which is what makes the
  * comparison mean something.
  */
+/**
+ * Subscribe to the moment the visual gate freezes the page.
+ *
+ * Freezing alone is not enough for animations that have already started: a typing loop, a
+ * particle emitter or a physics sandbox is mid-flight when the flag flips, so the captured
+ * frame still depends on how long the page had been loading. Components that own such a loop
+ * listen here and snap to a canonical state instead -- the same state on every run.
+ *
+ * The event is dispatched by `scripts/verify-visual.mjs` right after it sets the flags; a
+ * production visitor never dispatches it, so the listener is inert.
+ */
+export function onStillChange(handler: () => void): () => void {
+  if (typeof window === 'undefined') return () => {}
+  const listener = (): void => {
+    if (isStill()) handler()
+  }
+  window.addEventListener('still', listener)
+  return () => window.removeEventListener('still', listener)
+}
+
 export function stillClock(): number | null {
   if (typeof window === 'undefined') return null
   const value = window.__stillAt

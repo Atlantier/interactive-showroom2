@@ -454,6 +454,8 @@ try {
       // pinned time is what makes two runs comparable rather than just "stopped".
       window.__stillAt = 6
       window.__still = true
+      // Tell components that own their own timers to snap to a canonical state.
+      window.dispatchEvent(new Event('still'))
       if (!document.getElementById('visual-freeze')) {
         const style = document.createElement('style')
         style.id = 'visual-freeze'
