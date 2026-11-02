@@ -64,19 +64,35 @@ const KNOWN_OPEN = ['UI-10 topology focus ring (needs a <button> overlay, not an
 
 const port = 9450 + Math.floor(Math.random() * 90)
 const profile = await mkdtemp(join(tmpdir(), 'showroom-a11y-'))
+/*
+ * Platform flags.
+ *
+ * `--no-sandbox` and `--disable-dev-shm-usage` are required for Chrome to start at all
+ * on the GitHub runner (and in most containers): without them the process exits before
+ * it opens the debugging port, which surfaced as "debugging endpoint never became
+ * ready" rather than as a clear error. The GPU flags are Windows-oriented and are
+ * skipped elsewhere so they cannot be rejected as unknown switches.
+ */
+const platformArgs = [
+  '--no-first-run',
+  '--no-default-browser-check',
+  '--disable-extensions',
+  '--window-size=1600,900',
+  ...(process.platform === 'linux'
+    ? ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu-sandbox']
+    : []),
+  ...(process.platform === 'win32'
+    ? ['--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist']
+    : []),
+]
+
 const chrome = spawn(
   chromePath,
   [
     '--headless=new',
     `--remote-debugging-port=${port}`,
     `--user-data-dir=${profile}`,
-    '--no-first-run',
-    '--no-default-browser-check',
-    '--disable-extensions',
-    '--use-angle=d3d11',
-    '--enable-gpu',
-    '--ignore-gpu-blocklist',
-    '--window-size=1600,900',
+    ...platformArgs,
     'about:blank',
   ],
   { stdio: 'ignore' },
