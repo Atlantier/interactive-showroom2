@@ -371,6 +371,17 @@ export function VolumetricStageLights({
   fadeWithScroll = false,
 }: VolumetricStageLightsProps) {
   const camera = useThree((state) => state.camera)
+  /*
+   * The renderer's DPR, not `window.devicePixelRatio`.
+   *
+   * They are not the same number: the performance tier caps the renderer's pixel
+   * ratio (medium runs at 1.0), while `window.devicePixelRatio` keeps reporting the
+   * display's value. Sizing sprites from the window value meant the "low" tier still
+   * drew 2x sprites, so downgrading saved about half the fill rate instead of the
+   * ~8x it was designed to save. Reading it from the R3F viewport keeps the shader in
+   * step with whatever the renderer actually uses, including a live DPR change.
+   */
+  const dpr = useThree((state) => state.viewport.dpr)
   const coneRefs = useRef<Array<THREE.Mesh | null>>([])
   const dustRef = useRef<THREE.Points>(null)
 
@@ -547,8 +558,8 @@ export function VolumetricStageLights({
 
   /* ── Keep point sizes correct across DPR changes ───────────────────────── */
   useEffect(() => {
-    dustUniforms.uPixelRatio.value = Math.min(window.devicePixelRatio || 1, 2)
-  }, [dustUniforms])
+    dustUniforms.uPixelRatio.value = dpr
+  }, [dustUniforms, dpr])
 
   useFrame((state, rawDelta) => {
     const dt = Math.min(rawDelta, MAX_DT)

@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 
+import { onScrollFrame } from '@/lib/scrollEngine'
 /**
  * Tracks an element's LOCAL scroll progress in `[0, 1]`.
  *
@@ -71,7 +72,12 @@ export interface UseSectionProgressOptions {
 export function useSectionProgress(options: UseSectionProgressOptions = {}) {
   const { onProgress, enabled = true } = options
   const sectionRef = useRef<HTMLDivElement>(null)
-  const storeRef = useRef<ProgressStore>(createProgressStore(0))
+  /*
+   * Created once. `useRef(createProgressStore(0))` evaluates its argument on EVERY
+   * render and throws the result away, building (and abandoning) a store object per
+   * pass for a value that must be stable for the component's lifetime.
+   */
+  const store = useMemo(() => createProgressStore(0), [])
   const callbackRef = useRef(onProgress)
   callbackRef.current = onProgress
 
@@ -80,9 +86,7 @@ export function useSectionProgress(options: UseSectionProgressOptions = {}) {
     const el = sectionRef.current
     if (!el) return
 
-    let rafId = 0
     let visible = false
-    let running = true
 
     const measure = (): void => {
       const rect = el.getBoundingClientRect()
@@ -94,16 +98,10 @@ export function useSectionProgress(options: UseSectionProgressOptions = {}) {
       // negating it gives how far the section has been scrolled into the pin.
       const raw = -rect.top / travel
       const p = raw < 0 ? 0 : raw > 1 ? 1 : raw
-      if (Math.abs(p - storeRef.current.get()) > 1e-4) {
-        storeRef.current.set(p)
+      if (Math.abs(p - store.get()) > 1e-4) {
+        store.set(p)
         callbackRef.current?.(p)
       }
-    }
-
-    const loop = (): void => {
-      rafId = requestAnimationFrame(loop)
-      if (!running || !visible) return
-      measure()
     }
 
     // Only measure while the section is on screen. A 300vh section offscreen
@@ -120,14 +118,26 @@ export function useSectionProgress(options: UseSectionProgressOptions = {}) {
     )
     observer.observe(el)
 
-    rafId = requestAnimationFrame(loop)
+    /*
+     * Read on the MASTER clock, not a private rAF.
+     *
+     * This hook used to start its own requestAnimationFrame from a passive effect.
+     * React runs child effects before parent effects, so this loop was always
+     * registered BEFORE the scroll engine's loop -- it measured `rect.top` from the
+     * previous frame's scroll position, which left every DOM overlay in the chapter
+     * (headline, layer labels, metric cards) exactly one frame behind the 3D scene it
+     * annotates. That mismatch is the visible "the text lags the model" wobble.
+     */
+    const unsubscribe = onScrollFrame(() => {
+      if (!visible) return
+      measure()
+    })
 
     return () => {
-      running = false
-      cancelAnimationFrame(rafId)
       observer.disconnect()
+      unsubscribe()
     }
   }, [enabled])
 
-  return { sectionRef, store: storeRef.current }
+  return { sectionRef, store }
 }

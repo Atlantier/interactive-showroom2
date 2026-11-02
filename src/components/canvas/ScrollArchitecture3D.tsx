@@ -1654,9 +1654,19 @@ function RenderGate({ inView }: { inView: InViewRef }) {
   const gl = useThree((s) => s.gl)
   const scene = useThree((s) => s.scene)
   const camera = useThree((s) => s.camera)
+  const prewarmDone = useAppStore((state) => state.prewarmDone)
 
   useFrame(() => {
-    if (!inView.current) return
+    /*
+     * Draw while the chapter is on screen -- and while it is still warming up.
+     *
+     * The prewarm exists to compile this rig's shaders under the boot veil. Gating on
+     * `inView` alone defeated it: nothing drew during the warm-up, so nothing compiled,
+     * and the whole compile storm moved to the moment the visitor first scrolled into
+     * the chapter. The new scroll assertion caught it as a 1190 ms frame -- the gate
+     * has to stay open until `prewarmDone` reports the compile has drained.
+     */
+    if (!inView.current && prewarmDone) return
     gl.render(scene, camera)
   }, 1)
 

@@ -77,7 +77,15 @@ const POST_EFFECTS = {
 } as const satisfies Record<'high' | 'medium', readonly string[]>
 
 /** Average fps below which the monitor steps the tier down. */
-const DEGRADE_FPS = 45
+/**
+ * Absolute fallback for the degrade threshold, in frames per second.
+ *
+ * The real threshold is derived from the display's own refresh rate (see
+ * `refreshHz` below): a flat 45 made the adaptive monitor meaningless on high-refresh
+ * hardware -- at 144 Hz the measured frame rate never drops near 45, so the monitor
+ * could never decline and, worse, never had a reason to incline either.
+ */
+const DEGRADE_FPS_FALLBACK = 45
 
 /**
  * Monitor sampling geometry.
@@ -206,7 +214,52 @@ function DynamicChromaticAberration() {
 export function SceneCanvas() {
   const tier = useAppStore((state) => state.performanceTier)
   const degrade = useAppStore((state) => state.degradePerformanceTier)
+  const restoreTier = useAppStore((state) => state.restorePerformanceTier)
   const [webgl, setWebgl] = useState(false)
+
+  /** Measured display refresh rate, in Hz. */
+  const [refreshHz, setRefreshHz] = useState(60)
+
+  /*
+   * Measure the display once.
+   *
+   * Only bounded rAF pacing can tell us this: `screen` reports nothing useful and the
+   * refresh rate is not derivable from deviceMemory/cores. Twelve frames is enough to
+   * separate 60 from 120/144 while being far too short to affect anything visible.
+   */
+  useEffect(() => {
+    let raf = 0
+    const stamps: number[] = []
+    const sample = (now: number): void => {
+      stamps.push(now)
+      if (stamps.length < 13) {
+        raf = requestAnimationFrame(sample)
+        return
+      }
+      const deltas: number[] = []
+      for (let i = 1; i < stamps.length; i++) deltas.push(stamps[i] - stamps[i - 1])
+      deltas.sort((a, b) => a - b)
+      const median = deltas[Math.floor(deltas.length / 2)] || 16.7
+      const hz = Math.round(1000 / median)
+      // Clamp to plausible panels: a throttled tab or a stalled frame reports nonsense.
+      setRefreshHz(Math.min(240, Math.max(30, hz)))
+    }
+    raf = requestAnimationFrame(sample)
+    return () => cancelAnimationFrame(raf)
+  }, [])
+
+  /*
+   * Thresholds as a fraction of the display's capability.
+   *
+   * 72% of refresh is where the degradation is perceptible on that panel; the upper
+   * bound gives the monitor room to call the situation recovered. Both are clamped so a
+   * 30 Hz device still has a sane floor.
+   */
+  const degradeFps = Math.max(
+    24,
+    Math.min(DEGRADE_FPS_FALLBACK * 2, Math.round(refreshHz * 0.72)),
+  )
+  const healthyFps = Math.max(degradeFps + 5, Math.round(refreshHz * 0.88))
 
   // Probe once on the client so restricted/SSR environments never crash.
   useEffect(() => {
@@ -238,7 +291,7 @@ export function SceneCanvas() {
       let total = 0
       for (let i = 0; i < samples.length; i++) total += samples[i]
       const average = total / samples.length
-      if (average >= DEGRADE_FPS) return
+      if (average >= degradeFps) return
       /*
        * The reason string is user-facing: it is what the notice toast shows, so it
        * has to follow the locale. Interpolated from a single template rather than
@@ -247,10 +300,10 @@ export function SceneCanvas() {
       const reason = getDictionary()
         .hud.degradeReason.replace('{fps}', average.toFixed(0))
         .replace('{seconds}', ((MONITOR_MS * MONITOR_ITERATIONS) / 1000).toFixed(0))
-        .replace('{threshold}', String(DEGRADE_FPS))
+        .replace('{threshold}', String(degradeFps))
       degrade(reason)
     },
-    [degrade],
+    [degrade, degradeFps],
   )
 
   const particleCount = PARTICLE_COUNT[tier]
@@ -395,7 +448,15 @@ export function SceneCanvas() {
         // Lower bound is the degrade threshold; the upper bound only has to sit
         // above it. `threshold` is the fraction of the window that must fall
         // below `lower` before the decline callback fires at all.
-        bounds={() => [DEGRADE_FPS, DEGRADE_FPS + 15]}
+        bounds={() => [degradeFps, healthyFps]}
+        /*
+         * Recovery.
+         *
+         * Without this the monitor was one-way: a single cold-start hitch (the shader
+         * compile storm is indistinguishable from a slow device) downgraded the page
+         * and nothing ever brought it back, even after pacing recovered.
+         */
+        onIncline={() => restoreTier()}
         threshold={0.5}
         onDecline={handleDecline}
       />

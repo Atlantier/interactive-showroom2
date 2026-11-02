@@ -420,6 +420,17 @@ export function CursorStardustTrail({
 }: CursorStardustTrailProps) {
   const camera = useThree((state) => state.camera)
   const size = useThree((state) => state.size)
+  /*
+   * The renderer's DPR, not `window.devicePixelRatio`.
+   *
+   * They are not the same number: the performance tier caps the renderer's pixel
+   * ratio (medium runs at 1.0), while `window.devicePixelRatio` keeps reporting the
+   * display's value. Sizing sprites from the window value meant the "low" tier still
+   * drew 2x sprites, so downgrading saved about half the fill rate instead of the
+   * ~8x it was designed to save. Reading it from the R3F viewport keeps the shader in
+   * step with whatever the renderer actually uses, including a live DPR change.
+   */
+  const dpr = useThree((state) => state.viewport.dpr)
   const pointsRef = useRef<THREE.Points>(null)
   const ribbonRef = useRef<THREE.Mesh>(null)
   const ringRefs = useRef<Array<THREE.Mesh | null>>([])
@@ -617,11 +628,16 @@ export function CursorStardustTrail({
     geo.setIndex(indices)
     geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 48)
 
-    // Scratch for the sampling loop, allocated once.
-    const samplePoint = new THREE.Vector3()
-    const sampleTangent = new THREE.Vector3()
+    /*
+     * Scratch, allocated once.
+     *
+     * `samplePoints` is a full row of cross-section positions rather than a single
+     * reusable vector, because the tangent is now derived from the neighbouring
+     * samples instead of from `curve.getTangent()`.
+     */
+    const samplePoints = Array.from({ length: RIBBON_SEGMENTS }, () => new THREE.Vector3())
 
-    return { history, curve, positions, geo, posAttr, samplePoint, sampleTangent }
+    return { history, curve, positions, geo, posAttr, samplePoints }
   }, [])
 
   /**
@@ -719,8 +735,8 @@ export function CursorStardustTrail({
 
   /* ── Keep sprite size correct across DPR changes ───────────────────────── */
   useEffect(() => {
-    particleUniforms.uPixelRatio.value = Math.min(window.devicePixelRatio || 1, 2)
-  }, [size.width, size.height, particleUniforms])
+    particleUniforms.uPixelRatio.value = dpr
+  }, [size.width, size.height, particleUniforms, dpr])
 
   /* ── Dispose every GPU resource we created ─────────────────────────────── */
   useEffect(
@@ -899,16 +915,29 @@ export function CursorStardustTrail({
     ribbonUniforms.uFade.value = fade
 
     if (fade > 0.002) {
-      const { curve, samplePoint, sampleTangent } = ribbon
+      const { curve, samplePoints } = ribbon
+
+      /*
+       * Pass 1: the cross-section positions.
+       *
+       * Pass 2 derives each tangent by differencing its neighbours instead of calling
+       * `curve.getTangent()`. three's implementation evaluates `getPoint` twice with
+       * fresh temporaries per call, so the previous version allocated four Vector3 per
+       * sample -- 288 objects per frame for a 72-sample ribbon, in a file whose whole
+       * contract is "no per-frame garbage".
+       */
+      for (let i = 0; i < RIBBON_SEGMENTS; i++) {
+        curve.getPoint(i / (RIBBON_SEGMENTS - 1), samplePoints[i])
+      }
 
       for (let i = 0; i < RIBBON_SEGMENTS; i++) {
-        const t = i / (RIBBON_SEGMENTS - 1)
+        const u = i / (RIBBON_SEGMENTS - 1)
+        const samplePoint = samplePoints[i]
+        const prevPoint = samplePoints[i === 0 ? 0 : i - 1]
+        const nextPoint = samplePoints[i === RIBBON_SEGMENTS - 1 ? i : i + 1]
 
-        curve.getPoint(t, samplePoint)
-        curve.getTangent(t, sampleTangent)
-
-        let tx = sampleTangent.x
-        let ty = sampleTangent.y
+        let tx = nextPoint.x - prevPoint.x
+        let ty = nextPoint.y - prevPoint.y
         const len = Math.sqrt(tx * tx + ty * ty)
 
         // Degenerate (cursor stationary): fall back to a fixed direction so the
@@ -928,7 +957,7 @@ export function CursorStardustTrail({
         // Width taper: full at the head, converging to a point at the tail. The
         // 1.5 exponent is what makes the band read as a contracting ribbon rather
         // than a strip with two parallel edges.
-        const half = RIBBON_WIDTH * Math.pow(t, 1.5)
+        const half = RIBBON_WIDTH * Math.pow(u, 1.5)
 
         const o = i * 6
         positions[o] = samplePoint.x + px * half

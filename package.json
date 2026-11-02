@@ -9,7 +9,8 @@
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --noEmit",
     "preview": "vite preview",
-    "verify:budget": "node scripts/verify-budget.mjs"
+    "verify:budget": "node scripts/verify-budget.mjs",
+    "verify:scroll": "node scripts/verify-scroll.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",
