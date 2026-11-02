@@ -7,8 +7,10 @@
  * build stays green, and nobody re-checks the behaviour. This turns those probes into
  * a gate that runs against the BUILT output.
  *
- * No new dependencies: it drives Chromium itself over the same `ws` transport the
- * other verify scripts already use.
+ * One dependency: `axe-core`, injected into the page and run with the WCAG 2.0/2.1/2.2
+ * AA tag set. The hand-written checks below encode the specific things this project kept
+ * getting wrong; axe covers the long tail those checks cannot enumerate. Chromium itself
+ * is still driven over the same `ws` transport the other verify scripts use.
  *
  * Usage:
  *   node scripts/verify-a11y.mjs --base http://127.0.0.1:4173
@@ -17,7 +19,7 @@
  * Each check prints PASS/FAIL with the measured value, and any failure sets exit 1.
  */
 import { spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -191,6 +193,39 @@ try {
     `lang="${docLang.lang}"`,
   )
   check('title: document.title is localised and non-empty', docLang.title.length > 0, `"${docLang.title}"`)
+
+  /*
+   * 0b. axe-core — the batch-3 acceptance criterion (critical + serious = 0).
+   *
+   * Run on the untouched page, before any check opens a modal or switches language, so
+   * the result describes what a visitor actually lands on. The global `:focus-visible`
+   * rule and the inert/inert-less states are covered by the targeted checks below.
+   */
+  const axeSource = readFileSync(join(process.cwd(), 'node_modules/axe-core/axe.min.js'), 'utf8')
+  await evaluate(axeSource)
+  const axe = await evaluate(`(async () => {
+    const result = await window.axe.run(document, {
+      runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'] },
+    })
+    const byImpact = { critical: 0, serious: 0, moderate: 0, minor: 0 }
+    const violations = result.violations.map((v) => {
+      byImpact[v.impact] = (byImpact[v.impact] || 0) + v.nodes.length
+      return { id: v.id, impact: v.impact, nodes: v.nodes.length, target: v.nodes[0]?.target?.join(' ') }
+    })
+    return { byImpact, violations, passes: result.passes.length, incomplete: result.incomplete.length }
+  })()`)
+  const axeBlocking = axe.byImpact.critical + axe.byImpact.serious
+  check(
+    'axe: zero critical/serious WCAG 2.x AA violations on the landing page',
+    axeBlocking === 0,
+    `critical ${axe.byImpact.critical}, serious ${axe.byImpact.serious}, moderate ${axe.byImpact.moderate}, minor ${axe.byImpact.minor} (${axe.passes} passes, ${axe.incomplete} incomplete)`,
+  )
+  if (axe.violations.length > 0) {
+    console.log('  axe violations by rule:')
+    for (const v of axe.violations) {
+      console.log(`    ${v.impact.padEnd(8)} ${v.id} x${v.nodes}  first: ${v.target}`)
+    }
+  }
 
   /* 1. WCAG 1.4.3 — the smallest text must clear 4.5:1 against its own background. */
   const contrast = await evaluate(`(() => {
