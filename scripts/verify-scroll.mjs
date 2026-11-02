@@ -88,6 +88,21 @@ function argValue(flag, fallback) {
 /* -------------------------------------------------------------------------- */
 
 const base = argValue('--base', 'http://127.0.0.1:4173')
+
+/*
+ * How many times to repeat the whole scroll, and why.
+ *
+ * Measured on an unchanged build: two consecutive runs of this script reported worst 50 ms and
+ * worst 2390 ms at the same scroll position. A 48x spread on identical code, almost certainly
+ * the GPU driver's shader disk cache -- the same link work is either reused in tens of
+ * milliseconds or paid cold. Any verdict from a single run is therefore a coin flip about
+ * cache state rather than a statement about the page.
+ *
+ * So the same scroll is repeated (fresh page load each time, same browser) and the verdict is
+ * taken on the MEDIAN run. The first run is reported separately as "cold" because that is what
+ * a first-time visitor with an empty cache experiences, and it is genuinely worse.
+ */
+const RUNS = Number(argValue('--runs', '5'))
 const chromePath = CANDIDATES.find((c) => typeof c === 'string' && c.length > 0 && existsSync(c))
 if (!chromePath) {
   console.error('::error::no Chrome/Chromium found; set CHROME_PATH')
@@ -201,72 +216,116 @@ try {
     deviceScaleFactor: 1,
     mobile: false,
   })
-  await send('Page.navigate', { url: base })
+  /**
+   * One full measurement: load, wait for the boot veil, sample every frame while scrolling.
+   *
+   * A fresh `Page.navigate` per run resets the scroll position and re-runs the app's mount
+   * path, while the browser process (and therefore the driver's shader cache) is reused --
+   * which is exactly the situation the median is meant to describe.
+   */
+  const measureRun = async (runIndex) => {
+    await send('Page.navigate', { url: base })
 
-  // Wait for the boot veil to lift: the app reports readiness through `prewarmDone`.
-  let ready = false
-  for (let attempt = 0; attempt < 60; attempt++) {
-    await sleep(500)
-    ready = await evaluate(
-      `!!document.querySelector('[data-boot], main, section#hero') && document.readyState === 'complete'`,
-    )
-    if (ready) break
-  }
-  if (!ready) throw new Error('page never finished loading')
-  await sleep(2500)
+    // Wait for the boot veil to lift: the app reports readiness through `prewarmDone`.
+    let ready = false
+    for (let attempt = 0; attempt < 60; attempt++) {
+      await sleep(500)
+      ready = await evaluate(
+        `!!document.querySelector('[data-boot], main, section#hero') && document.readyState === 'complete'`,
+      )
+      if (ready) break
+    }
+    if (!ready) throw new Error(`run ${runIndex + 1}: page never finished loading`)
+    await sleep(2500)
 
-  await evaluate(`(() => {
-    window.__scrollProbe = { frames: [] }
-    let last = performance.now()
-    const loop = (now) => {
-      window.__scrollProbe.frames.push([now - last, Math.round(window.scrollY)])
-      last = now
+    await evaluate(`(() => {
+      window.__scrollProbe = { frames: [] }
+      let last = performance.now()
+      const loop = (now) => {
+        window.__scrollProbe.frames.push([now - last, Math.round(window.scrollY)])
+        last = now
+        window.__scrollProbe.raf = requestAnimationFrame(loop)
+      }
       window.__scrollProbe.raf = requestAnimationFrame(loop)
-    }
-    window.__scrollProbe.raf = requestAnimationFrame(loop)
-    return true
-  })()`)
+      return true
+    })()`)
 
-  await sleep(300)
-  for (let burst = 0; burst < SCROLL_BURSTS; burst++) {
-    await send('Input.dispatchMouseEvent', {
-      type: 'mouseWheel',
-      x: 800,
-      y: 450,
-      deltaX: 0,
-      deltaY: BURST_DELTA,
-    })
-    await sleep(BURST_INTERVAL)
+    await sleep(300)
+    for (let burst = 0; burst < SCROLL_BURSTS; burst++) {
+      await send('Input.dispatchMouseEvent', {
+        type: 'mouseWheel',
+        x: 800,
+        y: 450,
+        deltaX: 0,
+        deltaY: BURST_DELTA,
+      })
+      await sleep(BURST_INTERVAL)
+    }
+    await sleep(1500)
+
+    return evaluate(`(() => {
+      cancelAnimationFrame(window.__scrollProbe.raf)
+      const samples = window.__scrollProbe.frames
+      const deltas = samples.map((s) => s[0]).sort((a, b) => a - b)
+      const count = deltas.length
+      const mean = deltas.reduce((a, b) => a + b, 0) / count
+      /*
+       * A bare "worst frame" number is not actionable -- the same 1 s stall means
+       * completely different things at y=0 (first paint) and y=4400 (mid chapter). Report
+       * where the three worst frames happened so a failure points at a section.
+       */
+      const worstFrames = [...samples]
+        .sort((a, b) => b[0] - a[0])
+        .slice(0, 3)
+        .map((s) => ({ ms: Math.round(s[0]), y: s[1] }))
+
+      return {
+        count,
+        fps: 1000 / mean,
+        p95: deltas[Math.floor(count * 0.95)],
+        p99: deltas[Math.floor(count * 0.99)],
+        worst: deltas[count - 1],
+        worstFrames,
+        over50: deltas.filter((d) => d > 50).length,
+        endY: Math.round(window.scrollY),
+      }
+    })()`)
   }
-  await sleep(1500)
 
-  const stats = await evaluate(`(() => {
-    cancelAnimationFrame(window.__scrollProbe.raf)
-    const samples = window.__scrollProbe.frames
-    const deltas = samples.map((s) => s[0]).sort((a, b) => a - b)
-    const count = deltas.length
-    const mean = deltas.reduce((a, b) => a + b, 0) / count
-    /*
-     * A bare "worst frame" number is not actionable -- the same 1 s stall means
-     * completely different things at y=0 (first paint) and y=4400 (mid chapter). Report
-     * where the three worst frames happened so a failure points at a section.
-     */
-    const worstFrames = [...samples]
-      .sort((a, b) => b[0] - a[0])
-      .slice(0, 3)
-      .map((s) => ({ ms: Math.round(s[0]), y: s[1] }))
+  const runs = []
+  for (let run = 0; run < RUNS; run++) {
+    const runStats = await measureRun(run)
+    runs.push(runStats)
+    console.log(
+      `  run ${run + 1}/${RUNS}: fps ${runStats.fps.toFixed(1)}  p95 ${runStats.p95.toFixed(1)}` +
+        `  p99 ${runStats.p99.toFixed(1)}  worst ${runStats.worst.toFixed(0)}` +
+        `  over50 ${runStats.over50}`,
+    )
+  }
 
-    return {
-      count,
-      fps: 1000 / mean,
-      p95: deltas[Math.floor(count * 0.95)],
-      p99: deltas[Math.floor(count * 0.99)],
-      worst: deltas[count - 1],
-      worstFrames,
-      over50: deltas.filter((d) => d > 50).length,
-      endY: Math.round(window.scrollY),
-    }
-  })()`)
+  /** Median of one metric across runs; the verdict is taken on medians (see RUNS). */
+  const median = (pick) => {
+    const values = runs.map(pick).sort((a, b) => a - b)
+    const middle = Math.floor(values.length / 2)
+    return values.length % 2 === 0 ? (values[middle - 1] + values[middle]) / 2 : values[middle]
+  }
+
+  const stats = {
+    count: Math.min(...runs.map((r) => r.count)),
+    fps: median((r) => r.fps),
+    p95: median((r) => r.p95),
+    p99: median((r) => r.p99),
+    worst: median((r) => r.worst),
+    over50: median((r) => r.over50),
+    endY: Math.min(...runs.map((r) => r.endY)),
+    worstFrames: runs.reduce((worst, r) => (r.worst > worst.worst ? r : worst), runs[0])
+      .worstFrames,
+  }
+
+  console.log(
+    `  cold run (first load, empty shader cache): worst ${runs[0].worst.toFixed(0)} ms at ${JSON.stringify(runs[0].worstFrames[0])}`,
+  )
+  console.log(`  median of ${RUNS} runs is the verdict`)
 
   const report = {
     frames: stats.count,
@@ -278,7 +337,7 @@ try {
     scrolled: stats.endY,
     worstAt: stats.worstFrames,
   }
-  console.log('scroll pacing:', JSON.stringify(report))
+  console.log(`scroll pacing (median of ${RUNS} runs):`, JSON.stringify(report))
 
   if (stats.count < 200)
     failures.push(`only ${stats.count} frames sampled — the page did not scroll`)
