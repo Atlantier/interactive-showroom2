@@ -104,6 +104,21 @@ jobs:
       - name: Critical-path budget
         run: pnpm verify:budget
 
+      # Accessibility assertions run against the BUILT output, not the dev server.
+      # `setup-chrome` exports CHROME_PATH, which is what the script looks for.
+      # NOTE: these actions still use movable tags; pinning them to SHAs is UI-17.
+      - name: Setup Chrome
+        uses: browser-actions/setup-chrome@v1
+
+      - name: Accessibility assertions
+        run: |
+          pnpm preview --port 4173 --strictPort &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:4173/ > /dev/null && break
+            sleep 1
+          done
+          pnpm verify:a11y --base http://127.0.0.1:4173
+
       - name: Verify build output
         # A build that silently emits nothing (or only the HTML shell) would
         # deploy a blank page. Fail loudly here instead of after publishing.
