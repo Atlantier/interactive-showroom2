@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { cn } from '@/lib/cn'
 import { clamp } from '@/lib/math'
 import { useInViewAnimation } from '@/hooks/useInViewAnimation'
+import { InterCardPulse, type InterCardPulseHandle } from '@/components/bento/InterCardPulse'
 import { soundEngine } from '@/utils/soundEngine'
 import { isScrollBusy } from '@/lib/scrollEngine'
 import {
@@ -136,6 +137,9 @@ export function BentoGrid({ children, className }: BentoGridProps) {
 
   /** The grid container, observed for size changes. */
   const gridRef = useRef<HTMLDivElement>(null)
+
+  /** Handle on the extracted discharge system (see InterCardPulse.tsx). */
+  const pulseRef = useRef<InterCardPulseHandle>(null)
 
   /** Latest pointer position in viewport coordinates. */
   const pointerRef = useRef({ x: 0, y: 0, active: false })
@@ -486,120 +490,13 @@ export function BentoGrid({ children, className }: BentoGridProps) {
     pointerRef.current.active = true
   }, [ambient])
 
-  /* ── Inter-card data pulse ────────────────────────────────────────────────
-   * Lives on the grid rather than on a card: the bolt spans the GAP between two
-   * cards, which belongs to neither of them, and the adjacency has to be derived
-   * from the live layout since the grid reflows from four columns to one.
-   */
-  const [pulse, setPulse] = useState<{ id: number; d: string } | null>(null)
-  const pulseSeq = useRef(0)
-  const pulseClear = useRef<number | null>(null)
-
-  const emitPulse = useCallback(() => {
-    const grid = gridRef.current
-    if (!grid) return
-
-    const gridRect = grid.getBoundingClientRect()
-    const cards = Array.from(grid.querySelectorAll<HTMLElement>('[data-spotlight-card]'))
-    if (cards.length < 2) return
-
-    const rects = cards.map((el) => {
-      const r = el.getBoundingClientRect()
-      return {
-        x: r.left - gridRect.left,
-        y: r.top - gridRect.top,
-        w: r.width,
-        h: r.height,
-      }
-    })
-
-    /*
-     * Two cards are neighbours when their spans overlap on one axis and they are
-     * separated by less than a grid gap on the other. Deriving this from the
-     * measured boxes (rather than from the JSX order) means the arcs follow the
-     * layout through every breakpoint without a second source of truth.
-     */
-    const connections: Array<{ from: PulsePoint; to: PulsePoint }> = []
-
-    for (let i = 0; i < rects.length; i++) {
-      for (let j = i + 1; j < rects.length; j++) {
-        const a = rects[i]
-        const b = rects[j]
-
-        const overlapX = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)
-        const overlapY = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y)
-        const gapX = Math.max(a.x, b.x) - Math.min(a.x + a.w, b.x + b.w)
-        const gapY = Math.max(a.y, b.y) - Math.min(a.y + a.h, b.y + b.h)
-
-        // Stacked vertically: shared columns, small vertical gap.
-        if (overlapX > 8 && gapY > -1 && gapY <= PULSE_MAX_GAP) {
-          const midX = (Math.max(a.x, b.x) + Math.min(a.x + a.w, b.x + b.w)) / 2
-          const upper = a.y < b.y ? a : b
-          const lower = a.y < b.y ? b : a
-          connections.push({
-            from: { x: midX, y: upper.y + upper.h },
-            to: { x: midX, y: lower.y },
-          })
-          continue
-        }
-
-        // Side by side: shared rows, small horizontal gap.
-        if (overlapY > 8 && gapX > -1 && gapX <= PULSE_MAX_GAP) {
-          const midY = (Math.max(a.y, b.y) + Math.min(a.y + a.h, b.y + b.h)) / 2
-          const left = a.x < b.x ? a : b
-          const right = a.x < b.x ? b : a
-          connections.push({
-            from: { x: left.x + left.w, y: midY },
-            to: { x: right.x, y: midY },
-          })
-        }
-      }
-    }
-
-    if (!connections.length) return
-
-    const pick = connections[(Math.random() * connections.length) | 0]
-    const points = midpointDisplace(pick.from, pick.to, 4, 0.55)
-
-    let d = `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`
-    for (let i = 1; i < points.length; i++) {
-      d += ` L ${points[i].x.toFixed(1)} ${points[i].y.toFixed(1)}`
-    }
-
-    pulseSeq.current += 1
-    setPulse({ id: pulseSeq.current, d })
-
-    if (pulseClear.current !== null) window.clearTimeout(pulseClear.current)
-    pulseClear.current = window.setTimeout(() => setPulse(null), PULSE_LIFE)
-  }, [])
-
-  /**
-   * Heartbeat. Chained timeouts rather than `setInterval` so a pulse that lands
-   * while the grid is off screen is skipped without the timer racing itself.
-   */
-  useEffect(() => {
-    let timer = 0
-    const schedule = (): void => {
-      timer = window.setTimeout(() => {
-        if (inViewRef.current) emitPulse()
-        schedule()
-      }, PULSE_INTERVAL)
-    }
-    schedule()
-
-    return () => {
-      window.clearTimeout(timer)
-      if (pulseClear.current !== null) window.clearTimeout(pulseClear.current)
-    }
-  }, [emitPulse, inViewRef])
-
   /** First contact is the only opportunity to ask iOS for motion access. */
   const onPointerDown = useCallback(() => {
     if (ambient) requestTiltPermission()
     // Any click on the matrix also fires a discharge, so the grid answers input
     // immediately instead of waiting for the next heartbeat.
-    emitPulse()
-  }, [ambient, requestTiltPermission, emitPulse])
+    pulseRef.current?.emit()
+  }, [ambient, requestTiltPermission])
 
   return (
     <SpotlightContext.Provider value={registry}>
@@ -629,114 +526,11 @@ export function BentoGrid({ children, className }: BentoGridProps) {
       >
         {children}
 
-        {/*
-         * ── Inter-card data pulse ──────────────────────────────────────────
-         * Absolutely positioned so it is not a grid item and cannot disturb the
-         * matrix. Two stacked paths: a wide pale one for the bloom and a thin
-         * saturated one for the core of the arc.
-         *
-         * `pathLength={100}` normalises the bolt to 100 units regardless of how
-         * long it actually is, so one dasharray of 100 works for every pair and
-         * the draw-on animation is identical for a 20px hop and a 500px run.
-         *
-         * `key` on the id restarts the CSS animation for each new discharge.
-         */}
-        {pulse && (
-          <svg
-            key={pulse.id}
-            aria-hidden
-            className="pointer-events-none absolute inset-0 z-20 h-full w-full overflow-visible"
-          >
-            <path
-              className="data-pulse data-pulse--glow"
-              d={pulse.d}
-              pathLength={100}
-              fill="none"
-              stroke="#a5f3fc"
-              strokeWidth={3.5}
-              strokeLinecap="round"
-            />
-            <path
-              className="data-pulse"
-              d={pulse.d}
-              pathLength={100}
-              fill="none"
-              stroke="#22d3ee"
-              strokeWidth={1.4}
-              strokeLinecap="round"
-            />
-          </svg>
-        )}
+        {/* The discharge system lives in its own module (UI-19). */}
+        <InterCardPulse ref={pulseRef} targetRef={gridRef} inViewRef={inViewRef} />
       </div>
     </SpotlightContext.Provider>
   )
-}
-
-/* -------------------------------------------------------------------------- */
-/*  Inter-card data pulse                                                     */
-/* -------------------------------------------------------------------------- */
-
-/** Milliseconds between automatic discharges. */
-const PULSE_INTERVAL = 4000
-
-/** How long a bolt stays mounted, in milliseconds. */
-const PULSE_LIFE = 1000
-
-/** Largest gap, in px, between two card edges that still reads as "adjacent". */
-const PULSE_MAX_GAP = 40
-
-interface PulsePoint {
-  x: number
-  y: number
-}
-
-/**
- * Midpoint displacement — the classic fractal lightning generator.
- *
- * Start with the straight segment, then repeatedly split every segment at its
- * midpoint and shove that midpoint along the segment's NORMAL by a random
- * amount. Halving the displacement each pass (`roughness` < 1) makes the coarse
- * silhouette dominate and the fine jitter decorrelate, which is what makes the
- * result read as a discharge rather than as white noise. Four passes gives 17
- * vertices — jagged at the scale of a card gap, not so jagged that it turns into
- * a scribble.
- *
- * Randomness is intentional here and lives outside the frame loop: a pulse is
- * generated once, fully, on demand.
- */
-function midpointDisplace(
-  from: PulsePoint,
-  to: PulsePoint,
-  iterations: number,
-  roughness: number,
-): PulsePoint[] {
-  let points: PulsePoint[] = [from, to]
-  const span = Math.hypot(to.x - from.x, to.y - from.y)
-  let offset = span * 0.16
-
-  for (let pass = 0; pass < iterations; pass++) {
-    const next: PulsePoint[] = [points[0]]
-    for (let i = 0; i < points.length - 1; i++) {
-      const a = points[i]
-      const b = points[i + 1]
-      const dx = b.x - a.x
-      const dy = b.y - a.y
-      const len = Math.hypot(dx, dy) || 1
-      // Normal of this segment: the arc is pushed sideways, never along it.
-      const nx = -dy / len
-      const ny = dx / len
-      const shift = (Math.random() * 2 - 1) * offset
-      next.push({
-        x: (a.x + b.x) / 2 + nx * shift,
-        y: (a.y + b.y) / 2 + ny * shift,
-      })
-      next.push(b)
-    }
-    points = next
-    offset *= roughness
-  }
-
-  return points
 }
 
 export default BentoGrid
