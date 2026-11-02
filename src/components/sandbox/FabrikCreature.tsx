@@ -1709,7 +1709,9 @@ export function FabrikCreature({ className }: { className?: string }) {
       <canvas
         ref={canvasRef}
         className="relative block h-full w-full touch-none select-none"
-        style={{ touchAction: 'none', cursor: mode === 'arm' ? 'crosshair' : 'default' }}
+        /* `pan-y` for the same reason as the lanyard sandbox: this canvas covers ~48vh,
+       and `none` made it a dead zone for page scrolling on touch devices. */
+    style={{ touchAction: 'pan-y', cursor: mode === 'arm' ? 'crosshair' : 'default' }}
         role="application"
         aria-label={
           mode === 'arm'

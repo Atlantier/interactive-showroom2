@@ -717,7 +717,19 @@ export function VerletLanyard({ className }: { className?: string }) {
         // `drag-surface` scopes `touch-action: none` (plus the iOS callout and
         // tap-highlight resets) to exactly the element the drag happens on, so
         // the surrounding card still scrolls the page normally.
-        style={{ touchAction: 'none' }}
+        /*
+     * `pan-y`, not `none`.
+     *
+     * `none` was chosen so a drag can never be stolen by the browser, and it works --
+     * but this canvas is ~52vh tall, so on a phone a finger that lands anywhere on it
+     * could not scroll the page at all. The sandbox became a scroll trap in the middle
+     * of a scrolling narrative.
+     *
+     * `pan-y` keeps vertical page scrolling while still giving us horizontal gestures,
+     * which is the trade the review asks for: horizontal drags move badges, vertical
+     * swipes scroll. Vertical badge dragging is now a mouse/pen gesture.
+     */
+    style={{ touchAction: 'pan-y' }}
         role="application"
         aria-label={t.sandbox.verletAria}
       />
