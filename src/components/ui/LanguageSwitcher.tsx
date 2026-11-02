@@ -74,7 +74,13 @@ export function LanguageSwitcher({ className }: { className?: string }) {
             onClick={() => select(option.value)}
             aria-pressed={active}
             className={cn(
-              'relative rounded-full px-2.5 py-1 font-mono text-[0.58rem]',
+              /*
+               * 24px minimum hit area (WCAG 2.2 AA 2.5.8). The measured target was
+               * ~31x19: wide enough, but too short to hit reliably on a phone. The
+               * glyph size is unchanged -- only the box around it grows.
+               */
+              'relative inline-flex min-h-6 min-w-6 items-center justify-center',
+              'rounded-full px-2.5 py-1 font-mono text-[0.58rem]',
               'tracking-[0.14em] uppercase transition-colors duration-300',
               active ? 'text-void-950' : 'text-ink-500 hover:text-ink-100',
             )}

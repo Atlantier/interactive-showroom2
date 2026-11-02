@@ -182,7 +182,8 @@ function ShaderCard({ palette }: { palette: VfxPalette }) {
       <button
         type="button"
         data-card-action="true"
-        className="mt-2.5 inline-flex items-center gap-1.5 self-start rounded-full border border-signal-teal/30 bg-signal-teal/10 px-2.5 py-1 font-mono text-[0.6rem] tracking-wide text-signal-teal transition-colors duration-300 hover:border-signal-teal/70 hover:bg-signal-teal/20"
+        /* min-h-6: WCAG 2.2 AA 2.5.8 -- this measured ~23px tall. */
+        className="mt-2.5 inline-flex min-h-6 items-center gap-1.5 self-start rounded-full border border-signal-teal/30 bg-signal-teal/10 px-2.5 py-1 font-mono text-[0.6rem] tracking-wide text-signal-teal transition-colors duration-300 hover:border-signal-teal/70 hover:bg-signal-teal/20"
       >
         {t.bento.inspectArchitecture}
       </button>
