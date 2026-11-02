@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { Billboard, Environment, Lightformer } from '@react-three/drei'
 import { VolumetricStageLights } from '@/components/canvas/VolumetricStageLights'
-import { FloorCaustics } from '@/components/canvas/architecture/FloorCaustics'
+import { HexGround } from '@/components/canvas/architecture/HexGround'
 import * as THREE from 'three'
 import { preloadR3FAdvance, setCanvasActive } from '@/lib/frameBridge'
 import { supportsWebGL } from '@/lib/device'
@@ -13,8 +13,6 @@ import {
   buildDataStreamGeometry,
   buildEdgeGeometry,
   buildInterLayerConduits,
-  buildKernelGrid,
-  buildKernelWireframe,
 } from '@/components/canvas/architecture/geometry'
 import {
   LAYER_Y,
@@ -156,33 +154,27 @@ const STREAM_FRAGMENT = /* glsl */ `
 /*  Layer 1 —Infrastructure                                                  */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Layer 1 — the substrate.
+ *
+ * This used to be a 22x22 lattice of extruded kernel columns with a metal
+ * material. From the chapter's camera that read as an opaque black board: it hid
+ * the floor web entirely, its columns were co-planar with a separate contact
+ * plane (hence the horizontal stripes), and it produced none of the grounding the
+ * composition needed.
+ *
+ * It is now the floor itself: a disc with a hex lattice, a contact pool under the
+ * crystal and a radial fade to nothing at the rim. `LIFT` places it in world space
+ * such that the crystal's bottom vertex hovers just above it and the lowest agent
+ * shard rests on it.
+ */
+const INFRA_GROUP_Y = -0.95
+const GROUND_LOCAL_Y = -0.62 - INFRA_GROUP_Y
+
 function InfrastructureLayer({ groupRef }: { groupRef: React.RefObject<THREE.Group | null> }) {
-  const solid = useMemo(() => buildKernelGrid({ divisions: 22, size: 6, maxHeight: 0.62 }), [])
-  const wire = useMemo(() => buildKernelWireframe({ divisions: 22, size: 6, maxHeight: 0.62 }), [])
-
-  useEffect(
-    () => () => {
-      solid.dispose()
-      wire.dispose()
-    },
-    [solid, wire],
-  )
-
   return (
     <group ref={groupRef}>
-      <mesh geometry={solid}>
-        <meshStandardMaterial
-          color="#04161d"
-          metalness={0.8}
-          roughness={0.15}
-          emissive="#052a33"
-          emissiveIntensity={0.35}
-        />
-      </mesh>
-      {/* Wireframe lattice: emissive so Bloom picks it up. */}
-      <lineSegments geometry={wire}>
-        <lineBasicMaterial color="#22d3ee" transparent opacity={0.32} toneMapped={false} />
-      </lineSegments>
+      <HexGround y={GROUND_LOCAL_Y} radius={6.4} />
     </group>
   )
 }
@@ -999,27 +991,6 @@ function SpatialLayer({
          * the surrounding cubes and the wireframe floor stay unlit and the core
          * looks pasted on rather than sitting in the scene.
          */}
-        {/*
-         * Contact shadow and a very faint floor reflection.
-         *
-         * The crystal hovers by design, and without something grounding it that
-         * read as floating in nothing. One plane handles both: a soft dark
-         * ellipse for contact plus a low cyan lift in the middle so the floor
-         * appears to catch some glass. A single extra draw call, no mirror pass.
-         */}
-        {stage >= 1 && (
-          <mesh position={[0, -1.25, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={3}>
-            <planeGeometry args={[7.0, 7.0]} />
-            <shaderMaterial
-              transparent
-              depthWrite={false}
-              blending={THREE.NormalBlending}
-              vertexShader={CONTACT_VERTEX}
-              fragmentShader={CONTACT_FRAGMENT}
-            />
-          </mesh>
-        )}
-
         <pointLight ref={lightRef} color="#40e0d0" intensity={3} distance={10} decay={2} />
       </group>
     </group>
@@ -1586,8 +1557,6 @@ function ArchitectureRig({
        * so the caustic web stays under the model as the stack explodes rather
        * than being sliced through by it.
        */}
-      <FloorCaustics bottomRef={infraRef} intensity={1.5} />
-
       {stage >= 1 && (
         <group onClick={handleSelect('agents')} onPointerOver={handleHover}>
           <OrchestrationLayer groupRef={agentRef} progress={progress} />
@@ -1915,25 +1884,6 @@ const CONTACT_VERTEX = `
   }
 `
 
-const CONTACT_FRAGMENT = `
-  varying vec2 vContactUv;
-
-  void main() {
-    float d = length(vContactUv - 0.5) * 2.0;
-
-    // Wide and very soft: pow() rather than a hard edge, so no disc boundary
-    // shows on the grid.
-    float shade = smoothstep(1.0, 0.0, d);
-    shade = pow(shade, 2.4) * 0.62;
-
-    // A little cyan caught by the floor, tight to the centre.
-    float caught = smoothstep(0.55, 0.0, d);
-    caught = pow(caught, 3.0) * 0.16;
-
-    vec3 col = mix(vec3(0.0, 0.012, 0.02), vec3(0.10, 0.30, 0.34), clamp(caught / 0.16, 0.0, 1.0));
-    gl_FragColor = vec4(col, max(shade, caught));
-  }
-`
 
 /**
  * Core glow.
