@@ -6,6 +6,7 @@ import { useInViewAnimation } from '@/hooks/useInViewAnimation'
 import { reportIkSolve } from '@/lib/perfMetrics'
 import { useI18n } from '@/i18n/useI18n'
 import { isScrollBusy } from '@/lib/scrollEngine'
+import { createFixedStepClock, type FixedStepClock } from '@/lib/fixedStep'
 import {
   applyAngleConstraints,
   chainLength,
@@ -1434,7 +1435,18 @@ export function FabrikCreature({ className }: { className?: string }) {
   /** Viewport gating: the loop sleeps entirely while off screen. */
   const inViewRef = useInViewAnimation(wrapRef, { rootMargin: '25% 0px 25% 0px' })
 
-  const accRef = useRef(0)
+  /*
+   * Shared fixed-step clock (see `lib/fixedStep.ts`).
+   *
+   * This file had its own accumulator, step budget, debt cap and rebase logic -- the
+   * same code as the lanyard sandbox, which is how the same bugs lived in both. The
+   * clock is created lazily so a re-render cannot silently reset it mid-simulation.
+   */
+  const clockRef = useRef<FixedStepClock | null>(null)
+  if (!clockRef.current) {
+    clockRef.current = createFixedStepClock({ fixedDt: 1 / 60, maxSteps: 4 })
+  }
+  const clock = clockRef.current
 
   const [mode, setMode] = useState<RideMode>('arm')
   const [debug, setDebug] = useState<DebugFlags>({ vectors: false })
@@ -1525,7 +1537,6 @@ export function FabrikCreature({ className }: { className?: string }) {
     /* ── Loop ────────────────────────────────────────────────────────────── */
     const FIXED = 1 / 60
     let raf = 0
-    let last = 0
     let hudTimer = 0
 
     const frame = (now: number): void => {
@@ -1535,18 +1546,16 @@ export function FabrikCreature({ className }: { className?: string }) {
       if (!inViewRef.current) {
         // Rebase the clock: see the note in VerletLanyard. Off-screen time must not
         // be replayed as a burst of catch-up steps when the sandbox wakes.
-        last = now
+        clock.skip(now)
         return
       }
       // Same scroll-busy stand-down as the lanyard sandbox -- see the note there.
       if (isScrollBusy()) {
-        last = now
+        clock.skip(now)
         return
       }
 
-      const dt = last === 0 ? FIXED : Math.min((now - last) / 1000, 0.1)
-      last = now
-      accRef.current += dt
+      const dt = clock.begin(now)
 
       /**
        * Time the IK batch.
@@ -1559,7 +1568,7 @@ export function FabrikCreature({ className }: { className?: string }) {
       let ikChains = 0
 
       let steps = 0
-      while (accRef.current >= FIXED && steps < 4) {
+      while (clock.pending()) {
         const px = pointerRef.current.x
         const py = pointerRef.current.y
         const arm = armRef.current
@@ -1576,13 +1585,13 @@ export function FabrikCreature({ className }: { className?: string }) {
           stepCreature(creature, FIXED, tx, ty, cssW, cssH)
           ikChains = creature.legs.length
         }
-        accRef.current -= FIXED
+        clock.consume()
         steps++
       }
 
       // See the note in VerletLanyard: an uncapped accumulator turns sustained low
       // frame rates into permanent slow motion instead of a brief lag.
-      accRef.current = Math.min(accRef.current, FIXED * 4)
+      clock.end()
 
       if (steps > 0) {
         reportIkSolve(performance.now() - ikStart, ikChains)
