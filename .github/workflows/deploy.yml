@@ -99,6 +99,11 @@ jobs:
         env:
           NODE_ENV: production
 
+      # Budget runs in THIS job on purpose. A separate job would re-install
+      # dependencies and re-build (minutes of CI time) just to read dist/.
+      - name: Critical-path budget
+        run: pnpm verify:budget
+
       - name: Verify build output
         # A build that silently emits nothing (or only the HTML shell) would
         # deploy a blank page. Fail loudly here instead of after publishing.

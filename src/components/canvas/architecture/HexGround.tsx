@@ -1,7 +1,6 @@
 import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
-import { MeshReflectorMaterial } from '@react-three/drei'
 
 /**
  * HexGround — the floor of the architecture chapter.
@@ -218,7 +217,7 @@ const GLOW_FRAG = /* glsl */ `
     float a = (pool * 0.75 + smear) * smoothstep(1.0, 0.62, length(p));
     if (a <= 0.003) discard;
 
-    gl_FragColor = vec4(uGlowColor, a * 0.85);
+    gl_FragColor = vec4(uGlowColor, a * 0.95);
   }
 `
 
@@ -287,34 +286,19 @@ export function HexGround({
       </mesh>
 
       {/*
-       * 2. Reflection.
+       * (removed) A MeshReflectorMaterial mirror used to sit here.
        *
-       * A real mirror pass, on a CIRCLE rather than the square plane drei's default
-       * examples use: the square corners are what would put a rectangular edge on
-       * the floor. `mirror` is kept low and `color` is near-black, so this reads as
-       * a crystal seen faintly in polished stone rather than as a second window
-       * into the scene. Resolution is capped at 512 -- the blur below hides the
-       * difference and the pass is re-rendered every frame.
+       * It was the wrong primitive for this canvas on three counts: drei's reflector
+       * allocates two render targets plus a blur pass that are never disposed (≈8.9
+       * MB leaked per mount, guaranteed under StrictMode), it re-renders the entire
+       * scene every frame for a reflection that `mirror: 0.45` + heavy blur made
+       * barely readable, and it directly contradicts the render gate above, whose
+       * whole point is that this chapter draws nothing while off screen.
        *
-       * It sits UNDER the lattice (12 mm lower) so the grid stays crisp on top of
-       * the reflection instead of being smeared into it.
+       * The contact pool below already carries the grounding (bright under the
+       * crystal, decaying outward), so this costs a little mirror sheen and buys
+       * back two render targets and a full extra scene pass.
        */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, y + 0.004, 0]} renderOrder={1}>
-        <circleGeometry args={[radius * 0.82, 96]} />
-        <MeshReflectorMaterial
-          resolution={512}
-          blur={[320, 120]}
-          mixBlur={1}
-          mixStrength={0.5}
-          mirror={0.45}
-          depthScale={0.7}
-          minDepthThreshold={0.35}
-          maxDepthThreshold={1.25}
-          color="#050a0e"
-          metalness={0.5}
-          roughness={0.82}
-        />
-      </mesh>
 
       {/* 3. Hex lattice. Offset 8 mm above the mirror so it can never z-fight. */}
       <mesh

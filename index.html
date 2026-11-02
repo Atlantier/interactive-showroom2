@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN" class="dark">
+<html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -16,9 +16,28 @@
     </style>
     <meta
       name="description"
-      content="个人数字展厅 · 基于 React 19 / Three.js / Lenis 构建的沉浸式交互展厅。"
+      content="An immersive personal showroom built with React 19, Three.js and Lenis: scroll-driven camera choreography, real-time GPU particles and physics sandboxes."
     />
-    <title>数字展厅 · DIGITAL SHOWROOM</title>
+    <title>Digital Showroom — Real-time Graphics Engineering</title>
+
+    <!--
+      The static document is written in the DEFAULT locale (English). The runtime
+      rewrites lang/title/description from the dictionary on first paint, but
+      crawlers and no-JS readers only ever see this. It used to say zh-CN here while
+      the app defaulted to English, which is a 3.1.1 Language-of-Page mismatch.
+    -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Digital Showroom — Real-time Graphics Engineering" />
+    <meta
+      property="og:description"
+      content="Scroll-driven camera choreography, real-time GPU particles, Verlet and FABRIK physics sandboxes — built with React 19, three.js and Lenis."
+    />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Digital Showroom — Real-time Graphics Engineering" />
+    <meta
+      name="twitter:description"
+      content="An immersive personal showroom: one clock drives the page, the camera and the GPU."
+    />
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

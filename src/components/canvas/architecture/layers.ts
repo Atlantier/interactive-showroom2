@@ -1,4 +1,16 @@
-import * as THREE from 'three'
+/*
+ * TYPE-ONLY import.
+ *
+ * This module is pulled into the ENTRY graph by `ArchitectureNarrative`, which
+ * needs the layer labels for its DOM overlay. With a value import (`import * as
+ * THREE`), that made three.js a static dependency of the shell: the bundler had to
+ * preload the entire 1 MB WebGL chunk before `App` could run, which is precisely
+ * the opposite of what the lazy `Scene` / `ScrollArchitecture3D` imports are for.
+ *
+ * `THREE.Vector3Tuple` is used only in an interface, so nothing here needs the
+ * runtime module at all.
+ */
+import type * as THREE from 'three'
 
 /**
  * Per-layer metadata for the click-to-focus interaction.

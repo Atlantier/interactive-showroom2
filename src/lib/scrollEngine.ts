@@ -31,7 +31,7 @@ let scrollBusy = false
 
 /**
  * Spring that carries the scroll velocity signal, allocated ONCE at module
- * scope and mutated in place — no per-frame garbage (see AGENTS.md).
+ * scope and mutated in place, so the scroll path allocates nothing per frame.
  */
 const velocitySpring = createSpring(0)
 
@@ -55,18 +55,34 @@ const velocitySpring = createSpring(0)
  * 0.92 made every gesture feel like it under-responded.
  */
 const LENIS_OPTIONS = {
-  duration: 1.15,
+  /*
+   * `duration` (with `easing`) WINS over `lerp`: lenis' Animate.advance does
+   * `if (this.duration && this.easing) {...} else if (this.lerp) {...}`. The `lerp`
+   * that used to sit here was therefore dead configuration -- tuning it changed
+   * nothing, and the real feel was a 1.15s fixed tween, noticeably more sluggish
+   * than the comment claimed. Deleted rather than left as a decoy.
+   *
+   * 0.7s keeps the glide the camera choreography is authored against while cutting
+   * roughly 40% of the perceived lag between a wheel notch and the page moving.
+   */
+  duration: 0.7,
   easing: (t: number) => (t === 1 ? 1 : 1 - Math.pow(2, -10 * t)),
   smoothWheel: true,
   wheelMultiplier: 1.0,
   touchMultiplier: 1.4,
-  lerp: 0.2,
   syncTouch: false,
   autoRaf: false,
   anchors: false,
   allowNestedScroll: true,
-  // Lenis still uses native scroll when the user asks for reduced motion,
-  // while WebGL keeps rendering (it just switches to a calm camera).
+  /*
+   * Reduced motion: Lenis falls back to native scrolling.
+   *
+   * The comment that used to sit here claimed WebGL "switches to a calm camera".
+   * It did not -- nothing on the WebGL side ever read the preference, so the
+   * parallax, particles and lights ran at full speed regardless. The claim is gone
+   * rather than left as a comfort; wiring the preference through the 3D scenes is
+   * tracked as CR-07, not asserted here.
+   */
   respectReducedMotion: true,
 } as const
 
@@ -226,6 +242,20 @@ export function destroyScrollEngine(): void {
   lastProgress = 0
   smoothedVelocity = 0
   resetSpring(velocitySpring, 0)
+
+  /*
+   * Global side effects must not outlive the engine.
+   *
+   * `is-scrolling` lives on <html> and pauses every decorative CSS animation. If
+   * it survived teardown (HMR, or StrictMode remount) those animations stayed
+   * paused forever with no engine left to clear the class.
+   */
+  scrollBusy = false
+  if (typeof document !== 'undefined') {
+    document.documentElement.classList.remove('is-scrolling')
+  }
+  // Publish a neutral frame so DOM consumers do not keep drawing the last velocity.
+  writeScroll(0, 0)
 }
 
 /** Programmatic scroll used by the navbar. */

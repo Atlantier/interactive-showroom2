@@ -64,11 +64,26 @@ export function preloadR3FAdvance(): void {
  */
 export function setCanvasActive(active: boolean): void {
   if (active) {
+    const isFirst = activeCanvases === 0
     activeCanvases += 1
-    // A newly mounted canvas must not inherit another canvas' clock origin.
-    // Resetting here means the first delta after a mount is ~0 for every root.
-    originMs = null
-    lastSeconds = 0
+
+    /*
+     * Only the FIRST canvas defines the clock origin.
+     *
+     * Resetting on every mount looked harmless ("a new canvas should not inherit
+     * another one's origin"), but `advance()` is global: it walks every root. A
+     * canvas that mounted later therefore rewound the clock of roots that were
+     * already running, and in frameloop="never" R3F computes
+     * delta = timestamp - clock.elapsedTime without a negative guard -- so those
+     * roots received a negative delta and their elapsedTime snapped back to 0.
+     * Every uTime-driven shader (aurora, nebula, trail, volumetric lights) jumped
+     * back to t=0 for one frame, which is the visible "everything flickers" on
+     * entering a chapter.
+     */
+    if (isFirst) {
+      originMs = null
+      lastSeconds = 0
+    }
   } else {
     // Never go negative: a double-unmount (StrictMode) would otherwise leave the
     // counter permanently below zero and freeze every future canvas.

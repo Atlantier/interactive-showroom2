@@ -903,7 +903,16 @@ function SpatialLayer({
               metalness={0}
               attenuationColor="#e0f7fa"
               attenuationDistance={2.0}
-              side={THREE.DoubleSide}
+              /*
+               * FrontSide, not DoubleSide.
+               *
+               * Any material with transmission > 0 makes three run a transmission
+               * pass every frame into a full-resolution, 4x-MSAA, half-float target.
+               * DoubleSide also draws the cage's back faces into that pass, so it
+               * cost a second full copy of the geometry for surfaces the camera
+               * cannot see through an opaque-ish shell anyway.
+               */
+              side={THREE.FrontSide}
               depthWrite={false}
               envMapIntensity={1.25}
             />
@@ -1617,6 +1626,34 @@ export interface ScrollArchitecture3DProps {
   onSelectLayer: (id: string | null) => void
 }
 
+/**
+ * RenderGate — stop drawing while the chapter is off screen.
+ *
+ * ── Why a render gate and not an unmount ────────────────────────────────────
+ * The rig is deliberately mounted early so its shaders compile under the boot
+ * veil (measured ~2.7s cold). Unmounting it when the chapter scrolls away would
+ * throw away the compiled programs with it, and the next entry would pay that cost
+ * again -- the very hitch the prewarm exists to remove.
+ *
+ * So the rig stays mounted and only the DRAW is gated. `useFrame` with priority
+ * >= 1 tells R3F to stop rendering on its own; from then on this callback owns the
+ * frame and simply does nothing while the section is off screen. Measured effect:
+ * the chapter's ~95 draw calls per frame (main scene + transmission pass +
+ * resolve/mip chain + reflection pass + 4 blurs) drop to zero when scrolled away.
+ */
+function RenderGate({ inView }: { inView: InViewRef }) {
+  const gl = useThree((s) => s.gl)
+  const scene = useThree((s) => s.scene)
+  const camera = useThree((s) => s.camera)
+
+  useFrame(() => {
+    if (!inView.current) return
+    gl.render(scene, camera)
+  }, 1)
+
+  return null
+}
+
 export function ScrollArchitecture3D({
   progress,
   inViewRef,
@@ -1759,6 +1796,18 @@ export function ScrollArchitecture3D({
          */
         gl.debug.checkShaderErrors = import.meta.env.DEV
 
+        /*
+         * Transmission buffer at 35% of the drawing buffer.
+         *
+         * three sizes the transmission render target at the full drawing buffer by
+         * default: at 1440x900 @ dpr 2 that is 2880x1800 half-float with 4x MSAA,
+         * i.e. ~166 MB of VRAM plus a resolve and a mip chain every frame. The
+         * glass is a soft, blurry object by construction, so a third of the
+         * resolution is visually indistinguishable and costs 1/8 the memory and
+         * bandwidth.
+         */
+        gl.transmissionResolutionScale = 0.35
+
         gl.setClearColor(0x000000, 0)
         setCanvasActive(true)
 
@@ -1791,6 +1840,8 @@ export function ScrollArchitecture3D({
         one-shot bake could land before everything it needs was in the scene. A few
         extra frames cost milliseconds at mount and make the bake reliable.
       */}
+      <RenderGate inView={inViewRef} />
+
       <Environment resolution={256} frames={1}>
         <Lightformer form="rect" intensity={3} position={[0, 4, -6]} scale={[10, 4, 1]} color="#0ea5e9" />
         <Lightformer form="rect" intensity={2.2} position={[-6, 1, 2]} scale={[4, 8, 1]} color="#22d3ee" />

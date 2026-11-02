@@ -8,7 +8,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --noEmit",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "verify:budget": "node scripts/verify-budget.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",
