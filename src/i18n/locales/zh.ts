@@ -107,8 +107,7 @@ export const zh: Dictionary = {
     cardThroughputLabel: '实时推理',
     cardThroughputTitle: '推理吞吐监控',
     cardThroughputNote: '实时跳动的 Token 吞吐量折线图，直接绘制到 canvas',
-    cardThroughputBody:
-      '边缘推理集群的实时吞吐，每 120ms 采样一次，由 canvas 直接绘制。',
+    cardThroughputBody: '边缘推理集群的实时吞吐，每 120ms 采样一次，由 canvas 直接绘制。',
     topologyHint: '点击节点',
     topologyAria: '架构拓扑图，可点击节点查看职责',
     topologyRoles: {

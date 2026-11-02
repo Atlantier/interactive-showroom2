@@ -546,8 +546,7 @@ export function AuroraCurtain({ tier = 'high' }: AuroraCurtainProps) {
      * phase jump and the pattern strobes. Accumulating dt * speed here is
      * continuous for the whole session.
      */
-    uniforms.uFlow.value +=
-      dt * (FLOW_BASE_SPEED + FLOW_AUDIO_SPEED * uniforms.uAudioEnergy.value)
+    uniforms.uFlow.value += dt * (FLOW_BASE_SPEED + FLOW_AUDIO_SPEED * uniforms.uAudioEnergy.value)
   })
 
   return (

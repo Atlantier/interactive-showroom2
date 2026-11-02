@@ -83,7 +83,14 @@ interface BeamSpec {
  */
 const BEAMS: BeamSpec[] = [
   { colorSlot: 'primary', offsetX: -1.9, tiltX: 0.14, tiltZ: 0.2, scrollDrift: 1.6, opacity: 0.95 },
-  { colorSlot: 'secondary', offsetX: 0.7, tiltX: -0.1, tiltZ: -0.12, scrollDrift: -1.1, opacity: 0.7 },
+  {
+    colorSlot: 'secondary',
+    offsetX: 0.7,
+    tiltX: -0.1,
+    tiltZ: -0.12,
+    scrollDrift: -1.1,
+    opacity: 0.7,
+  },
   { colorSlot: 'accent', offsetX: 2.6, tiltX: 0.2, tiltZ: 0.26, scrollDrift: 1.0, opacity: 0.55 },
 ]
 
@@ -588,10 +595,8 @@ export function VolumetricStageLights({
 
       // Mouse parallax: the beams lean toward the pointer. Scroll adds a
       // counter-drift so the rig re-racks as the page moves.
-      mesh.rotation.x =
-        beam.tiltX + mouse.x * 0.09 + Math.sin(time * 0.37 + i * 1.7) * 0.022
-      mesh.rotation.z =
-        beam.tiltZ - mouse.y * 0.055 + Math.sin(time * 0.29 + i * 2.3) * 0.018
+      mesh.rotation.x = beam.tiltX + mouse.x * 0.09 + Math.sin(time * 0.37 + i * 1.7) * 0.022
+      mesh.rotation.z = beam.tiltZ - mouse.y * 0.055 + Math.sin(time * 0.29 + i * 2.3) * 0.018
 
       // Local space: the parent group carries `scale`, so these must stay
       // unscaled or the rig would be scaled twice.
@@ -689,12 +694,7 @@ export function VolumetricStageLights({
         />
       ))}
 
-      <points
-        ref={dustRef}
-        geometry={dustGeometry}
-        material={dustMaterial}
-        frustumCulled={false}
-      />
+      <points ref={dustRef} geometry={dustGeometry} material={dustMaterial} frustumCulled={false} />
     </group>
   )
 }

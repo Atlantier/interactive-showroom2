@@ -1,11 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/cn'
 import { clamp } from '@/lib/math'
 import { useInViewAnimation } from '@/hooks/useInViewAnimation'
@@ -245,12 +238,7 @@ export function BentoGrid({ children, className }: BentoGridProps) {
 
       if (!inside) {
         for (const entry of cards.values()) {
-          entry.handle.update(
-            docX - entry.docLeft,
-            docY - entry.docTop,
-            entry.width,
-            entry.height,
-          )
+          entry.handle.update(docX - entry.docLeft, docY - entry.docTop, entry.width, entry.height)
           entry.handle.reset()
         }
         hoveredRef.current = null
@@ -262,12 +250,7 @@ export function BentoGrid({ children, className }: BentoGridProps) {
       // Local coordinates may be negative or exceed the card size. That is
       // intentional: it is what lets the 400px border gradient light up an edge
       // before the cursor visually reaches the card.
-      entry.handle.update(
-        docX - entry.docLeft,
-        docY - entry.docTop,
-        entry.width,
-        entry.height,
-      )
+      entry.handle.update(docX - entry.docLeft, docY - entry.docTop, entry.width, entry.height)
     }
 
     /* ── Hover tick ────────────────────────────────────────────────────────
@@ -386,8 +369,7 @@ export function BentoGrid({ children, className }: BentoGridProps) {
     tiltPermissionAsked.current = true
 
     const ctor = window.DeviceOrientationEvent as unknown as
-      | { requestPermission?: () => Promise<string> }
-      | undefined
+      { requestPermission?: () => Promise<string> } | undefined
     if (typeof ctor?.requestPermission !== 'function') return
     void ctor.requestPermission().catch(() => undefined)
   }, [])
@@ -454,22 +436,15 @@ export function BentoGrid({ children, className }: BentoGridProps) {
       tilt.y += (tilt.targetY - tilt.y) * TILT_SMOOTHING
 
       const seconds = (now - origin) / 1000
-      const breathX =
-        0.5 + BREATH_AMPLITUDE * Math.sin((seconds / BREATH_PERIOD_X) * Math.PI * 2)
+      const breathX = 0.5 + BREATH_AMPLITUDE * Math.sin((seconds / BREATH_PERIOD_X) * Math.PI * 2)
       const breathY =
-        0.5 +
-        BREATH_AMPLITUDE * Math.sin((seconds / BREATH_PERIOD_Y) * Math.PI * 2 + 1.7)
+        0.5 + BREATH_AMPLITUDE * Math.sin((seconds / BREATH_PERIOD_Y) * Math.PI * 2 + 1.7)
 
       const docX = grid.docLeft + (breathX + tilt.x * TILT_RANGE) * grid.width
       const docY = grid.docTop + (breathY + tilt.y * TILT_RANGE) * grid.height
 
       for (const entry of cardsRef.current.values()) {
-        entry.handle.update(
-          docX - entry.docLeft,
-          docY - entry.docTop,
-          entry.width,
-          entry.height,
-        )
+        entry.handle.update(docX - entry.docLeft, docY - entry.docTop, entry.width, entry.height)
       }
     }
 
@@ -525,9 +500,7 @@ export function BentoGrid({ children, className }: BentoGridProps) {
     if (!grid) return
 
     const gridRect = grid.getBoundingClientRect()
-    const cards = Array.from(
-      grid.querySelectorAll<HTMLElement>('[data-spotlight-card]'),
-    )
+    const cards = Array.from(grid.querySelectorAll<HTMLElement>('[data-spotlight-card]'))
     if (cards.length < 2) return
 
     const rects = cards.map((el) => {

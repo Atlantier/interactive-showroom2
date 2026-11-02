@@ -137,7 +137,8 @@ export function GallerySection() {
   const { t } = useI18n()
 
   return (
-    <SectionShell  id="gallery"
+    <SectionShell
+      id="gallery"
       index={t.sections.gallery.index}
       eyebrow={t.sections.gallery.eyebrow}
       title={t.sections.gallery.title}

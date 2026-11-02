@@ -36,10 +36,7 @@ interface TokenThroughputChartProps {
   baseline?: number
 }
 
-export function TokenThroughputChart({
-  className,
-  baseline = 12_400,
-}: TokenThroughputChartProps) {
+export function TokenThroughputChart({ className, baseline = 12_400 }: TokenThroughputChartProps) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const inViewRef = useInViewAnimation(wrapRef, { rootMargin: '120px 0px 120px 0px' })
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -233,11 +230,7 @@ export function TokenThroughputChart({
         <span className="font-mono text-[0.6rem] text-ink-700">tok/s</span>
       </div>
 
-      <canvas
-        ref={canvasRef}
-        className="mt-3 min-h-0 w-full flex-1"
-        aria-hidden
-      />
+      <canvas ref={canvasRef} className="mt-3 min-h-0 w-full flex-1" aria-hidden />
     </div>
   )
 }

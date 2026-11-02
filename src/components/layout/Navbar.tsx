@@ -14,12 +14,7 @@ import {
 import { useAppStore } from '@/store/useAppStore'
 import { useFpsMonitor } from '@/hooks/useFpsMonitor'
 import { scrollToTarget } from '@/lib/scrollEngine'
-import {
-  DEFAULT_VFX_PRESET,
-  getNextVfxPreset,
-  getVfxPalette,
-  vfxLabelKey,
-} from '@/lib/vfxPalette'
+import { DEFAULT_VFX_PRESET, getNextVfxPreset, getVfxPalette, vfxLabelKey } from '@/lib/vfxPalette'
 import { cn } from '@/lib/cn'
 import { IconButton, StatusDot } from '@/components/ui/primitives'
 import { ScrollProgressRing } from '@/components/ui/ScrollProgressRing'
@@ -247,12 +242,12 @@ export function Navbar() {
       <header
         className={cn(
           /*
-         * `pt-[env(safe-area-inset-top)]`: the document sets `viewport-fit=cover`, so
-         * on a notched phone the bar was drawn UNDER the status bar and the dynamic
-         * island. The padding extends the bar's own background into that area while
-         * pushing the controls below it.
-         */
-        'fixed inset-x-0 top-0 z-90 pt-[env(safe-area-inset-top)] transition-all duration-500',
+           * `pt-[env(safe-area-inset-top)]`: the document sets `viewport-fit=cover`, so
+           * on a notched phone the bar was drawn UNDER the status bar and the dynamic
+           * island. The padding extends the bar's own background into that area while
+           * pushing the controls below it.
+           */
+          'fixed inset-x-0 top-0 z-90 pt-[env(safe-area-inset-top)] transition-all duration-500',
           scrolled
             ? 'border-b border-void-600/50 bg-void-950/95'
             : 'border-b border-transparent bg-transparent',
@@ -317,10 +312,7 @@ export function Navbar() {
             </IconButton>
 
             {/* ── Command palette (Cmd/Ctrl+K) ───────────────────────── */}
-            <IconButton
-              label={t.nav.commandPaletteOpen}
-              onClick={toggleCommandPalette}
-            >
+            <IconButton label={t.nav.commandPaletteOpen} onClick={toggleCommandPalette}>
               <Command className="size-4" aria-hidden />
             </IconButton>
 
@@ -371,10 +363,10 @@ export function Navbar() {
             <span aria-hidden className="mx-0.5 hidden h-5 w-px bg-void-600/70 sm:block" />
 
             {/*
-              * Language capsule. Sits with the other persistent preferences and
-              * before the mobile menu, so the right-hand cluster keeps its order:
-              * system state, preferences, then navigation collapse.
-              */}
+             * Language capsule. Sits with the other persistent preferences and
+             * before the mobile menu, so the right-hand cluster keeps its order:
+             * system state, preferences, then navigation collapse.
+             */}
             <LanguageSwitcher className="mr-1 hidden sm:flex" />
 
             {/* ── Mobile menu ────────────────────────────────────────── */}
@@ -395,12 +387,12 @@ export function Navbar() {
 
         {/* ── Mobile sheet ───────────────────────────────────────────── */}
         <div
-            /*
-             * The drawer stays in the DOM when closed (it animates on max-height), so
-             * its links were still in the Tab order and still read by assistive tech
-             * even while invisible. `inert` takes the whole subtree out of both.
-             */
-            inert={!mobileOpen}
+          /*
+           * The drawer stays in the DOM when closed (it animates on max-height), so
+           * its links were still in the Tab order and still read by assistive tech
+           * even while invisible. `inert` takes the whole subtree out of both.
+           */
+          inert={!mobileOpen}
           className={cn(
             'overflow-hidden border-t border-void-600/40 bg-void-950/96 transition-[max-height,opacity] duration-400 lg:hidden',
             mobileOpen ? 'max-h-80 opacity-100' : 'max-h-0 opacity-0',

@@ -84,8 +84,7 @@ export function ClickRipple() {
      * with no box (a text node's parent, a zero-size hit area) falls back to a
      * fixed small radius rather than producing a degenerate circle.
      */
-    const radius =
-      shortSide > 0 ? Math.min(shortSide * 1.2, MAX_RADIUS) : FALLBACK_RADIUS
+    const radius = shortSide > 0 ? Math.min(shortSide * 1.2, MAX_RADIUS) : FALLBACK_RADIUS
 
     seq.current += 1
     setRipple({

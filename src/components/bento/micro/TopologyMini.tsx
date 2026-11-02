@@ -73,8 +73,7 @@ export function TopologyMini({ className }: TopologyMiniProps) {
    */
   const [focusedId, setFocusedId] = useState<TopologyNodeId | null>(null)
 
-  const nodeById = (id: string): TopologyNode | undefined =>
-    NODES.find((n) => n.id === id)
+  const nodeById = (id: string): TopologyNode | undefined => NODES.find((n) => n.id === id)
 
   const isEdgeActive = (edge: TopologyEdge): boolean =>
     edge.from === activeId || edge.to === activeId
@@ -159,10 +158,10 @@ export function TopologyMini({ className }: TopologyMiniProps) {
               className="cursor-pointer"
             >
               {/*
-                * Focus ring. A real element, so no engine can refuse to paint it.
-                * Dashed so it reads as "keyboard focus" rather than as the active
-                * state, which is already shown by the halo below.
-                */}
+               * Focus ring. A real element, so no engine can refuse to paint it.
+               * Dashed so it reads as "keyboard focus" rather than as the active
+               * state, which is already shown by the halo below.
+               */}
               {focusedId === node.id && (
                 <circle
                   cx={node.x}

@@ -255,9 +255,7 @@ const PULSE_CORE_STYLE = '#e8feff'
  * need `[r, g, b]`. Parsing the hex on every break would be waste, so the table is
  * built at module load and indexed by lanyard position.
  */
-const ACCENT_RGB: [number, number, number][] = LANYARD_SPECS.map((spec) =>
-  hexToRgb(spec.accent),
-)
+const ACCENT_RGB: [number, number, number][] = LANYARD_SPECS.map((spec) => hexToRgb(spec.accent))
 
 /* ── Reused draw-path scratch (module scope: zero per-frame garbage) ──────── */
 /** Fit points for the current cord; grown once, then reused. */
@@ -414,9 +412,9 @@ export function VerletLanyard({ className }: { className?: string }) {
       cssW = Math.max(1, Math.round(rect.width))
       cssH = Math.max(1, Math.round(rect.height))
       // 1.5 rather than 2: this canvas is pure additive glow on a near-black
-    // ground, where the extra density of a 2x buffer is invisible, but the
-    // per-frame fill cost is 44% higher.
-    dpr = Math.min(window.devicePixelRatio || 1, 1.5)
+      // ground, where the extra density of a 2x buffer is invisible, but the
+      // per-frame fill cost is 44% higher.
+      dpr = Math.min(window.devicePixelRatio || 1, 1.5)
       canvas.width = Math.round(cssW * dpr)
       canvas.height = Math.round(cssH * dpr)
       canvas.style.width = `${cssW}px`
@@ -432,9 +430,7 @@ export function VerletLanyard({ className }: { className?: string }) {
         // effect was created: the simulation is built lazily on the first
         // resize, which can happen after the visitor has already switched
         // gravity from the palette.
-        simRef.current.setGravityScale(
-          GRAVITY_SCALE[useAppStore.getState().gravityMode],
-        )
+        simRef.current.setGravityScale(GRAVITY_SCALE[useAppStore.getState().gravityMode])
       } else {
         simRef.current.resize(cssW, cssH)
       }
@@ -847,18 +843,18 @@ export function VerletLanyard({ className }: { className?: string }) {
         // tap-highlight resets) to exactly the element the drag happens on, so
         // the surrounding card still scrolls the page normally.
         /*
-     * `pan-y`, not `none`.
-     *
-     * `none` was chosen so a drag can never be stolen by the browser, and it works --
-     * but this canvas is ~52vh tall, so on a phone a finger that lands anywhere on it
-     * could not scroll the page at all. The sandbox became a scroll trap in the middle
-     * of a scrolling narrative.
-     *
-     * `pan-y` keeps vertical page scrolling while still giving us horizontal gestures,
-     * which is the trade the review asks for: horizontal drags move badges, vertical
-     * swipes scroll. Vertical badge dragging is now a mouse/pen gesture.
-     */
-    style={{ touchAction: 'pan-y' }}
+         * `pan-y`, not `none`.
+         *
+         * `none` was chosen so a drag can never be stolen by the browser, and it works --
+         * but this canvas is ~52vh tall, so on a phone a finger that lands anywhere on it
+         * could not scroll the page at all. The sandbox became a scroll trap in the middle
+         * of a scrolling narrative.
+         *
+         * `pan-y` keeps vertical page scrolling while still giving us horizontal gestures,
+         * which is the trade the review asks for: horizontal drags move badges, vertical
+         * swipes scroll. Vertical badge dragging is now a mouse/pen gesture.
+         */
+        style={{ touchAction: 'pan-y' }}
         role="application"
         // `tabIndex=0` is what makes the toy reachable at all (PB-05); the global
         // `:focus-visible` rule in index.css supplies the ring, which SVG `<g>` could
@@ -935,9 +931,7 @@ export function VerletLanyard({ className }: { className?: string }) {
           </svg>
           {t.sandbox.verletReset}
           {brokenCount > 0 && (
-            <span className="rounded bg-signal-rose/20 px-1 text-signal-rose">
-              {brokenCount}
-            </span>
+            <span className="rounded bg-signal-rose/20 px-1 text-signal-rose">{brokenCount}</span>
           )}
         </button>
       </div>
@@ -1095,12 +1089,7 @@ function overlapObb(a: Obb, b: Obb, out: ObbHit): ObbHit {
  * `splits` 1, so floor hits throw secondary sparks — that cascade is what sells
  * the impact as energy rather than as decoration.
  */
-function emitImpactSparks(
-  engine: VfxParticleEngine,
-  x: number,
-  y: number,
-  impulse: number,
-): void {
+function emitImpactSparks(engine: VfxParticleEngine, x: number, y: number, impulse: number): void {
   // Above the calibration ceiling the burst is already at maximum; clamping the
   // speed too stops a very fast drag from throwing sparks clear off the canvas.
   const speed = Math.min(impulse, IMPACT_MAX_SPEED * 1.15)
@@ -1335,12 +1324,7 @@ function captureImpactEvents(vfx: LanyardVfx, sim: LanyardSimulation): void {
        * a few pixels at most, which is invisible inside a 15–40 spark burst and
        * far cheaper than computing the exact support point.
        */
-      emitImpactSparks(
-        vfx.engine,
-        (ta.x + tb.x) * 0.5,
-        (ta.y + tb.y) * 0.5,
-        closing,
-      )
+      emitImpactSparks(vfx.engine, (ta.x + tb.x) * 0.5, (ta.y + tb.y) * 0.5, closing)
     }
   }
 
@@ -1414,12 +1398,7 @@ function captureImpactEvents(vfx: LanyardVfx, sim: LanyardSimulation): void {
  * The engine has no clock of its own — every call here is driven by the sandbox's
  * single rAF loop.
  */
-function updateVfx(
-  vfx: LanyardVfx,
-  dt: number,
-  width: number,
-  height: number,
-): void {
+function updateVfx(vfx: LanyardVfx, dt: number, width: number, height: number): void {
   advanceSnapArcs(vfx, dt)
 
   VFX_BOUNDS.left = 0
@@ -1559,14 +1538,7 @@ function drawSnapArcs(ctx: CanvasRenderingContext2D, vfx: LanyardVfx): void {
       SNAP_FLASH_RGB[0] = arc.r
       SNAP_FLASH_RGB[1] = arc.g
       SNAP_FLASH_RGB[2] = arc.b
-      drawRadialFlash(
-        ctx,
-        arc.x,
-        arc.y,
-        24 + 52 * fade,
-        fade * fade * 0.85,
-        SNAP_FLASH_RGB,
-      )
+      drawRadialFlash(ctx, arc.x, arc.y, 24 + 52 * fade, fade * fade * 0.85, SNAP_FLASH_RGB)
 
       // Deterministic tremble: 96 rad/s is far above the 60 Hz sampling rate, so
       // it aliases into an electrical shimmer instead of a smooth pulse.

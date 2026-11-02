@@ -146,9 +146,7 @@ report.touchEnd = {
   before: beforeEnd,
   after: afterEnd,
   relaxedToCentre:
-    typeof afterEnd.x === 'number' &&
-    Math.abs(afterEnd.x) < 0.05 &&
-    Math.abs(afterEnd.y) < 0.05,
+    typeof afterEnd.x === 'number' && Math.abs(afterEnd.x) < 0.05 && Math.abs(afterEnd.y) < 0.05,
 }
 
 /* ── 6. Multi-touch (pinch) must NOT move the parallax ───────────────────── */

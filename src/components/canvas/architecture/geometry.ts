@@ -40,8 +40,16 @@ export const AGENT_NODES: AgentNodeSpec[] = [
 
 /** Which node pairs are connected. Node 0 is the hub. */
 export const AGENT_EDGES: Array<[number, number]> = [
-  [0, 1], [0, 2], [0, 3], [0, 4], [0, 5], [0, 6],
-  [1, 2], [3, 4], [5, 1], [6, 2],
+  [0, 1],
+  [0, 2],
+  [0, 3],
+  [0, 4],
+  [0, 5],
+  [0, 6],
+  [1, 2],
+  [3, 4],
+  [5, 1],
+  [6, 2],
 ]
 
 /**
@@ -143,8 +151,12 @@ export function buildInterLayerConduits(options: ConduitOptions = {}): THREE.Buf
       angleAttr.push(angle)
     }
     indices.push(
-      vertexBase, vertexBase + 2, vertexBase + 1,
-      vertexBase + 1, vertexBase + 2, vertexBase + 3,
+      vertexBase,
+      vertexBase + 2,
+      vertexBase + 1,
+      vertexBase + 1,
+      vertexBase + 2,
+      vertexBase + 3,
     )
     vertexBase += 4
   }
@@ -182,9 +194,7 @@ export interface DataStreamOptions {
  * Each particle carries a random phase so the stream is not a synchronised wall
  * of dots; the shader offsets travel by that phase to produce continuous flow.
  */
-export function buildDataStreamGeometry(
-  options: DataStreamOptions = {},
-): THREE.BufferGeometry {
+export function buildDataStreamGeometry(options: DataStreamOptions = {}): THREE.BufferGeometry {
   const count = options.count ?? 900
   const height = options.height ?? 6
   const radius = options.radius ?? 2.6

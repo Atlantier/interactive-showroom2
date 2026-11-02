@@ -247,18 +247,12 @@ report.M1_chain = await evalAsync('window.__sm.inspectChain()')
 report.M2_read = await evalAsync('window.__sm.probeRead()')
 
 /* ── M5: the columns must exist in the DOM ──────────────────────────────── */
-report.barCount = await evalAsync(
-  'document.querySelectorAll("[data-spectrum-bar]").length',
-)
-report.meterPresent = await evalAsync(
-  'Boolean(document.querySelector(\'[title="实时音频频谱"]\'))',
-)
+report.barCount = await evalAsync('document.querySelectorAll("[data-spectrum-bar]").length')
+report.meterPresent = await evalAsync('Boolean(document.querySelector(\'[title="实时音频频谱"]\'))')
 
 /* ── M3 + M5: sustained voice drives bands AND columns ──────────────────── */
 // The activation chord is 750 ms and loud, giving a wide window to sample.
-report.M3_activate = await evalAsync(
-  'window.__sm.capture("playCardActivate", null, 700)',
-)
+report.M3_activate = await evalAsync('window.__sm.capture("playCardActivate", null, 700)')
 
 /* ── M4: a low-frequency voice must light different bands ───────────────── */
 // The laser sweeps 1200 → 80 Hz, so its energy ends up in the bottom bands.

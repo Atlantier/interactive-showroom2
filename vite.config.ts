@@ -93,7 +93,10 @@ export default defineConfig({
             return 'shell'
           }
 
-          if (path.includes('/node_modules/motion/') || path.includes('/node_modules/framer-motion/')) {
+          if (
+            path.includes('/node_modules/motion/') ||
+            path.includes('/node_modules/framer-motion/')
+          ) {
             return 'motion'
           }
           if (
@@ -121,4 +124,3 @@ export default defineConfig({
     },
   },
 })
-

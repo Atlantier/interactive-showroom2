@@ -74,9 +74,7 @@ export function PerfTelemetryHud() {
   const open = useAppStore((state) => state.perfHudOpen)
   const setOpen = useAppStore((state) => state.setPerfHudOpen)
   const tier = useAppStore((state) => state.performanceTier)
-  const vfxPreset = useAppStore(
-    (state) => (state as unknown as MaybeVfxPreset).vfxPreset,
-  )
+  const vfxPreset = useAppStore((state) => (state as unknown as MaybeVfxPreset).vfxPreset)
 
   const fpsRef = useRef<HTMLSpanElement>(null)
   const frameMsRef = useRef<HTMLSpanElement>(null)
@@ -217,7 +215,8 @@ export function PerfTelemetryHud() {
         }
 
         // Headroom readout: how much of the 16.7 ms budget is left.
-        if (fpsRef.current) fpsRef.current.dataset.health = fps >= 55 ? 'good' : fps >= 40 ? 'fair' : 'poor'
+        if (fpsRef.current)
+          fpsRef.current.dataset.health = fps >= 55 ? 'good' : fps >= 40 ? 'fair' : 'poor'
 
         // Consume this window.
         frames = 0
@@ -363,10 +362,7 @@ export function PerfTelemetryHud() {
         </Row>
         <Row label={t.hud.tier}>
           <span
-            className={cn(
-              'uppercase',
-              tier === 'high' ? 'text-signal-teal' : 'text-signal-amber',
-            )}
+            className={cn('uppercase', tier === 'high' ? 'text-signal-teal' : 'text-signal-amber')}
           >
             {tier}
           </span>
@@ -379,10 +375,7 @@ export function PerfTelemetryHud() {
            * calling `.toUpperCase()` on nothing.
            */}
           <span
-            className={cn(
-              'uppercase',
-              vfxPreset ? 'text-signal-violet' : 'text-ink-500',
-            )}
+            className={cn('uppercase', vfxPreset ? 'text-signal-violet' : 'text-ink-500')}
             title={vfxPreset}
           >
             {isVfxPreset(vfxPreset) ? t.palette[vfxLabelKey(vfxPreset)] : NO_VALUE}

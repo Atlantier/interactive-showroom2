@@ -132,12 +132,8 @@ export function reportParticles(kind: ParticleSystemKind, count: number): void
  * Kept so an un-migrated reporter cannot silently zero the app-wide total.
  */
 export function reportParticles(count: number): void
-export function reportParticles(
-  kindOrCount: ParticleSystemKind | number,
-  count?: number,
-): void {
-  const kind: ParticleSystemKind =
-    typeof kindOrCount === 'number' ? 'nebula' : kindOrCount
+export function reportParticles(kindOrCount: ParticleSystemKind | number, count?: number): void {
+  const kind: ParticleSystemKind = typeof kindOrCount === 'number' ? 'nebula' : kindOrCount
   const raw = typeof kindOrCount === 'number' ? kindOrCount : (count ?? 0)
   // A broken producer must not poison the shared sum with NaN or Infinity.
   const value = Number.isFinite(raw) ? Math.max(0, Math.round(raw)) : 0
@@ -171,9 +167,7 @@ export function getActiveParticleCount(): number {
  * this module. Zero means "no composer mounted".
  */
 export function setShaderPassCount(count: number): void {
-  performanceCounters.shaderPasses = Number.isFinite(count)
-    ? Math.max(0, Math.round(count))
-    : 0
+  performanceCounters.shaderPasses = Number.isFinite(count) ? Math.max(0, Math.round(count)) : 0
 }
 
 /** Number of post-processing shader passes currently mounted (0 = none). */
@@ -230,9 +224,6 @@ export function setCanvasSleeping(sleeping: boolean): void {
   if (sleeping) {
     performanceCounters.sleepingCanvases++
   } else {
-    performanceCounters.sleepingCanvases = Math.max(
-      0,
-      performanceCounters.sleepingCanvases - 1,
-    )
+    performanceCounters.sleepingCanvases = Math.max(0, performanceCounters.sleepingCanvases - 1)
   }
 }

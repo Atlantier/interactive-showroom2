@@ -414,10 +414,7 @@ export interface CursorStardustTrailProps {
   count?: number
 }
 
-export function CursorStardustTrail({
-  tier = 'high',
-  count: countProp,
-}: CursorStardustTrailProps) {
+export function CursorStardustTrail({ tier = 'high', count: countProp }: CursorStardustTrailProps) {
   const camera = useThree((state) => state.camera)
   const size = useThree((state) => state.size)
   /*
@@ -876,7 +873,6 @@ export function CursorStardustTrail({
     /* 4. (was: consume a queued click — see the note where the listener used to
      *    live; click feedback is now a single thin ripple outside WebGL.) */
 
-
     /* 5. Upload the particle buffers. */
     if (spawned) {
       ;(geometry.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true
@@ -906,9 +902,7 @@ export function CursorStardustTrail({
     // because every point then coincides and the strip has no area.
     const head = history[RIBBON_POINTS - 1]
     const tail = history[0]
-    const span = Math.sqrt(
-      (head.x - tail.x) ** 2 + (head.y - tail.y) ** 2 + (head.z - tail.z) ** 2,
-    )
+    const span = Math.sqrt((head.x - tail.x) ** 2 + (head.y - tail.y) ** 2 + (head.z - tail.z) ** 2)
     let fade = span * 2.2
     if (fade > 1) fade = 1
     if (!cursorValid) fade = 0
@@ -1011,7 +1005,12 @@ export function CursorStardustTrail({
 
   return (
     <>
-      <points ref={pointsRef} geometry={geometry} material={particleMaterial} frustumCulled={false} />
+      <points
+        ref={pointsRef}
+        geometry={geometry}
+        material={particleMaterial}
+        frustumCulled={false}
+      />
 
       {/*
        * The ribbon is a strip of 23 quads rebuilt every frame. `DoubleSide` is

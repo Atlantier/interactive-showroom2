@@ -33,11 +33,7 @@ export interface TerminalLine {
 const BOX_TOP = ' ╔══════════════════════════════════╗'
 const BOX_BOT = ' ╚══════════════════════════════════╝'
 
-export const HELP_ART: string[] = [
-  BOX_TOP,
-  ' ║ A V A I L A B L E  C O M M A N D S ║',
-  BOX_BOT,
-]
+export const HELP_ART: string[] = [BOX_TOP, ' ║ A V A I L A B L E  C O M M A N D S ║', BOX_BOT]
 
 /**
  * Help rows, resolved at call time.
@@ -107,15 +103,10 @@ export const SKILL_ROWS: TerminalLine[] = [
  * looks different — a static block would be spotted as a canned image instantly.
  * The generator is seeded so a single call is reproducible for tests.
  */
-export const MATRIX_HEADER: string[] = [
-  BOX_TOP,
-  ' ║ W A K E   U P ,   N E O . . .     ║',
-  BOX_BOT,
-]
+export const MATRIX_HEADER: string[] = [BOX_TOP, ' ║ W A K E   U P ,   N E O . . .     ║', BOX_BOT]
 
 /** Glyph pool for the rain. Katakana + digits, as in the film. */
-const MATRIX_GLYPHS =
-  'ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ0123456789'
+const MATRIX_GLYPHS = 'ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ0123456789'
 
 /**
  * Build one frame of falling glyphs.
@@ -150,11 +141,7 @@ export function makeMatrixFrame(rows: number, cols: number, seed: number): strin
 /*  unknown command                                                           */
 /* -------------------------------------------------------------------------- */
 
-export const UNKNOWN_ART: string[] = [
-  BOX_TOP,
-  ' ║ C O M M A N D  N O T  F O U N D   ║',
-  BOX_BOT,
-]
+export const UNKNOWN_ART: string[] = [BOX_TOP, ' ║ C O M M A N D  N O T  F O U N D   ║', BOX_BOT]
 
 /* -------------------------------------------------------------------------- */
 /*  Registry                                                                  */
@@ -162,12 +149,7 @@ export const UNKNOWN_ART: string[] = [
 
 export type TerminalCommandId = 'help' | 'skills' | 'matrix' | 'clear'
 
-export const KNOWN_COMMANDS: readonly TerminalCommandId[] = [
-  'help',
-  'skills',
-  'matrix',
-  'clear',
-]
+export const KNOWN_COMMANDS: readonly TerminalCommandId[] = ['help', 'skills', 'matrix', 'clear']
 
 /** Normalise user input into a known command id, or `null`. */
 export function parseCommand(input: string): TerminalCommandId | null {

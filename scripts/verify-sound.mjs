@@ -335,7 +335,9 @@ report.S7_burst_hover = await evalAsync('window.__snd.countVoices("playHoverTick
 // Five calls spaced 60 ms apart must all get through.
 report.S7_spaced_hover = await evalAsync('window.__snd.countVoices("playHoverTick", 5, 60)')
 report.S7_burst_laser = await evalAsync('window.__snd.countVoices("playLaserPulse", 8, 0)')
-report.S7_burst_collision = await evalAsync('window.__snd.countVoices("playPhysicsCollision", 8, 0, [900])')
+report.S7_burst_collision = await evalAsync(
+  'window.__snd.countVoices("playPhysicsCollision", 8, 0, [900])',
+)
 report.S7_burst_snap = await evalAsync('window.__snd.countVoices("playRopeSnap", 8, 0)')
 report.S7_burst_activate = await evalAsync('window.__snd.countVoices("playCardActivate", 8, 0)')
 
@@ -508,18 +510,14 @@ report.assertions = {
   busExists: bus.ok === true,
   masterGainSane: num(bus.masterGain) !== null && bus.masterGain > 0 && bus.masterGain <= 1,
   limiterConfigured:
-    num(bus.threshold) !== null &&
-    bus.threshold < 0 &&
-    bus.ratio >= 8 &&
-    bus.attack <= 0.01,
+    num(bus.threshold) !== null && bus.threshold < 0 && bus.ratio >= 8 && bus.attack <= 0.01,
 
   /* S2 — 15 ms mechanical tick with an 1800 Hz body */
   hoverIsShort: num(hover.durationMs) !== null && hover.durationMs <= 30,
   hoverIsAudible: num(hover.peak) !== null && hover.peak > 0.05 && hover.peak <= 1,
   // "Bright mechanical tick": the 1800 Hz sine plus a 3.4 kHz band-passed noise
   // transient, so the body should sit comfortably in the treble.
-  hoverPitchIsBright:
-    num(hover.freqBody) !== null && hover.freqBody > 800 && hover.freqBody < 5000,
+  hoverPitchIsBright: num(hover.freqBody) !== null && hover.freqBody > 800 && hover.freqBody < 5000,
 
   /* S3 — warm, sustained chord with a soft release */
   activateIsSustained:
@@ -530,7 +528,8 @@ report.assertions = {
 
   /* S4 — collision scales with impact speed */
   collisionHardAudible: num(hard.peak) !== null && hard.peak > 0.05,
-  collisionLoudnessScales: num(hard.peak) !== null && num(soft.peak) !== null && hard.peak > soft.peak,
+  collisionLoudnessScales:
+    num(hard.peak) !== null && num(soft.peak) !== null && hard.peak > soft.peak,
   collisionPitchScales:
     num(hard.freqEarly) !== null && num(soft.freqEarly) !== null && hard.freqEarly > soft.freqEarly,
   collisionIgnoresTrivial: (trivial.peak ?? 0) < 1e-4,
@@ -570,8 +569,7 @@ report.assertions = {
     (report.S7_burst_activate?.oscillators ?? 99) === 3,
   // Engine disabled: not a single voice may be synthesized.
   disabledIsSilent:
-    (report.S7_disabled?.oscillators ?? 99) === 0 &&
-    (report.S7_disabled?.noiseSources ?? 99) === 0,
+    (report.S7_disabled?.oscillators ?? 99) === 0 && (report.S7_disabled?.noiseSources ?? 99) === 0,
 
   /* S8 — the store flag drives the engine */
   storeEnablesEngine: report.S8_store?.engineEnabled === true,

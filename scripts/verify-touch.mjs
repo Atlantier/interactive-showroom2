@@ -131,7 +131,10 @@ const step = async (label, fn) => {
 }
 
 // Corners: normalized x,y must approach ±1 with y flipped (+1 at the top).
-await step('touch top-left (4,4)', `window.__t.fire('touchstart',[{x:4,y:4}]); window.__t.fire('touchmove',[{x:4,y:4}])`)
+await step(
+  'touch top-left (4,4)',
+  `window.__t.fire('touchstart',[{x:4,y:4}]); window.__t.fire('touchmove',[{x:4,y:4}])`,
+)
 await step('touch top-right (1596,4)', `window.__t.fire('touchmove',[{x:1596,y:4}])`)
 await step('touch bottom-right (1596,996)', `window.__t.fire('touchmove',[{x:1596,y:996}])`)
 await step('touch bottom-left (4,996)', `window.__t.fire('touchmove',[{x:4,y:996}])`)
@@ -163,13 +166,13 @@ report.touchEnd = {
   before: beforeEnd,
   after: afterEnd,
   relaxedToCentre:
-    Number.isFinite(afterEnd.x) &&
-    Math.abs(afterEnd.x) < 0.05 &&
-    Math.abs(afterEnd.y) < 0.05,
+    Number.isFinite(afterEnd.x) && Math.abs(afterEnd.x) < 0.05 && Math.abs(afterEnd.y) < 0.05,
 }
 
 // touchcancel must relax too.
-await evaluate(`window.__t.fire('touchstart',[{x:1300,y:200}]); window.__t.fire('touchmove',[{x:1300,y:200}])`)
+await evaluate(
+  `window.__t.fire('touchstart',[{x:1300,y:200}]); window.__t.fire('touchmove',[{x:1300,y:200}])`,
+)
 await sleep(450)
 const beforeCancel = await evaluate('window.__t.read()')
 await evaluate(`window.__t.fire('touchcancel',[{x:1300,y:200}])`)

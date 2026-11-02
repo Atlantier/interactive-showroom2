@@ -100,7 +100,7 @@ export interface VfxBurstOptions {
 }
 
 /** Emit one particle. Used both by `burst` and by continuous emitters. */
-export interface VfxSpawnOptions extends Omit<VfxBurstOptions, 'count'> {}
+export type VfxSpawnOptions = Omit<VfxBurstOptions, 'count'>
 
 const FULL_CIRCLE = Math.PI * 2
 
@@ -151,10 +151,7 @@ export function fractalLightning(
 }
 
 /** Stroke a polyline produced by `fractalLightning`. */
-export function strokePolyline(
-  ctx: CanvasRenderingContext2D,
-  points: number[],
-): void {
+export function strokePolyline(ctx: CanvasRenderingContext2D, points: number[]): void {
   if (points.length < 4) return
   ctx.beginPath()
   ctx.moveTo(points[0], points[1])
@@ -242,8 +239,7 @@ export class VfxParticleEngine {
       options.angle === undefined
         ? Math.random() * FULL_CIRCLE
         : options.angle + (Math.random() * 2 - 1) * (options.spread ?? 0.4)
-    const speed =
-      options.speedMin + Math.random() * (options.speedMax - options.speedMin)
+    const speed = options.speedMin + Math.random() * (options.speedMax - options.speedMin)
 
     if (!p.active) this.liveCount++
 

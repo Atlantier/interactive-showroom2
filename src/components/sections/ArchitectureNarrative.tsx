@@ -84,13 +84,7 @@ function buildMetrics(dict: Dictionary): Metric[] {
  * the close button (or pressing Escape) clears the focus, which also returns
  * the camera to its scroll-driven path.
  */
-function LayerHud({
-  layerId,
-  onClose,
-}: {
-  layerId: string | null
-  onClose: () => void
-}) {
+function LayerHud({ layerId, onClose }: { layerId: string | null; onClose: () => void }) {
   const { t } = useI18n()
   const layer = findLayer(layerId)
 
@@ -297,9 +291,9 @@ export function ArchitectureNarrative() {
   const [canvasAwake, setCanvasAwake] = useState(false)
   const inViewRef = useInViewAnimation(canvasHostRef, {
     // Fixed distance rather than a percentage: the section is 300vh tall, so a 60%
-  // margin woke the canvas more than a full screen early and kept it alive while
-  // the visitor was still two chapters away.
-  rootMargin: '600px 0px 600px 0px',
+    // margin woke the canvas more than a full screen early and kept it alive while
+    // the visitor was still two chapters away.
+    rootMargin: '600px 0px 600px 0px',
     initial: false,
     onChange: setCanvasAwake,
   })
@@ -314,10 +308,7 @@ export function ArchitectureNarrative() {
       className="relative z-20 h-[300vh] w-full"
     >
       {/* The pinned stage. */}
-      <div
-        ref={stageRef}
-        className="sticky top-0 flex h-dvh w-full items-center overflow-hidden"
-      >
+      <div ref={stageRef} className="sticky top-0 flex h-dvh w-full items-center overflow-hidden">
         {/* 3D layer, behind the text. Receives clicks for layer picking. */}
         <div ref={canvasHostRef} className="absolute inset-0 z-0">
           <Suspense fallback={null}>

@@ -4,10 +4,7 @@ import { Navbar } from '@/components/layout/Navbar'
 import { ClickRipple } from '@/components/layout/ClickRipple'
 import { BootSequence } from '@/components/layout/BootSequence'
 import { ScrollTelemetryHud } from '@/components/layout/ScrollTelemetryHud'
-import {
-  PerfNoticeToast,
-  PerfTelemetryHud,
-} from '@/components/layout/PerfTelemetryHud'
+import { PerfNoticeToast, PerfTelemetryHud } from '@/components/layout/PerfTelemetryHud'
 import {
   ArchiveSection,
   ContactSection,
@@ -126,9 +123,7 @@ function App() {
       const target = event.target as HTMLElement | null
       if (
         target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.isContentEditable)
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
       ) {
         return
       }
@@ -189,30 +184,30 @@ function App() {
         </a>
 
         <div inert={paletteOpen}>
-        {/* ── Navigation ──────────────────────────────────────────────── */}
-        <Navbar />
+          {/* ── Navigation ──────────────────────────────────────────────── */}
+          <Navbar />
 
-        {/* Global click feedback: a single thin ripple, nothing else. */}
-        <ClickRipple />
+          {/* Global click feedback: a single thin ripple, nothing else. */}
+          <ClickRipple />
 
-        {/*
-          * Entrance veil. Sits above every other layer (z-200 clears the command
-          * palette at z-120) and unmounts itself completely when the boot is
-          * done, so it costs nothing once the page is up.
-          */}
-        <BootSequence />
+          {/*
+           * Entrance veil. Sits above every other layer (z-200 clears the command
+           * palette at z-120) and unmounts itself completely when the boot is
+           * done, so it costs nothing once the page is up.
+           */}
+          <BootSequence />
 
-        {/* ── Content ─────────────────────────────────────────────────── */}
-        {/* `tabIndex={-1}` so the skip link can actually move focus here: an <a href="#id">
+          {/* ── Content ─────────────────────────────────────────────────── */}
+          {/* `tabIndex={-1}` so the skip link can actually move focus here: an <a href="#id">
             only scrolls, it does not focus a non-interactive element. */}
-        <main id="main" tabIndex={-1} className="relative z-20 focus:outline-none">
-          <HeroSection />
-          <GallerySection />
-          <ArchitectureNarrative />
-          <PlaygroundSection />
-          <ArchiveSection />
-          <ContactSection />
-        </main>
+          <main id="main" tabIndex={-1} className="relative z-20 focus:outline-none">
+            <HeroSection />
+            <GallerySection />
+            <ArchitectureNarrative />
+            <PlaygroundSection />
+            <ArchiveSection />
+            <ContactSection />
+          </main>
         </div>
 
         {/* ── HUD ─────────────────────────────────────────────────────── */}

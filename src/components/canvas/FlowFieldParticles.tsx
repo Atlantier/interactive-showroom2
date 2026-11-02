@@ -501,10 +501,7 @@ export interface FlowFieldParticlesProps {
   count?: number
 }
 
-export function FlowFieldParticles({
-  tier = 'high',
-  count: countProp,
-}: FlowFieldParticlesProps) {
+export function FlowFieldParticles({ tier = 'high', count: countProp }: FlowFieldParticlesProps) {
   const camera = useThree((state) => state.camera)
   const size = useThree((state) => state.size)
   /*
@@ -1070,14 +1067,7 @@ export function FlowFieldParticles({
     colAttr.needsUpdate = true
   })
 
-  return (
-    <points
-      ref={pointsRef}
-      geometry={geometry}
-      material={material}
-      frustumCulled={false}
-    />
-  )
+  return <points ref={pointsRef} geometry={geometry} material={material} frustumCulled={false} />
 }
 
 export default FlowFieldParticles

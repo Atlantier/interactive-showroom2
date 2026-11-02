@@ -42,16 +42,16 @@
 
 ## ⚡ 三十秒速览
 
-| 维度 | 事实 |
-| :--- | :--- |
-| **主时钟** | 全站 **1 个** `requestAnimationFrame`，所有动画向其对齐 |
-| **滚动** | Lenis 惯性滚动，`autoRaf: false`，由主时钟手动驱动 |
-| **热路径** | 鼠标 / 滚动写入**可变对象**，React 渲染数为 **0** |
-| **粒子** | 8 000 点星云（单 `draw call`）+ 4 000 颗光标尾迹，手写 curl-noise GLSL |
-| **物理** | 手写 Verlet 绳索引擎 + 手写 FABRIK 逆运动学，**零物理库** |
-| **音频** | 纯代码合成器，5 个程序化音色，**零音频文件** |
-| **自适应** | 2 秒滚动均值 < 45 FPS → 自动降档（粒子减半 / DPR 1.0 / 关 Bloom 与色差） |
-| **可访问性** | 全键盘可达 · ⌘K 命令面板 · `prefers-reduced-motion` 适配 |
+| 维度         | 事实                                                                     |
+| :----------- | :----------------------------------------------------------------------- |
+| **主时钟**   | 全站 **1 个** `requestAnimationFrame`，所有动画向其对齐                  |
+| **滚动**     | Lenis 惯性滚动，`autoRaf: false`，由主时钟手动驱动                       |
+| **热路径**   | 鼠标 / 滚动写入**可变对象**，React 渲染数为 **0**                        |
+| **粒子**     | 8 000 点星云（单 `draw call`）+ 4 000 颗光标尾迹，手写 curl-noise GLSL   |
+| **物理**     | 手写 Verlet 绳索引擎 + 手写 FABRIK 逆运动学，**零物理库**                |
+| **音频**     | 纯代码合成器，5 个程序化音色，**零音频文件**                             |
+| **自适应**   | 2 秒滚动均值 < 45 FPS → 自动降档（粒子减半 / DPR 1.0 / 关 Bloom 与色差） |
+| **可访问性** | 全键盘可达 · ⌘K 命令面板 · `prefers-reduced-motion` 适配                 |
 
 > 没有一张贴图、没有一个视频、没有一段音频文件。
 > 你看到的全部像素与听到的全部声音，都是运行时算出来的。
@@ -61,42 +61,55 @@
 ## ✨ 核心特性
 
 ### 🌌 GPU 粒子流场
+
 8 000 个点、单 `draw call`。手写 curl-noise GLSL 构造**无散度**向量场（`∇ · v = 0`），粒子沿丝绢状流线运动；鼠标斥力半径 `R = 2.5`、强度 34，高速滚动触发 warp 拉伸与弹性回弹。颜色由「鼠标影响量」驱动而非位移，速度只做次级色阶。
 
 ### 🃏 双层流光 Bento Grid
+
 NVIDIA / Linear 式卡片矩阵，**两层**独立聚光：`1px` 边框环（400 px 径向渐变 + 遮罩合成）+ 大面积表面光泽。父容器用**单个** `pointermove` 驱动全部卡片，通过 CSS 变量 `--mouse-x/--mouse-y` 写位置，配 ±8° 弹簧 3D 倾斜与 `translateZ(30px)` 视差。触摸屏自动降级为呼吸光效 + 陀螺仪偏移。
 
 ### 🎫 Verlet 物理工牌
+
 4 条手写 Verlet 绳索：`Δt = 1/60` 定长步进、12 次 Gauss-Seidel 松弛、OBB 碰撞、逐绳相位风场 `W(t) = A·sin(ω₁t)·cos(ω₂t)`。应变超过 `2.5` 直接断裂、工牌脱手下坠。绳索以 Catmull-Rom → 三次贝塞尔绘制，带织物渐变与高光边。
 
 ### 🦾 FABRIK 逆向运动学机械生物
+
 同一套求解器两种形态：**6 骨工业机械臂**（激光爪 + 后坐力弹簧）与 **12 节脊椎四足生物**（转向行为 + 4× 双骨 IK 腿）。带角度锥约束的**对角小跑**步态、抛物线摆动、落地涟漪。
 
 ### 🏛️ Apple 主题演讲式 3D 架构章节
+
 300vh 吸附舞台，单一 `p ∈ [0,1]` 驱动三层装配 → 分层拆解 → 结构重组。`MeshTransmissionMaterial` 磨砂折射棱镜、数据流脉冲 shader、点击图层拉近相机并展开技术栈浮层。
 
 ### 🔊 程序化音频（Web Audio API）
+
 纯代码合成，**零音频文件**。信号链：母总线 → 压缩器 → 分析器 → 输出。悬停滴答、卡片激活、物理碰撞、绳索断裂、激光脉冲五个音色全部实时合成，高频触发 40 ms 节流。导航栏 5 段实时频谱由 `AnalyserNode` 驱动。
 
 ### ⌘ 命令面板
+
 `⌘ / Ctrl + K`，Raycast / Linear 手感。模糊匹配按「连续子串 > 子序列」分级、词边界与连续段加权，19 条命令分 5 组：章节跳转 · 重力模式 · 主题配色 · 视觉调色 · 复制邮箱 / 下载简历 JSON。
 
 ### ⚡ 单主时钟与自适应画质
+
 全站唯一 `requestAnimationFrame`，R3F 以 `frameloop="never"` 手动推进。视口外**三层休眠**（物理循环 / GPU 提交 / 重型子树卸载）。2 秒滚动均值 < 45 FPS 自动降档：粒子 8000 → 4000、DPR → 1.0、关闭 Bloom 与色差。
 
 ### 🌠 3D 旋度星尘尾迹
+
 4 000 粒子环形缓冲池，线段插值发射 + 旋度涡流 + 生命周期尺寸曲线。
 
 ### 🔦 丁达尔体积光与焦散
+
 三道锥体光幕 + 3 倍频 Perlin 雾气 + Voronoi 干涉地面焦散 + 1 500 颗受光微尘。
 
 ### 🎇 Bento 双彗星流光与萤火
+
 SVG `pathLength` 归一化的边框流光 + 2D 画布余烬 + `data-card-action` 引力坍缩。
 
 ### 🌩️ 物理碰撞切向火花与分形电弧
+
 速度拉伸火花 + 中点位移分形闪电 + 粒子质心驱动的环境光照。
 
 ### 🎞️ 电影级动态色散与数字极光
+
 运动驱动的 `ChromaticAberration` + fBm 极光天幕 + 声光共振。
 
 ---
@@ -208,8 +221,8 @@ perfHudOpen       commandPaletteOpen
 **瞬态**（`transient` 单例）—— 每帧写入，**绝不进 React**：
 
 ```ts
-transient.mouse  = { x, y, px, py }        // 归一化 [-1,1] + 像素坐标
-transient.scroll = { progress, velocity }  // p ∈ [0,1]；v = dp/dt
+transient.mouse = { x, y, px, py } // 归一化 [-1,1] + 像素坐标
+transient.scroll = { progress, velocity } // p ∈ [0,1]；v = dp/dt
 ```
 
 写入 API：`writePointer` / `writeNormalizedMouse` / `writeScroll` /
@@ -257,14 +270,14 @@ interactive-showroom2/
 
 ### 5. z-order 约定
 
-| 层级 | 内容 |
-| :--- | :--- |
-| `z-0` | 环境背景（径向渐变 / 网格 / 暗角 / 扫描线） |
-| `z-10` | WebGL 画布（`pointer-events-none`） |
-| `z-15` | 内容遮罩层 |
-| `z-20` | 页面内容 |
-| `z-80/90` | 遥测 HUD |
-| `z-120` | 命令面板 |
+| 层级      | 内容                                        |
+| :-------- | :------------------------------------------ |
+| `z-0`     | 环境背景（径向渐变 / 网格 / 暗角 / 扫描线） |
+| `z-10`    | WebGL 画布（`pointer-events-none`）         |
+| `z-15`    | 内容遮罩层                                  |
+| `z-20`    | 页面内容                                    |
+| `z-80/90` | 遥测 HUD                                    |
+| `z-120`   | 命令面板                                    |
 
 ---
 
@@ -416,13 +429,13 @@ stride > S_threshold(=22)  ⟹  抬起该腿
 
 ### 渲染档位
 
-| | `high`（默认） | `medium`（降档后） |
-| :--- | :--- | :--- |
-| 星云粒子数 | **8 000** | **4 000** |
-| 星尘尾迹粒子数 | **4 000** | **2 000** |
-| 设备像素比 | `≤ 2.0` | **`1.0`** |
-| 后处理 | Bloom + ChromaticAberration + Vignette + Noise | Vignette |
-| 触发条件 | — | 2 秒滚动均值 **< 45 FPS** |
+|                | `high`（默认）                                 | `medium`（降档后）        |
+| :------------- | :--------------------------------------------- | :------------------------ |
+| 星云粒子数     | **8 000**                                      | **4 000**                 |
+| 星尘尾迹粒子数 | **4 000**                                      | **2 000**                 |
+| 设备像素比     | `≤ 2.0`                                        | **`1.0`**                 |
+| 后处理         | Bloom + ChromaticAberration + Vignette + Noise | Vignette                  |
+| 触发条件       | —                                              | 2 秒滚动均值 **< 45 FPS** |
 
 降档判据来自 drei `PerformanceMonitor`：`ms=250 × iterations=8 = 2 000 ms` 窗口。
 **手动选档会解除自动降档**——用户按下按钮就不该被程序覆盖。
@@ -463,14 +476,14 @@ bg.geometries    Δ 0    bg.programs    Δ 0
 
 7 处项目自建 GPU 资源全部在 `useEffect` 清理函数中 `.dispose()`：
 
-| 资源 | 位置 |
-| :--- | :--- |
-| `solid` / `wire` 网格 | `InfrastructureLayer` |
-| `edgeGeo` / `nodeGeo` | `OrchestrationLayer` |
-| `prism` 棱镜 | `SpatialLayer` |
-| 数据流 `geo` | `DataStreams` |
-| 导管 `geo` + `ShaderMaterial` | `InterLayerConduits` |
-| 粒子 `BufferGeometry` + `ShaderMaterial` | `FlowFieldParticles` |
+| 资源                                     | 位置                  |
+| :--------------------------------------- | :-------------------- |
+| `solid` / `wire` 网格                    | `InfrastructureLayer` |
+| `edgeGeo` / `nodeGeo`                    | `OrchestrationLayer`  |
+| `prism` 棱镜                             | `SpatialLayer`        |
+| 数据流 `geo`                             | `DataStreams`         |
+| 导管 `geo` + `ShaderMaterial`            | `InterLayerConduits`  |
+| 粒子 `BufferGeometry` + `ShaderMaterial` | `FlowFieldParticles`  |
 
 > 贴图与 FBO 全部来自 drei（`Environment` / `MeshTransmissionMaterial`），由 drei 自行释放。
 > 粒子几何体以 `count` 为依赖重建，清理 effect 同样以 `[geometry, material]` 为依赖，
@@ -480,13 +493,13 @@ bg.geometries    Δ 0    bg.programs    Δ 0
 
 ## ⌨ 交互地图
 
-| 快捷键 | 行为 |
-| :--- | :--- |
-| <kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>K</kbd> | 打开 / 关闭命令面板 |
-| <kbd>↑</kbd> <kbd>↓</kbd> | 导航结果 |
-| <kbd>Enter</kbd> | 执行选中命令 |
-| <kbd>Esc</kbd> | 关闭面板 / 退出图层详情 |
-| <kbd>Shift</kbd> + <kbd>D</kbd> | 性能遥测 HUD |
+| 快捷键                                      | 行为                    |
+| :------------------------------------------ | :---------------------- |
+| <kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>K</kbd> | 打开 / 关闭命令面板     |
+| <kbd>↑</kbd> <kbd>↓</kbd>                   | 导航结果                |
+| <kbd>Enter</kbd>                            | 执行选中命令            |
+| <kbd>Esc</kbd>                              | 关闭面板 / 退出图层详情 |
+| <kbd>Shift</kbd> + <kbd>D</kbd>             | 性能遥测 HUD            |
 
 ### 命令面板
 
@@ -514,12 +527,12 @@ bg.geometries    Δ 0    bg.programs    Δ 0
 
 ### 移动端
 
-| 场景 | 处理 |
-| :--- | :--- |
+| 场景       | 处理                                           |
+| :--------- | :--------------------------------------------- |
 | Bento Grid | 单列卡片流，行高跟随内容（`auto-rows-[auto]`） |
-| 鼠标光斑 | `(hover: none)` → 自动呼吸光效 + 陀螺仪偏移 |
-| 拖拽工牌 | canvas 上精确 `touch-action: none` |
-| 下拉刷新 | 文档级 `overscroll-behavior-y: none` |
+| 鼠标光斑   | `(hover: none)` → 自动呼吸光效 + 陀螺仪偏移    |
+| 拖拽工牌   | canvas 上精确 `touch-action: none`             |
+| 下拉刷新   | 文档级 `overscroll-behavior-y: none`           |
 
 > 光斑原本由 `group-hover` 触发——触摸屏**根本没有 hover 状态**，
 > 整层 spotlight 在手机上永远透明。现在由 `[data-spotlight='ambient']`
@@ -551,9 +564,9 @@ pnpm preview      # 预览生产包
 
 ### 环境变量
 
-| 变量 | 默认 | 说明 |
-| :--- | :--- | :--- |
-| `VITE_BASE_PATH` | `/` | 部署子路径。GitHub Pages 项目站由 CI 自动注入 `/<repo>/` |
+| 变量             | 默认 | 说明                                                     |
+| :--------------- | :--- | :------------------------------------------------------- |
+| `VITE_BASE_PATH` | `/`  | 部署子路径。GitHub Pages 项目站由 CI 自动注入 `/<repo>/` |
 
 ```bash
 # 模拟 GitHub Pages 项目站的构建
@@ -592,10 +605,10 @@ node scripts/verify-leaks.mjs http://127.0.0.1:5279
 
 推送到 `main` 即自动发布到 GitHub Pages。
 
-| | |
-| :--- | :--- |
+|              |                                                      |
+| :----------- | :--------------------------------------------------- |
 | **线上地址** | <https://atlantier.github.io/interactive-showroom2/> |
-| **仓库** | <https://github.com/Atlantier/interactive-showroom2> |
+| **仓库**     | <https://github.com/Atlantier/interactive-showroom2> |
 
 ```mermaid
 flowchart LR

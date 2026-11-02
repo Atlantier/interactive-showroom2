@@ -23,13 +23,7 @@ export type PerformanceTier = 'high' | 'medium'
  * A closed union rather than `string` so `t.sections[id]` type-checks: adding a
  * chapter without adding its copy becomes a compile error, which is the point.
  */
-export type SectionId =
-  | 'hero'
-  | 'gallery'
-  | 'architecture'
-  | 'playground'
-  | 'archive'
-  | 'contact'
+export type SectionId = 'hero' | 'gallery' | 'architecture' | 'playground' | 'archive' | 'contact'
 
 export interface MouseState {
   /**

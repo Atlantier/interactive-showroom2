@@ -225,11 +225,7 @@ const GLOW_FRAG = /* glsl */ `
 /*  Component                                                                 */
 /* -------------------------------------------------------------------------- */
 
-export function HexGround({
-  radius = 6.4,
-  core = [0, 2.0, 0],
-  y = GROUND_Y,
-}: HexGroundProps) {
+export function HexGround({ radius = 6.4, core = [0, 2.0, 0], y = GROUND_Y }: HexGroundProps) {
   const glowRef = useRef<THREE.Mesh>(null)
 
   const shared = useMemo(
@@ -301,11 +297,7 @@ export function HexGround({
        */}
 
       {/* 3. Hex lattice. Offset 8 mm above the mirror so it can never z-fight. */}
-      <mesh
-        rotation={[-Math.PI / 2, 0, 0]}
-        position={[0, y + 0.012, 0]}
-        renderOrder={2}
-      >
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, y + 0.012, 0]} renderOrder={2}>
         <circleGeometry args={[radius, 96]} />
         <shaderMaterial
           vertexShader={VERT}

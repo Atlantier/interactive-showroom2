@@ -14,12 +14,7 @@ import {
   buildEdgeGeometry,
   buildInterLayerConduits,
 } from '@/components/canvas/architecture/geometry'
-import {
-  LAYER_Y,
-  PHASE,
-  createCameraPath,
-  ramp,
-} from '@/components/canvas/architecture/cameraPath'
+import { LAYER_Y, PHASE, createCameraPath, ramp } from '@/components/canvas/architecture/cameraPath'
 import { findLayer, focusPoseFor } from '@/components/canvas/architecture/layers'
 import { soundEngine } from '@/utils/soundEngine'
 import type { InViewRef } from '@/hooks/useInViewAnimation'
@@ -293,8 +288,7 @@ function OrchestrationLayer({
       const core = coreRefs.current[i]
       if (core) {
         const material = core.material as THREE.MeshStandardMaterial
-        material.emissiveIntensity =
-          1.4 + (0.5 + 0.5 * Math.sin(t * 2.1 + offset)) * 1.6
+        material.emissiveIntensity = 1.4 + (0.5 + 0.5 * Math.sin(t * 2.1 + offset)) * 1.6
       }
     }
 
@@ -688,10 +682,7 @@ function SpatialLayer({
   groupRef: React.RefObject<THREE.Group | null>
   progress: ProgressStore
 }) {
-  const shellGeo = useMemo(
-    () => new THREE.IcosahedronGeometry(CORE_SHELL_RADIUS, 0),
-    [],
-  )
+  const shellGeo = useMemo(() => new THREE.IcosahedronGeometry(CORE_SHELL_RADIUS, 0), [])
 
   /**
    * Feature edges only.
@@ -960,7 +951,6 @@ function SpatialLayer({
               fragmentShader={RIM_FRAGMENT}
             />
           </mesh>
-
         </group>
 
         {/*
@@ -971,23 +961,21 @@ function SpatialLayer({
         {stage >= 1 && (
           <>
             {/*
-              * Volumetric halo, as a camera-facing quad rather than a shell.
-              *
-              * A shell was the wrong primitive: its Fresnel peaks on ITS OWN
-              * silhouette, so however soft it was shaded it drew a ring at its
-              * radius and read as a second sphere sitting around the core. A quad
-              * has no silhouette at all -- just a radial falloff in screen space --
-              * so the glow can bleed past the core's edge and simply stop existing
-              * before the quad's edge.
-              *
-              * Sized to stay inside the icosahedron's insphere so the glow never
-              * pokes out through a facet.
-              */}
+             * Volumetric halo, as a camera-facing quad rather than a shell.
+             *
+             * A shell was the wrong primitive: its Fresnel peaks on ITS OWN
+             * silhouette, so however soft it was shaded it drew a ring at its
+             * radius and read as a second sphere sitting around the core. A quad
+             * has no silhouette at all -- just a radial falloff in screen space --
+             * so the glow can bleed past the core's edge and simply stop existing
+             * before the quad's edge.
+             *
+             * Sized to stay inside the icosahedron's insphere so the glow never
+             * pokes out through a facet.
+             */}
             <Billboard>
               <mesh renderOrder={1}>
-                <planeGeometry
-                  args={[CORE_INNER_RADIUS * 3.4, CORE_INNER_RADIUS * 3.4]}
-                />
+                <planeGeometry args={[CORE_INNER_RADIUS * 3.4, CORE_INNER_RADIUS * 3.4]} />
                 <shaderMaterial
                   transparent
                   depthWrite={false}
@@ -1020,10 +1008,7 @@ function SpatialLayer({
 /* -------------------------------------------------------------------------- */
 
 function DataStreams({ progress }: { progress: ProgressStore }) {
-  const geo = useMemo(
-    () => buildDataStreamGeometry({ count: 900, height: 7.5, radius: 2.5 }),
-    [],
-  )
+  const geo = useMemo(() => buildDataStreamGeometry({ count: 900, height: 7.5, radius: 2.5 }), [])
 
   const uniforms = useMemo(
     () => ({
@@ -1268,9 +1253,7 @@ function DataConduits({
     }
   })
 
-  return (
-    <mesh geometry={geo} material={material} frustumCulled={false} renderOrder={2} />
-  )
+  return <mesh geometry={geo} material={material} frustumCulled={false} renderOrder={2} />
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1592,11 +1575,7 @@ function ArchitectureRig({
 
       {/* Conduits last: they read the layer centres, so every layer must exist. */}
       {stage >= 4 && (
-        <DataConduits
-          progress={progress}
-          layerRefs={layerRefs}
-          selectedRef={selectedRef}
-        />
+        <DataConduits progress={progress} layerRefs={layerRefs} selectedRef={selectedRef} />
       )}
     </group>
   )
@@ -1874,9 +1853,27 @@ export function ScrollArchitecture3D({
       <RenderGate inView={inViewRef} />
 
       <Environment resolution={256} frames={1}>
-        <Lightformer form="rect" intensity={3} position={[0, 4, -6]} scale={[10, 4, 1]} color="#0ea5e9" />
-        <Lightformer form="rect" intensity={2.2} position={[-6, 1, 2]} scale={[4, 8, 1]} color="#22d3ee" />
-        <Lightformer form="rect" intensity={1.6} position={[6, -1, 1]} scale={[4, 8, 1]} color="#a78bfa" />
+        <Lightformer
+          form="rect"
+          intensity={3}
+          position={[0, 4, -6]}
+          scale={[10, 4, 1]}
+          color="#0ea5e9"
+        />
+        <Lightformer
+          form="rect"
+          intensity={2.2}
+          position={[-6, 1, 2]}
+          scale={[4, 8, 1]}
+          color="#22d3ee"
+        />
+        <Lightformer
+          form="rect"
+          intensity={1.6}
+          position={[6, -1, 1]}
+          scale={[4, 8, 1]}
+          color="#a78bfa"
+        />
         <Lightformer form="circle" intensity={2} position={[0, -5, 3]} scale={6} color="#0f172a" />
       </Environment>
 
@@ -1965,7 +1962,6 @@ const CONTACT_VERTEX = `
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `
-
 
 /**
  * Core glow.

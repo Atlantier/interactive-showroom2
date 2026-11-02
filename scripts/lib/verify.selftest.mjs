@@ -41,9 +41,21 @@ function exitCodeOf(file) {
 
 const cases = [
   ['clean run', 'finish({ label: "clean" })', 0],
-  ['uncaught exception', 'finish({ label: "boom", exceptions: [{ text: "TypeError: x is undefined" }] })', 1],
-  ['console.error', 'finish({ label: "noisy", consoleErrors: [{ text: "WebGL: CONTEXT_LOST_WEBGL" }] })', 1],
-  ['harness failure', 'finish({ label: "fatal", report: { fatal: "helpers failed to install" } })', 1],
+  [
+    'uncaught exception',
+    'finish({ label: "boom", exceptions: [{ text: "TypeError: x is undefined" }] })',
+    1,
+  ],
+  [
+    'console.error',
+    'finish({ label: "noisy", consoleErrors: [{ text: "WebGL: CONTEXT_LOST_WEBGL" }] })',
+    1,
+  ],
+  [
+    'harness failure',
+    'finish({ label: "fatal", report: { fatal: "helpers failed to install" } })',
+    1,
+  ],
   ['explicit assertion', 'finish({ label: "assert", failures: ["p95 24ms > 22ms budget"] })', 1],
 ]
 

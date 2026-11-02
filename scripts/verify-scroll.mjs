@@ -78,10 +78,6 @@ const CANDIDATES = [
   '/usr/bin/chromium-browser',
 ]
 
-function findChrome() {
-  return CANDIDATES.find((candidate) => typeof candidate === 'string' && candidate.length > 0)
-}
-
 function argValue(flag, fallback) {
   const index = process.argv.indexOf(flag)
   return index !== -1 && process.argv[index + 1] ? process.argv[index + 1] : fallback
@@ -173,7 +169,9 @@ try {
       return
     }
     if (message.method === 'Runtime.exceptionThrown') {
-      consoleErrors.push(String(message.params.exceptionDetails.exception?.description).slice(0, 200))
+      consoleErrors.push(
+        String(message.params.exceptionDetails.exception?.description).slice(0, 200),
+      )
     }
   })
 
@@ -190,7 +188,8 @@ try {
       awaitPromise: true,
       returnByValue: true,
     })
-    if (result.exceptionDetails) throw new Error(String(result.exceptionDetails.exception?.description))
+    if (result.exceptionDetails)
+      throw new Error(String(result.exceptionDetails.exception?.description))
     return result.result?.value
   }
 
@@ -281,13 +280,20 @@ try {
   }
   console.log('scroll pacing:', JSON.stringify(report))
 
-  if (stats.count < 200) failures.push(`only ${stats.count} frames sampled — the page did not scroll`)
-  if (stats.endY < 2000) failures.push(`page only scrolled to ${stats.endY}px — wheel input was not applied`)
+  if (stats.count < 200)
+    failures.push(`only ${stats.count} frames sampled — the page did not scroll`)
+  if (stats.endY < 2000)
+    failures.push(`page only scrolled to ${stats.endY}px — wheel input was not applied`)
   if (stats.p95 > BUDGET.p95) failures.push(`p95 ${report.p95} ms > ${BUDGET.p95} ms`)
   if (stats.p99 > BUDGET.p99) failures.push(`p99 ${report.p99} ms > ${BUDGET.p99} ms`)
-  if (stats.worst > BUDGET.worst) failures.push(`worst frame ${report.worst} ms > ${BUDGET.worst} ms at ${JSON.stringify(report.worstAt)}`)
-  if (stats.over50 > BUDGET.over50) failures.push(`${stats.over50} frames over 50 ms > ${BUDGET.over50}`)
-  if (consoleErrors.length > 0) failures.push(`console errors: ${consoleErrors.slice(0, 2).join(' | ')}`)
+  if (stats.worst > BUDGET.worst)
+    failures.push(
+      `worst frame ${report.worst} ms > ${BUDGET.worst} ms at ${JSON.stringify(report.worstAt)}`,
+    )
+  if (stats.over50 > BUDGET.over50)
+    failures.push(`${stats.over50} frames over 50 ms > ${BUDGET.over50}`)
+  if (consoleErrors.length > 0)
+    failures.push(`console errors: ${consoleErrors.slice(0, 2).join(' | ')}`)
 } catch (error) {
   failures.push(String(error?.message ?? error))
 } finally {

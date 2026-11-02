@@ -358,7 +358,7 @@ export const CardParticleCanvas = forwardRef<CardParticleHandle, CardParticleCan
           const born = Math.min(1, e.age / 0.12)
           const alpha = fade * fade * born
 
-          const rgb = e.tint > 0.55 ? COLOR_COOL : glowColor ?? COLOR_WARM
+          const rgb = e.tint > 0.55 ? COLOR_COOL : (glowColor ?? COLOR_WARM)
 
           // Trail: a short gradient along the segment the ember just travelled.
           const tx = e.px

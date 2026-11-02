@@ -66,10 +66,7 @@ function typeInto(selectorValue) {
   const input = window.__term.input()
   if (!input) return { ok: false, reason: 'no input' }
   input.focus()
-  const setter = Object.getOwnPropertyDescriptor(
-    window.HTMLInputElement.prototype,
-    'value',
-  ).set
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
   setter.call(input, selectorValue)
   input.dispatchEvent(new Event('input', { bubbles: true }))
   return { ok: true, value: input.value }
@@ -213,8 +210,7 @@ report.assertions = {
   skillsShowsArt:
     typeof report.T4_skills === 'string' &&
     (report.T4_skills.includes('█') || report.T4_skills.includes('╗')),
-  matrixShowsGlyphs:
-    typeof report.T5_matrix_a === 'string' && /[ｱ-ﾝ]/.test(report.T5_matrix_a),
+  matrixShowsGlyphs: typeof report.T5_matrix_a === 'string' && /[ｱ-ﾝ]/.test(report.T5_matrix_a),
   matrixDiffersBetweenRuns: report.T5_matrix_a !== report.T5_matrix_b,
   unknownShowsError:
     typeof report.T6_unknown === 'string' &&
@@ -224,8 +220,7 @@ report.assertions = {
     // width tweak (the frame was narrowed once already).
     /C\s+O\s+M\s+M\s+A\s+N\s+D/.test(report.T6_unknown) &&
     /F\s+O\s+U\s+N\s+D/.test(report.T6_unknown),
-  clearEmpties:
-    typeof report.T7_clear === 'string' && report.T7_clear.trim().length < 20,
+  clearEmpties: typeof report.T7_clear === 'string' && report.T7_clear.trim().length < 20,
 }
 
 /* ── Tilt / settle checks ────────────────────────────────────────────────── */

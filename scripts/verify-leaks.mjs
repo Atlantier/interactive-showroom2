@@ -73,7 +73,7 @@ function installHelpers() {
 
     heap() {
       const mem = performance.memory
-      return mem ? Math.round(mem.usedJSHeapSize / (1024 * 1024) * 10) / 10 : null
+      return mem ? Math.round((mem.usedJSHeapSize / (1024 * 1024)) * 10) / 10 : null
     },
 
     async sleep(ms) {
@@ -284,8 +284,7 @@ const assertions = {
   /* A crude JS-heap ceiling: catches Node-side/typed-array leaks the GPU
    * counters cannot see. Generous, because the V8 heap legitimately grows and
    * the GC may simply not have run. */
-  heapBounded:
-    heapBefore === null || heapAfter === null || heapAfter - heapBefore < 40,
+  heapBounded: heapBefore === null || heapAfter === null || heapAfter - heapBefore < 40,
 
   noExceptions: exceptionsAfter.length === 0,
 }

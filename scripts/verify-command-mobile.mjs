@@ -79,10 +79,7 @@ function installHelpers() {
     query(text) {
       const input = document.querySelector('input[role="combobox"]')
       if (!input) return false
-      const setter = Object.getOwnPropertyDescriptor(
-        window.HTMLInputElement.prototype,
-        'value',
-      ).set
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
       setter.call(input, text)
       input.dispatchEvent(new Event('input', { bubbles: true }))
       return true
@@ -141,7 +138,6 @@ function installHelpers() {
 
     /** The bento's layout as the browser actually computed it. */
     bento() {
-      const grid = document.querySelector('[data-spotlight], .grid')
       // Pick the grid that actually contains spotlight cards.
       const cards = document.querySelectorAll('.spotlight-glow')
       const host = cards.length ? cards[0].closest('.grid') : null
@@ -229,9 +225,7 @@ ws.on('message', (raw) => {
     exceptions.push(d.exception?.description ?? d.text)
   }
   if (msg.method === 'Runtime.consoleAPICalled' && msg.params.type === 'error') {
-    consoleErrors.push(
-      (msg.params.args ?? []).map((a) => a.value ?? a.description ?? '').join(' '),
-    )
+    consoleErrors.push((msg.params.args ?? []).map((a) => a.value ?? a.description ?? '').join(' '))
   }
 })
 
@@ -338,10 +332,7 @@ desktop.panelVisible = await evalAsync('window.__cp.panelVisible()')
 desktop.rowCountAll = await evalAsync('window.__cp.rowCount()')
 
 const shotPalette = await send('Page.captureScreenshot', { format: 'png' })
-writeFileSync(
-  'screenshots/103-command-palette.png',
-  Buffer.from(shotPalette.data, 'base64'),
-)
+writeFileSync('screenshots/103-command-palette.png', Buffer.from(shotPalette.data, 'base64'))
 
 /* P2 — fuzzy substring search */
 await evalAsync('window.__cp.query("架构")')
@@ -518,8 +509,7 @@ await send('Page.removeScriptToEvaluateOnNewDocument', { identifier: shim.identi
 /*  Assertions                                                               */
 /* ══════════════════════════════════════════════════════════════════════════ */
 
-const near = (value, target, tol) =>
-  typeof value === 'number' && Math.abs(value - target) <= tol
+const near = (value, target, tol) => typeof value === 'number' && Math.abs(value - target) <= tol
 
 const rowsText = (rows) => (rows ?? []).map((r) => r.full ?? '').join(' | ')
 
@@ -559,9 +549,7 @@ const assertions = {
   // the ambient CSS these layers stay at opacity 0 and the bento reads as flat.
   bentoGlowVisibleWithoutHover: (mobile.glowOpacity ?? 0) > 0.5,
   ambientSpotlightMoves:
-    Boolean(mobile.spotA?.x) &&
-    Boolean(mobile.spotB?.x) &&
-    mobile.spotA.x !== mobile.spotB.x,
+    Boolean(mobile.spotA?.x) && Boolean(mobile.spotB?.x) && mobile.spotA.x !== mobile.spotB.x,
 
   /* ── Touch handling ────────────────────────────────────────────────── */
   lanyardCanvasBlocksGestures: mobile.touchAction === 'none',

@@ -12,11 +12,21 @@ const URL_TO_TEST = process.argv[2] ?? 'http://127.0.0.1:5260'
 
 function installHelpers() {
   const bento = {
-    cards() { return Array.from(document.querySelectorAll('[data-spotlight-card]')) },
-    grid() { return this.cards()[0].parentElement },
+    cards() {
+      return Array.from(document.querySelectorAll('[data-spotlight-card]'))
+    },
+    grid() {
+      return this.cards()[0].parentElement
+    },
     layoutBox(el) {
-      let x = 0, y = 0, n = el
-      while (n) { x += n.offsetLeft; y += n.offsetTop; n = n.offsetParent }
+      let x = 0,
+        y = 0,
+        n = el
+      while (n) {
+        x += n.offsetLeft
+        y += n.offsetTop
+        n = n.offsetParent
+      }
       return { docLeft: x, docTop: y, width: el.offsetWidth, height: el.offsetHeight }
     },
     parseRotation(m) {
@@ -34,11 +44,18 @@ function installHelpers() {
         ry: Math.round(((Math.atan2(-v[2], v[0]) * 180) / Math.PI) * 100) / 100,
       }
     },
-    transformOf(el) { return getComputedStyle(el).transform },
+    transformOf(el) {
+      return getComputedStyle(el).transform
+    },
     move(cx, cy) {
-      this.grid().dispatchEvent(new PointerEvent('pointermove', {
-        clientX: cx, clientY: cy, bubbles: true, pointerType: 'mouse',
-      }))
+      this.grid().dispatchEvent(
+        new PointerEvent('pointermove', {
+          clientX: cx,
+          clientY: cy,
+          bubbles: true,
+          pointerType: 'mouse',
+        }),
+      )
     },
   }
   window.__bento = bento
@@ -82,8 +99,10 @@ async function probeLocalCoordinates() {
     const expY = targetDocY - b.docTop
     return {
       index: i,
-      localX: Math.round(lx), localY: Math.round(ly),
-      expectedX: Math.round(expX), expectedY: Math.round(expY),
+      localX: Math.round(lx),
+      localY: Math.round(ly),
+      expectedX: Math.round(expX),
+      expectedY: Math.round(expY),
       matches: Math.abs(lx - expX) < 1.5 && Math.abs(ly - expY) < 1.5,
     }
   })
@@ -100,7 +119,10 @@ async function probeOutsideGlow() {
   const wait = (ms) => new Promise((r) => setTimeout(r, ms))
   const cards = window.__bento.cards()
   const box = window.__bento.layoutBox(cards[0])
-  window.__bento.move(box.docLeft + box.width / 2 - window.scrollX, box.docTop - 60 - window.scrollY)
+  window.__bento.move(
+    box.docLeft + box.width / 2 - window.scrollX,
+    box.docTop - 60 - window.scrollY,
+  )
   await wait(240)
   const my = parseFloat(cards[0].style.getPropertyValue('--mouse-y'))
   return { mouseY: Math.round(my), isOutside: my < -10 }
@@ -126,7 +148,9 @@ async function probeTilt() {
   const afterLeave = window.__bento.parseRotation(window.__bento.transformOf(card))
 
   return {
-    rightEdge, leftEdge, afterLeave,
+    rightEdge,
+    leftEdge,
+    afterLeave,
     opposesSign: Math.sign(rightEdge.ry) !== Math.sign(leftEdge.ry),
     reachesLimit: Math.abs(rightEdge.ry) > 5,
     withinLimit: Math.abs(rightEdge.ry) <= 8.5 && Math.abs(leftEdge.ry) <= 8.5,
@@ -173,8 +197,11 @@ async function probeMicroWidgets() {
 
   return {
     chart: {
-      a: chartA, b: chartB, changed: chartA !== chartB,
-      canvasW: canvas.width, canvasH: canvas.height,
+      a: chartA,
+      b: chartB,
+      changed: chartA !== chartB,
+      canvasW: canvas.width,
+      canvasH: canvas.height,
       canvasDrawn: canvas.width > 0 && canvas.height > 0,
     },
     topology: { nodeCount: nodes.length, capBefore, capAfter, changed: capBefore !== capAfter },
@@ -187,7 +214,10 @@ const page = targets.find((t) => t.type === 'page')
 if (!page) throw new Error('no page target')
 
 const ws = new WebSocket(page.webSocketDebuggerUrl)
-await new Promise((res, rej) => { ws.once('open', res); ws.once('error', rej) })
+await new Promise((res, rej) => {
+  ws.once('open', res)
+  ws.once('error', rej)
+})
 
 let nextId = 1
 const pending = new Map()
@@ -212,29 +242,42 @@ ws.on('message', (raw) => {
   }
 })
 
-const send = (method, params = {}) => new Promise((resolve, reject) => {
-  const id = nextId++
-  pending.set(id, { resolve, reject })
-  ws.send(JSON.stringify({ id, method, params }))
-})
+const send = (method, params = {}) =>
+  new Promise((resolve, reject) => {
+    const id = nextId++
+    pending.set(id, { resolve, reject })
+    ws.send(JSON.stringify({ id, method, params }))
+  })
 
 const run = async (fnOrExpr) => {
   const expression = typeof fnOrExpr === 'function' ? '(' + fnOrExpr.toString() + ')()' : fnOrExpr
-  const res = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })
+  const res = await send('Runtime.evaluate', {
+    expression,
+    awaitPromise: true,
+    returnByValue: true,
+  })
   if (res.exceptionDetails) {
     return { __error: res.exceptionDetails.exception?.description ?? res.exceptionDetails.text }
   }
   return res.result?.value
 }
 
-const moveMouse = (x, y) => send('Input.dispatchMouseEvent', {
-  type: 'mouseMoved', x, y, button: 'none', pointerType: 'mouse',
-})
+const moveMouse = (x, y) =>
+  send('Input.dispatchMouseEvent', {
+    type: 'mouseMoved',
+    x,
+    y,
+    button: 'none',
+    pointerType: 'mouse',
+  })
 
 await send('Page.enable')
 await send('Runtime.enable')
 await send('Emulation.setDeviceMetricsOverride', {
-  width: 1600, height: 1100, deviceScaleFactor: 1, mobile: false,
+  width: 1600,
+  height: 1100,
+  deviceScaleFactor: 1,
+  mobile: false,
 })
 await send('Page.navigate', { url: URL_TO_TEST })
 await sleep(6500)

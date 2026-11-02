@@ -459,13 +459,13 @@ report.assertions = {
   hudShowsFrameTime: num(parseFloat(hud.frame ?? '')) !== null && parseFloat(hud.frame) > 0,
   // The displayed count must match the live counter, so a hard-coded string
   // could not pass.
-  hudShowsParticles:
-    hud.particles === (hud.counters?.particles ?? 0).toLocaleString('en-US'),
+  hudShowsParticles: hud.particles === (hud.counters?.particles ?? 0).toLocaleString('en-US'),
   // The physics sandbox is on screen in this state, so its solver must be timed.
   hudShowsPhysicsSolve: num(hud.counters?.physicsSolveMs) !== null,
-  hudShowsHeap: (hud.counters?.heapAvailable ?? false)
-    ? num(parseFloat((hud.heap ?? '').replace(/^HEAP/, ''))) !== null
-    : true,
+  hudShowsHeap:
+    (hud.counters?.heapAvailable ?? false)
+      ? num(parseFloat((hud.heap ?? '').replace(/^HEAP/, ''))) !== null
+      : true,
 }
 
 report.exceptions = exceptions
@@ -487,8 +487,16 @@ console.log(
         onscreen: on,
         sandboxAwake: awake,
         sandboxAsleep: asleep,
-        high: { effects: high.quality?.effects, particles: high.counters?.particles, dpr: high.pixelRatio },
-        medium: { effects: medium.quality?.effects, particles: medium.counters?.particles, dpr: medium.pixelRatio },
+        high: {
+          effects: high.quality?.effects,
+          particles: high.counters?.particles,
+          dpr: high.pixelRatio,
+        },
+        medium: {
+          effects: medium.quality?.effects,
+          particles: medium.counters?.particles,
+          dpr: medium.pixelRatio,
+        },
         hud,
         arm: report.P7_armAfterManual,
       },

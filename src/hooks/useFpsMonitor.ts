@@ -32,10 +32,7 @@ const SAMPLE_INTERVAL = 250
  * @param onSample Called ~4×/s with the latest reading. Keep it stable
  *                 (useCallback) and treat it as a DOM-write sink.
  */
-export function useFpsMonitor(
-  enabled: boolean,
-  onSample: (sample: FpsSample) => void,
-): void {
+export function useFpsMonitor(enabled: boolean, onSample: (sample: FpsSample) => void): void {
   // Keep the latest callback without restarting the loop when it changes.
   const callbackRef = useRef(onSample)
   callbackRef.current = onSample

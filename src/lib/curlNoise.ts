@@ -29,8 +29,8 @@ const G3 = 1 / 6
 
 /** The 12 gradient directions of the cubic lattice. */
 const GRAD3 = new Float32Array([
-  1, 1, 0, -1, 1, 0, 1, -1, 0, -1, -1, 0, 1, 0, 1, -1, 0, 1, 1, 0, -1, -1, 0, -1, 0, 1, 1, 0, -1,
-  1, 0, 1, -1, 0, -1, -1,
+  1, 1, 0, -1, 1, 0, 1, -1, 0, -1, -1, 0, 1, 0, 1, -1, 0, 1, 1, 0, -1, -1, 0, -1, 0, 1, 1, 0, -1, 1,
+  0, 1, -1, 0, -1, -1,
 ])
 
 /** Deterministic permutation table — a fixed seed keeps visuals reproducible. */
@@ -83,18 +83,48 @@ export function snoise3(x: number, y: number, z: number): number {
   let i1: number, j1: number, k1: number, i2: number, j2: number, k2: number
   if (x0 >= y0) {
     if (y0 >= z0) {
-      i1 = 1; j1 = 0; k1 = 0; i2 = 1; j2 = 1; k2 = 0
+      i1 = 1
+      j1 = 0
+      k1 = 0
+      i2 = 1
+      j2 = 1
+      k2 = 0
     } else if (x0 >= z0) {
-      i1 = 1; j1 = 0; k1 = 0; i2 = 1; j2 = 0; k2 = 1
+      i1 = 1
+      j1 = 0
+      k1 = 0
+      i2 = 1
+      j2 = 0
+      k2 = 1
     } else {
-      i1 = 0; j1 = 0; k1 = 1; i2 = 1; j2 = 0; k2 = 1
+      i1 = 0
+      j1 = 0
+      k1 = 1
+      i2 = 1
+      j2 = 0
+      k2 = 1
     }
   } else if (y0 < z0) {
-    i1 = 0; j1 = 0; k1 = 1; i2 = 0; j2 = 1; k2 = 1
+    i1 = 0
+    j1 = 0
+    k1 = 1
+    i2 = 0
+    j2 = 1
+    k2 = 1
   } else if (x0 < z0) {
-    i1 = 0; j1 = 1; k1 = 0; i2 = 0; j2 = 1; k2 = 1
+    i1 = 0
+    j1 = 1
+    k1 = 0
+    i2 = 0
+    j2 = 1
+    k2 = 1
   } else {
-    i1 = 0; j1 = 1; k1 = 0; i2 = 1; j2 = 1; k2 = 0
+    i1 = 0
+    j1 = 1
+    k1 = 0
+    i2 = 1
+    j2 = 1
+    k2 = 0
   }
 
   const x1 = x0 - i1 + G3
@@ -158,13 +188,7 @@ const FD_EPS = 0.03
  *
  * Requires 12 noise samples; only used while baking.
  */
-function curlAt(
-  x: number,
-  y: number,
-  z: number,
-  out: Float32Array,
-  o: number,
-): void {
+function curlAt(x: number, y: number, z: number, out: Float32Array, o: number): void {
   const e = FD_EPS
   const inv = 1 / (2 * e)
 

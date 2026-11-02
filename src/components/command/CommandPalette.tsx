@@ -4,12 +4,7 @@ import { Check, CornerDownLeft, Search } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { fuzzyMatch, toRanges } from '@/lib/fuzzyMatch'
 import { startScroll, stopScroll } from '@/lib/scrollEngine'
-import {
-  GROUP_ORDER,
-  buildCommands,
-  type Command,
-  type CommandGroup,
-} from '@/config/commands'
+import { GROUP_ORDER, buildCommands, type Command, type CommandGroup } from '@/config/commands'
 import { useAppStore } from '@/store/useAppStore'
 import { soundEngine } from '@/utils/soundEngine'
 
@@ -115,9 +110,7 @@ export function CommandPalette() {
     // headers as you type; ranking happens only WITHIN a group.
     return GROUP_ORDER.map((group) => ({
       group,
-      items: scored
-        .filter((item) => item.cmd.group === group)
-        .sort((a, b) => b.score - a.score),
+      items: scored.filter((item) => item.cmd.group === group).sort((a, b) => b.score - a.score),
     })).filter((section) => section.items.length > 0)
   }, [commands, query])
 
@@ -398,9 +391,7 @@ export function CommandPalette() {
                           role="option"
                           aria-selected={isActive}
                           onPointerEnter={() => {
-                            const index = flat.findIndex(
-                              (entry) => entry.cmd.id === item.cmd.id,
-                            )
+                            const index = flat.findIndex((entry) => entry.cmd.id === item.cmd.id)
                             if (index >= 0) setActiveIndex(index)
                           }}
                           onClick={() => void execute(item)}
@@ -489,7 +480,9 @@ export function CommandPalette() {
                 </span>
               </span>
               <span className="tabular-nums">
-                {t.commands.countLabel.replace('{items}', String(flat.length)).replace('{total}', String(commands.length))}
+                {t.commands.countLabel
+                  .replace('{items}', String(flat.length))
+                  .replace('{total}', String(commands.length))}
               </span>
             </div>
           </motion.div>

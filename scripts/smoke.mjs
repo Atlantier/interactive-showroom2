@@ -124,7 +124,9 @@ const diag = await evaluate(`(() => {
 })()`)
 
 // Scroll to the middle of the page and grab a second frame.
-await evaluate(`window.lenis && window.lenis.scrollTo ? window.lenis.scrollTo(document.body.scrollHeight * 0.45, { immediate: false }) : window.scrollTo(0, document.body.scrollHeight * 0.45); true`)
+await evaluate(
+  `window.lenis && window.lenis.scrollTo ? window.lenis.scrollTo(document.body.scrollHeight * 0.45, { immediate: false }) : window.scrollTo(0, document.body.scrollHeight * 0.45); true`,
+)
 await sleep(2500)
 await evaluate(`window.scrollTo(0, document.body.scrollHeight * 0.42); true`)
 await sleep(1200)

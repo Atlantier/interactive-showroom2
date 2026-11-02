@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { clamp, damp, lerp, mapRange, safeNumber, createSpring, stepSpring, resetSpring } from './math'
+import {
+  clamp,
+  damp,
+  lerp,
+  mapRange,
+  safeNumber,
+  createSpring,
+  stepSpring,
+  resetSpring,
+} from './math'
 
 /**
  * These are the numbers the README quotes and the animation depends on.

@@ -334,8 +334,7 @@ report.S7_fall = await run(function s7() {
      */
     fell: yBefore !== null && yAfter !== null ? yAfter > yBefore + 6 : false,
     dropDistance: yBefore !== null && yAfter !== null ? yAfter - yBefore : null,
-    aboveFloor:
-      stillBroken.length > 0 ? stillBroken[0].tagY < after.height : null,
+    aboveFloor: stillBroken.length > 0 ? stillBroken[0].tagY < after.height : null,
     detached: stillBroken.length > 0 ? stillBroken[0].attached === false : null,
     ropeAlpha: stillBroken.length ? stillBroken[0].ropeAlpha : null,
   }
@@ -463,24 +462,35 @@ report.assertions = {
   reforgeRebuildsRopes: report.S8_afterReforge?.lanyards?.length === 4,
 }
 
-report.diagnostics = { angleSpread: Number(angleSpread.toFixed(2)), windDrift: Number(windDrift.toFixed(2)) }
+report.diagnostics = {
+  angleSpread: Number(angleSpread.toFixed(2)),
+  windDrift: Number(windDrift.toFixed(2)),
+}
 report.windSamples = windSamples
 report.exceptions = exceptions
 report.consoleErrors = consoleErrors
 writeFileSync('screenshots/sandbox-report.json', JSON.stringify(report, null, 2))
 
-const failed = Object.entries(report.assertions).filter(([, v]) => !v).map(([k]) => k)
-console.log(JSON.stringify({
-  assertions: report.assertions,
-  diagnostics: report.diagnostics,
-  drag: report.S6_drag,
-  fall: report.S7_fall,
-  restAngles,
-  restStrains,
-  exceptions,
-  consoleErrors,
-  failed,
-}, null, 2))
+const failed = Object.entries(report.assertions)
+  .filter(([, v]) => !v)
+  .map(([k]) => k)
+console.log(
+  JSON.stringify(
+    {
+      assertions: report.assertions,
+      diagnostics: report.diagnostics,
+      drag: report.S6_drag,
+      fall: report.S7_fall,
+      restAngles,
+      restStrains,
+      exceptions,
+      consoleErrors,
+      failed,
+    },
+    null,
+    2,
+  ),
+)
 
 finish({ label: 'sandbox', exceptions, consoleErrors, report })
 ws.close()

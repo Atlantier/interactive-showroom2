@@ -3,10 +3,7 @@ import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion'
 import { cn } from '@/lib/cn'
 import { soundEngine } from '@/utils/soundEngine'
 import { useSpotlightRegistry } from '@/components/bento/spotlightRegistry'
-import {
-  CardParticleCanvas,
-  type CardParticleHandle,
-} from '@/components/bento/CardParticleCanvas'
+import { CardParticleCanvas, type CardParticleHandle } from '@/components/bento/CardParticleCanvas'
 
 /**
  * SpotlightCard — a glass panel with a cursor-following spotlight, a border glow
@@ -170,9 +167,7 @@ export function SpotlightCard({
    * `children` opaque — the card never needs to know which controls its content
    * renders, and any future button gets the treatment for free.
    */
-  const actionCentre = (
-    target: Element,
-  ): { x: number; y: number } | null => {
+  const actionCentre = (target: Element): { x: number; y: number } | null => {
     const card = cardRef.current
     if (!card) return null
     const cardRect = card.getBoundingClientRect()
@@ -188,7 +183,6 @@ export function SpotlightCard({
     if (!target) return
     const centre = actionCentre(target)
     if (centre) emberRef.current?.setAttractor(centre.x, centre.y)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handleEmberOut = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
@@ -205,7 +199,6 @@ export function SpotlightCard({
     if (!target) return
     const centre = actionCentre(target)
     if (centre) emberRef.current?.burst(centre.x, centre.y)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   /* ── Publish the handle to the grid ─────────────────────────────────────── */
@@ -317,8 +310,7 @@ export function SpotlightCard({
             contain: 'paint',
             willChange: 'background',
             background: `radial-gradient(${BORDER_GLOW_RADIUS}px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(${glowColor}, 0.5), transparent 40%)`,
-            WebkitMask:
-              'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
+            WebkitMask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
             WebkitMaskComposite: 'xor',
             mask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
             maskComposite: 'exclude',
@@ -347,11 +339,7 @@ export function SpotlightCard({
             Sits under the content and over the spotlight fills, so embers read as
             light inside the glass rather than as paint on top of it. */}
         <div aria-hidden className="pointer-events-none absolute inset-0 z-0">
-          <CardParticleCanvas
-            ref={emberRef}
-            glowColor={glowColor}
-            className="h-full w-full"
-          />
+          <CardParticleCanvas ref={emberRef} glowColor={glowColor} className="h-full w-full" />
         </div>
 
         {/* ── Layer 4: perimeter comets ───────────────────────────────────────

@@ -174,11 +174,17 @@ const DEFAULT_SECTION = 'hero'
  *   - NEVER use these values as React state; read them inside an animation loop.
  */
 export const transient: TransientState = {
-  mouse: { x: 0, y: 0, px: 0, py: 0, active: false,
+  mouse: {
+    x: 0,
+    y: 0,
+    px: 0,
+    py: 0,
+    active: false,
     // Eased by the scroll engine; 0 while no pointer is over the viewport.
     strength: 0,
     tx: 0,
-    ty: 0 },
+    ty: 0,
+  },
   scroll: { progress: 0, velocity: 0 },
 }
 
@@ -264,14 +270,13 @@ function ensurePointerBox(): PointerBox {
   if (!pointerBoxDirty) return pointerBox
 
   const element =
-    pointerCanvas ??
-    (typeof document !== 'undefined' ? document.querySelector('canvas') : null)
+    pointerCanvas ?? (typeof document !== 'undefined' ? document.querySelector('canvas') : null)
   const rect = element?.getBoundingClientRect()
 
   pointerBox.left = rect?.left ?? 0
   pointerBox.top = rect?.top ?? 0
-  pointerBox.width = rect && rect.width > 0 ? rect.width : (window.innerWidth || 1)
-  pointerBox.height = rect && rect.height > 0 ? rect.height : (window.innerHeight || 1)
+  pointerBox.width = rect && rect.width > 0 ? rect.width : window.innerWidth || 1
+  pointerBox.height = rect && rect.height > 0 ? rect.height : window.innerHeight || 1
   pointerBoxDirty = false
   return pointerBox
 }
@@ -356,8 +361,7 @@ export const useAppStore = create<AppState>()(
       toggleSound: () => set((state) => ({ soundEnabled: !state.soundEnabled })),
 
       setFpsMonitorEnabled: (enabled) => set({ fpsMonitorEnabled: enabled }),
-      toggleFpsMonitor: () =>
-        set((state) => ({ fpsMonitorEnabled: !state.fpsMonitorEnabled })),
+      toggleFpsMonitor: () => set((state) => ({ fpsMonitorEnabled: !state.fpsMonitorEnabled })),
 
       // A manual choice disarms the adaptive monitor for the session, and is the
       // only thing that gets persisted.
@@ -419,8 +423,7 @@ export const useAppStore = create<AppState>()(
       setPerfHudOpen: (open) => set({ perfHudOpen: open }),
       togglePerfHud: () => set((state) => ({ perfHudOpen: !state.perfHudOpen })),
 
-      showPerfNotice: (title, detail) =>
-        set({ perfNotice: { title, detail, nonce: Date.now() } }),
+      showPerfNotice: (title, detail) => set({ perfNotice: { title, detail, nonce: Date.now() } }),
       clearPerfNotice: () => {
         // Only clear the notice that is currently showing, so a stale timer
         // cannot dismiss a newer one.

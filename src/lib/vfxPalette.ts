@@ -180,7 +180,6 @@ export function vfxLabelKey(preset: VfxPreset): 'emerald' | 'supernova' | 'phant
   }
 }
 
-
 /**
  * Narrow an arbitrary string to a preset id.
  *
@@ -190,5 +189,7 @@ export function vfxLabelKey(preset: VfxPreset): 'emerald' | 'supernova' | 'phant
  * this guard instead of casting.
  */
 export function isVfxPreset(value: string | null | undefined): value is VfxPreset {
-  return value !== null && value !== undefined && (VFX_PRESET_ORDER as readonly string[]).includes(value)
+  return (
+    value !== null && value !== undefined && (VFX_PRESET_ORDER as readonly string[]).includes(value)
+  )
 }

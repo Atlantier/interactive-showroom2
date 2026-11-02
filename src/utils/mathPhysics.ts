@@ -175,11 +175,7 @@ export function windAcceleration(
  * the same accumulator as any external force so callers can queue wind before
  * calling this.
  */
-export function integratePoints(
-  points: VerletPoint[],
-  dt: number,
-  gravityY: number,
-): void {
+export function integratePoints(points: VerletPoint[], dt: number, gravityY: number): void {
   const dt2 = dt * dt
   for (let i = 0; i < points.length; i++) {
     const p = points[i]
@@ -273,10 +269,7 @@ export function relaxConstraints(
  * the spec. Positive means stretched; a slack rope reports a negative value,
  * which must not trigger a break.
  */
-export function measureMaxStrain(
-  points: VerletPoint[],
-  constraints: VerletConstraint[],
-): number {
+export function measureMaxStrain(points: VerletPoint[], constraints: VerletConstraint[]): number {
   let max = 0
   for (let ci = 0; ci < constraints.length; ci++) {
     const c = constraints[ci]
@@ -442,10 +435,7 @@ export function catmullRomToBezier(
  *
  * Leaves the path open; the caller decides whether to stroke or fill.
  */
-export function traceBezierPath(
-  ctx: CanvasRenderingContext2D,
-  segments: BezierSegment[],
-): void {
+export function traceBezierPath(ctx: CanvasRenderingContext2D, segments: BezierSegment[]): void {
   if (segments.length === 0) return
   const first = segments[0]
   if (!first) return
@@ -856,9 +846,7 @@ export class LanyardSimulation {
     const ly = dx * sin + dy * cos
     // A little slack so thin edges are still easy to grab.
     const pad = 6
-    return (
-      Math.abs(lx) <= tag.width / 2 + pad && Math.abs(ly) <= tag.height / 2 + pad
-    )
+    return Math.abs(lx) <= tag.width / 2 + pad && Math.abs(ly) <= tag.height / 2 + pad
   }
 
   /* ── Reset ─────────────────────────────────────────────────────────────── */
@@ -1269,8 +1257,8 @@ export class LanyardSimulation {
 
     // Verlet velocity is the position delta, so nudging px by the same delta the
     // tag moved transfers its momentum into the rope.
-    end.px -= (targetX - end.x) + (t.vx * dt)
-    end.py -= (targetY - end.y) + (t.vy * dt)
+    end.px -= targetX - end.x + t.vx * dt
+    end.py -= targetY - end.y + t.vy * dt
     end.x = targetX
     end.y = targetY
   }

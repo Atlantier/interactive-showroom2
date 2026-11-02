@@ -9,6 +9,9 @@
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
+    "lint": "eslint . --max-warnings=13",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "preview": "vite preview",
     "verify:selftest": "node scripts/lib/verify.selftest.mjs",
     "verify:budget": "node scripts/verify-budget.mjs",
@@ -31,6 +34,7 @@
     "zustand": "^5.0.16"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^24.19.2",
     "@types/react": "^19.3.0",
@@ -39,8 +43,12 @@
     "@types/ws": "^8.18.2",
     "@vitejs/plugin-react": "^6.1.2",
     "axe-core": "4.13.0",
+    "eslint": "^10.14.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "prettier": "^3.9.10",
     "tailwindcss": "^4.3.3",
     "typescript": "~5.9.3",
+    "typescript-eslint": "^8.72.1",
     "vite": "^8.3.5",
     "vitest": "5.0.5",
     "ws": "^8.22.1"

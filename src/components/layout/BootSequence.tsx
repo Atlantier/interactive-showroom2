@@ -194,15 +194,18 @@ export function BootSequence() {
         ].join(' ')}
       >
         {/*
-          * Paint order matters: the radial wash is opaque in the middle, so it has
-          * to come FIRST and the engineering grid sit on top of it. The other way
-          * round the grid is invisible.
-          */}
+         * Paint order matters: the radial wash is opaque in the middle, so it has
+         * to come FIRST and the engineering grid sit on top of it. The other way
+         * round the grid is invisible.
+         */}
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_120%_80%_at_50%_45%,#0b1424_0%,#04060b_62%,#020308_100%)]"
         />
-        <div aria-hidden className="pointer-events-none absolute inset-0 grid-backdrop opacity-[0.35]" />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 grid-backdrop opacity-[0.35]"
+        />
 
         <div className="relative flex flex-col items-center gap-5">
           {/* ink-300 / ink-500 rather than the dimmer pair: a boot status the

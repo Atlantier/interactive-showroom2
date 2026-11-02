@@ -29,7 +29,8 @@ function buildChain(lengths: number[]): IKJoint[] {
 
 function boneLengths(joints: IKJoint[]): number[] {
   const out: number[] = []
-  for (let i = 1; i < joints.length; i++) out.push(dist(joints[i - 1] as IKJoint, joints[i] as IKJoint))
+  for (let i = 1; i < joints.length; i++)
+    out.push(dist(joints[i - 1] as IKJoint, joints[i] as IKJoint))
   return out
 }
 

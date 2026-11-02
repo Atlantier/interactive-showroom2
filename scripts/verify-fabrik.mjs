@@ -127,10 +127,7 @@ function installHelpers() {
       // Spine spacing error.
       let spacingErr = 0
       for (let i = 1; i < c.spine.length; i++) {
-        const d = Math.hypot(
-          c.spine[i].x - c.spine[i - 1].x,
-          c.spine[i].y - c.spine[i - 1].y,
-        )
+        const d = Math.hypot(c.spine[i].x - c.spine[i - 1].x, c.spine[i].y - c.spine[i - 1].y)
         spacingErr = Math.max(spacingErr, Math.abs(d - 21))
       }
       return {
@@ -351,9 +348,7 @@ function installHelpers() {
       const s = wrap()
       if (!s) return null
       const boxes = Array.from(s.querySelectorAll('input[type="checkbox"]'))
-      const box = boxes.find((b) =>
-        /show ik vectors/i.test(b.closest('label')?.textContent ?? ''),
-      )
+      const box = boxes.find((b) => /show ik vectors/i.test(b.closest('label')?.textContent ?? ''))
       return box ? { found: true, checked: box.checked } : { found: false }
     },
 
@@ -504,8 +499,6 @@ report.A_outOfReach = await run(function armFar() {
  * short of tolerance while burning every sweep. */
 report.A_nearLimit = await run(function armNearLimit() {
   const a = window.__fabrik.arm()
-  const c = window.__fc.canvas()
-  const r = c.getBoundingClientRect()
   // Aim straight up so the pose is deterministic, at 99% of the outer clamp.
   const reach = a.lengths.reduce((s, v) => s + v, 0)
   window.__fc.pointer(a.baseX, a.baseY - reach * 0.99)
@@ -729,7 +722,10 @@ await run(function on() {
 })
 await sleep(800)
 const shotCreatureDebug = await send('Page.captureScreenshot', { format: 'png' })
-writeFileSync('screenshots/93-fabrik-creature-debug.png', Buffer.from(shotCreatureDebug.data, 'base64'))
+writeFileSync(
+  'screenshots/93-fabrik-creature-debug.png',
+  Buffer.from(shotCreatureDebug.data, 'base64'),
+)
 report.creatureDebugInk = await run(function ink() {
   return window.__fc.ink()
 })
@@ -764,8 +760,7 @@ report.assertions = {
   fireStartsLaser: (fire.laserT ?? 1) < 0.2,
   fireIncrementsShots: (fire.shots ?? 0) >= 1,
   fireRecoils: (fire.recoilMag ?? 0) > 0.5,
-  recoilSettles:
-    (recoil.settled ?? 99) < (recoil.peak ?? 0) * 0.5 && (recoil.settled ?? 99) < 3,
+  recoilSettles: (recoil.settled ?? 99) < (recoil.peak ?? 0) * 0.5 && (recoil.settled ?? 99) < 3,
 
   /* Creature */
   creatureTopology:
@@ -791,8 +786,7 @@ report.assertions = {
   gaitGroupsAreExclusive: (gait.mixedGroupFrames ?? 1) === 0,
   // Diagonal partners swing as a unit rather than one after the other.
   gaitLiftsWholeGroup:
-    (gait.startEventCount ?? 0) > 2 &&
-    gait.synchronousStarts === gait.startEventCount,
+    (gait.startEventCount ?? 0) > 2 && gait.synchronousStarts === gait.startEventCount,
   // Strict alternation: a group never takes two phases in a row.
   gaitAlternatesGroups: (gait.repeats ?? 1) === 0 && (gait.alternations ?? 0) > 2,
   // There must be a moment with all four feet planted between phases.
@@ -809,8 +803,7 @@ report.assertions = {
     (report.armDebugInk?.lit ?? 0) > (report.S_armInk?.lit ?? 0) &&
     (report.creatureDebugInk?.lit ?? 0) > (report.S_creatureInk?.lit ?? 0),
   debugToggleExists: report.debugToggles?.found === true,
-  modeButtonsExist:
-    report.modeButtons?.arm === true && report.modeButtons?.creature === true,
+  modeButtonsExist: report.modeButtons?.arm === true && report.modeButtons?.creature === true,
 }
 
 report.exceptions = exceptions

@@ -167,8 +167,18 @@ try {
   }
 
   const press = async (key, code, modifiers = 0) => {
-    await send('Input.dispatchKeyEvent', { type: 'keyDown', key, windowsVirtualKeyCode: code, modifiers })
-    await send('Input.dispatchKeyEvent', { type: 'keyUp', key, windowsVirtualKeyCode: code, modifiers })
+    await send('Input.dispatchKeyEvent', {
+      type: 'keyDown',
+      key,
+      windowsVirtualKeyCode: code,
+      modifiers,
+    })
+    await send('Input.dispatchKeyEvent', {
+      type: 'keyUp',
+      key,
+      windowsVirtualKeyCode: code,
+      modifiers,
+    })
     await sleep(90)
   }
 
@@ -184,7 +194,9 @@ try {
 
   for (let attempt = 0; attempt < 60; attempt++) {
     await sleep(500)
-    const ready = await evaluate(`document.readyState === 'complete' && !!document.querySelector('main')`)
+    const ready = await evaluate(
+      `document.readyState === 'complete' && !!document.querySelector('main')`,
+    )
     if (ready) break
   }
   await sleep(2500)
@@ -199,7 +211,11 @@ try {
     docLang.lang === 'en',
     `lang="${docLang.lang}"`,
   )
-  check('title: document.title is localised and non-empty', docLang.title.length > 0, `"${docLang.title}"`)
+  check(
+    'title: document.title is localised and non-empty',
+    docLang.title.length > 0,
+    `"${docLang.title}"`,
+  )
 
   /*
    * 0b. axe-core — the batch-3 acceptance criterion (critical + serious = 0).
@@ -255,11 +271,11 @@ try {
     'meta: Open Graph / Twitter cards are complete',
     Boolean(
       social.type &&
-        social.url.startsWith('https://') &&
-        social.locale &&
-        social.title.length > 0 &&
-        social.description.length > 0 &&
-        social.twitterCard,
+      social.url.startsWith('https://') &&
+      social.locale &&
+      social.title.length > 0 &&
+      social.description.length > 0 &&
+      social.twitterCard,
     ),
     `type=${social.type} locale=${social.locale} url=${social.url} card=${social.twitterCard}`,
   )
@@ -378,15 +394,18 @@ try {
     'modal: focus starts inside, Tab never escapes, Escape restores focus',
     Boolean(
       modal.found &&
-        trapped.open &&
-        trapped.startInside &&
-        tabsInside.every(Boolean) &&
-        restored.gone &&
-        restored.backOnButton,
+      trapped.open &&
+      trapped.startInside &&
+      tabsInside.every(Boolean) &&
+      restored.gone &&
+      restored.backOnButton,
     ),
     `start ${trapped.startInside}, trapped ${tabsInside.filter(Boolean).length}/6`,
   )
-  check('modal: background is inert while open and cleared after', inertDuring && restored.inertCleared)
+  check(
+    'modal: background is inert while open and cleared after',
+    inertDuring && restored.inertCleared,
+  )
 
   /* 4b. WCAG 2.4.3 — the closed mobile drawer must not be reachable. */
   const drawer = await evaluate(`(() => {
@@ -457,11 +476,11 @@ try {
     'focus: the focused topology node paints a ring (WCAG 2.4.7)',
     Boolean(
       ring.found &&
-        ring.before === 0 &&
-        ring.after >= 1 &&
-        ring.visible &&
-        ring.stroke !== 'none' &&
-        Number.parseFloat(ring.width) >= 1,
+      ring.before === 0 &&
+      ring.after >= 1 &&
+      ring.visible &&
+      ring.stroke !== 'none' &&
+      Number.parseFloat(ring.width) >= 1,
     ),
     ring.found
       ? `nodes ${ring.nodes}, rings ${ring.before} -> ${ring.after}, visible ${ring.visible}, stroke ${ring.stroke} @ ${ring.width}`
@@ -503,10 +522,10 @@ try {
     'focus: terminal input paints its ring on the card (WCAG 2.4.7)',
     Boolean(
       terminalRing.found &&
-        terminalRing.focused &&
-        terminalRing.before === 'none' &&
-        terminalRing.after !== 'none' &&
-        Number.parseFloat(terminalRing.width) >= 2,
+      terminalRing.focused &&
+      terminalRing.before === 'none' &&
+      terminalRing.after !== 'none' &&
+      Number.parseFloat(terminalRing.width) >= 2,
     ),
     terminalRing.found
       ? `outline ${terminalRing.before} -> ${terminalRing.after} ${terminalRing.width} ${terminalRing.color}`
@@ -535,7 +554,9 @@ try {
   )
 
   /* 6. Touch scrolling over the sandboxes (not a WCAG number, but the reason PB-05 exists). */
-  await evaluate(`(() => { const el = document.getElementById('playground'); window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY); return true })()`)
+  await evaluate(
+    `(() => { const el = document.getElementById('playground'); window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY); return true })()`,
+  )
   await sleep(1500)
   const touchAction = await evaluate(`(() => {
     const canvases = [...document.querySelectorAll('canvas')]
@@ -584,8 +605,9 @@ try {
     'keyboard: both sandbox canvases are tabbable, named and described',
     keyboardTargets.length === 2 &&
       keyboardTargets.every((c) => c.tabIndex === 0 && c.focused && c.label > 20 && c.hint > 20),
-    keyboardTargets.map((c) => `${c.id} tabIndex=${c.tabIndex} name=${c.label} hint=${c.hint}`).join(' | ') ||
-      'no role=application canvas',
+    keyboardTargets
+      .map((c) => `${c.id} tabIndex=${c.tabIndex} name=${c.label} hint=${c.hint}`)
+      .join(' | ') || 'no role=application canvas',
   )
 
   const lanyardKeys = await evaluate(`(async () => {
@@ -608,10 +630,10 @@ try {
     'keyboard: lanyard grabs, swings and releases from the keyboard',
     Boolean(
       lanyardKeys.found &&
-        lanyardKeys.idleArrowScrollsPage &&
-        /grabbed|抓住/i.test(lanyardKeys.grabbed) &&
-        lanyardKeys.heldArrowConsumed &&
-        /released|松手/i.test(lanyardKeys.released),
+      lanyardKeys.idleArrowScrollsPage &&
+      /grabbed|抓住/i.test(lanyardKeys.grabbed) &&
+      lanyardKeys.heldArrowConsumed &&
+      /released|松手/i.test(lanyardKeys.released),
     ),
     lanyardKeys.found
       ? `idle arrow scrolls=${lanyardKeys.idleArrowScrollsPage}, grabbed "${lanyardKeys.grabbed}", held arrow consumed=${lanyardKeys.heldArrowConsumed}, released "${lanyardKeys.released}"`
@@ -631,7 +653,9 @@ try {
   check(
     'keyboard: arm steers with arrows and fires with Enter',
     Boolean(armKeys.found && armKeys.arrowConsumed && /fired|发射/i.test(armKeys.fired)),
-    armKeys.found ? `arrow consumed=${armKeys.arrowConsumed}, "${armKeys.fired}"` : 'canvas not found',
+    armKeys.found
+      ? `arrow consumed=${armKeys.arrowConsumed}, "${armKeys.fired}"`
+      : 'canvas not found',
   )
 } catch (error) {
   check('harness', false, String(error?.message ?? error))
@@ -653,7 +677,8 @@ if (KNOWN_OPEN.length > 0) {
 
 const failed = results.filter((r) => !r.ok)
 if (failed.length > 0) {
-  for (const item of failed) console.error(`::error::${item.name}${item.detail ? ` (${item.detail})` : ''}`)
+  for (const item of failed)
+    console.error(`::error::${item.name}${item.detail ? ` (${item.detail})` : ''}`)
   process.exit(1)
 }
 console.log(`\na11y OK — ${results.length} checks`)

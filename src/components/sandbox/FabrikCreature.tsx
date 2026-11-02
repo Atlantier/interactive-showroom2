@@ -832,8 +832,8 @@ function stepArm(rig: ArmRig, dt: number, pointerX: number, pointerY: number): v
   const reach = chainLength(rig.lengths)
   const minReach = reach * ARM_TARGET_MIN
   const maxReach = reach * ARM_TARGET_MAX
-  let dx = rig.target.x - base.x
-  let dy = rig.target.y - base.y
+  const dx = rig.target.x - base.x
+  const dy = rig.target.y - base.y
   const dist = Math.sqrt(dx * dx + dy * dy)
   if (dist > maxReach) {
     const k = maxReach / dist
@@ -864,10 +864,8 @@ function stepArm(rig: ArmRig, dt: number, pointerX: number, pointerY: number): v
   }
 
   /* ── Recoil spring ───────────────────────────────────────────────────── */
-  rig.recoilVel.x +=
-    (-RECOIL_STIFFNESS * rig.recoil.x - RECOIL_DAMPING * rig.recoilVel.x) * dt
-  rig.recoilVel.y +=
-    (-RECOIL_STIFFNESS * rig.recoil.y - RECOIL_DAMPING * rig.recoilVel.y) * dt
+  rig.recoilVel.x += (-RECOIL_STIFFNESS * rig.recoil.x - RECOIL_DAMPING * rig.recoilVel.x) * dt
+  rig.recoilVel.y += (-RECOIL_STIFFNESS * rig.recoil.y - RECOIL_DAMPING * rig.recoilVel.y) * dt
   rig.recoil.x += rig.recoilVel.x * dt
   rig.recoil.y += rig.recoilVel.y * dt
 
@@ -1295,13 +1293,11 @@ function stepCreature(
     leg.joints[2].x = footX
     leg.joints[2].y = footY
 
-    solveFABRIK(
-      leg.joints,
-      { x: footX, y: footY },
-      leg.lengths,
-      0.4,
-      { maxBend: LEG_MAX_BEND, maxIterations: 8, result: leg.result },
-    )
+    solveFABRIK(leg.joints, { x: footX, y: footY }, leg.lengths, 0.4, {
+      maxBend: LEG_MAX_BEND,
+      maxIterations: 8,
+      result: leg.result,
+    })
   }
 
   /* ── Landing ripples ─────────────────────────────────────────────────────
@@ -1396,12 +1392,7 @@ function stepCreature(
  * the body) plus a little drop toward the ground plane, plus a forward lead that
  * gives the leg something to push against.
  */
-function stanceFor(
-  hip: Vec2,
-  dirX: number,
-  dirY: number,
-  side: number,
-): { x: number; y: number } {
+function stanceFor(hip: Vec2, dirX: number, dirY: number, side: number): { x: number; y: number } {
   const perpX = -dirY * side
   const perpY = dirX * side
   return {
@@ -1476,7 +1467,7 @@ export function FabrikCreature({ className }: { className?: string }) {
       cssW = Math.max(1, Math.round(rect.width))
       cssH = Math.max(1, Math.round(rect.height))
       // Matches the lanyard: glow-only canvas, so 1.5 is indistinguishable from 2.
-    dpr = Math.min(window.devicePixelRatio || 1, 1.5)
+      dpr = Math.min(window.devicePixelRatio || 1, 1.5)
       canvas.width = Math.round(cssW * dpr)
       canvas.height = Math.round(cssH * dpr)
       canvas.style.width = `${cssW}px`
@@ -1760,16 +1751,12 @@ export function FabrikCreature({ className }: { className?: string }) {
         className="relative block h-full w-full touch-none select-none"
         /* `pan-y` for the same reason as the lanyard sandbox: this canvas covers ~48vh,
        and `none` made it a dead zone for page scrolling on touch devices. */
-    style={{ touchAction: 'pan-y', cursor: mode === 'arm' ? 'crosshair' : 'default' }}
+        style={{ touchAction: 'pan-y', cursor: mode === 'arm' ? 'crosshair' : 'default' }}
         role="application"
         // Reachable and operable from the keyboard (PB-05); the ring comes from the
         // global `:focus-visible` rule in index.css.
         tabIndex={0}
-        aria-label={
-          mode === 'arm'
-            ? t.sandbox.fabrikArmAria
-            : t.sandbox.fabrikCreatureAria
-        }
+        aria-label={mode === 'arm' ? t.sandbox.fabrikArmAria : t.sandbox.fabrikCreatureAria}
         aria-describedby="sandbox-fabrik-keys"
         onKeyDown={onCanvasKeyDown}
       />
@@ -1925,7 +1912,13 @@ function drawBoneMetal(
 }
 
 /** A joint pivot: dark hub, steel ring, bright pin. */
-function drawJoint(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, tint: string): void {
+function drawJoint(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  r: number,
+  tint: string,
+): void {
   const hub = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, 0, x, y, r)
   hub.addColorStop(0, '#9fb0c8')
   hub.addColorStop(0.55, '#4c5a72')
@@ -2533,11 +2526,7 @@ function drawArmDebug(ctx: CanvasRenderingContext2D, rig: ArmRig): void {
 /*  Creature rendering                                                       */
 /* -------------------------------------------------------------------------- */
 
-function drawCreature(
-  ctx: CanvasRenderingContext2D,
-  rig: CreatureRig,
-  debug: boolean,
-): void {
+function drawCreature(ctx: CanvasRenderingContext2D, rig: CreatureRig, debug: boolean): void {
   const tint = '#a78bfa'
 
   /* ── Landing effects, on the ground under everything else ────────────── */
@@ -2789,15 +2778,7 @@ function drawRipples(ctx: CanvasRenderingContext2D, rig: CreatureRig): void {
       const scale = pass === 0 ? 1 : 0.62
       const alpha = pass === 0 ? 0.85 : 0.4
       ctx.beginPath()
-      ctx.ellipse(
-        r.x,
-        r.y,
-        radius * scale,
-        radius * scale * (0.34 + ease * 0.1),
-        0,
-        0,
-        Math.PI * 2,
-      )
+      ctx.ellipse(r.x, r.y, radius * scale, radius * scale * (0.34 + ease * 0.1), 0, 0, Math.PI * 2)
       ctx.strokeStyle = `rgba(34, 211, 238, ${fade * alpha})`
       ctx.lineWidth = (pass === 0 ? 2.4 : 1.4) * (1 - t * 0.5)
       ctx.stroke()

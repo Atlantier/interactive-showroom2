@@ -196,7 +196,8 @@ export const en = {
         ],
       },
       agents: {
-        summary: 'Interconnected inference nodes scheduling multi-agent collaboration at millisecond latency.',
+        summary:
+          'Interconnected inference nodes scheduling multi-agent collaboration at millisecond latency.',
         details: [
           'Stateful tool calls · streaming output',
           'Semantic routing · automatic model fallback',
@@ -232,9 +233,12 @@ export const en = {
   /** Physics sandboxes. */
   sandbox: {
     verletLabel: 'Verlet sandbox',
-    verletAria: 'Draggable physics lanyard sandbox: drag a badge to swing it, overstretch it and the cord snaps',
-    fabrikArmAria: 'Six-axis arm driven by FABRIK inverse kinematics. Move the pointer to track, click to fire the laser',
-    fabrikCreatureAria: 'Procedural quadruped gait demo. Move the pointer to steer the tracking behaviour',
+    verletAria:
+      'Draggable physics lanyard sandbox: drag a badge to swing it, overstretch it and the cord snaps',
+    fabrikArmAria:
+      'Six-axis arm driven by FABRIK inverse kinematics. Move the pointer to track, click to fire the laser',
+    fabrikCreatureAria:
+      'Procedural quadruped gait demo. Move the pointer to steer the tracking behaviour',
     fabrikArmHint: 'Move the pointer to track · click to fire the laser',
     fabrikCreatureHint: 'Move the pointer · the gait planner picks each foothold',
     verletHint: 'Drag a badge to stress the rope',
@@ -254,10 +258,8 @@ export const en = {
     fabrikBurnHint: 'Burns cool over three seconds',
     verletKeys:
       'Keyboard: Enter or Space grabs the nearest badge, the arrow keys swing it, Shift moves further, Escape lets go',
-    fabrikKeysArm:
-      'Keyboard: the arrow keys steer the arm, Enter or Space fires the ion beam',
-    fabrikKeysCreature:
-      'Keyboard: the arrow keys steer the point the creature walks toward',
+    fabrikKeysArm: 'Keyboard: the arrow keys steer the arm, Enter or Space fires the ion beam',
+    fabrikKeysCreature: 'Keyboard: the arrow keys steer the point the creature walks toward',
     kbdGrab: 'Badge grabbed. Arrow keys swing it, Escape lets go.',
     kbdRelease: 'Badge released.',
     kbdFire: 'Ion beam fired.',
@@ -284,7 +286,8 @@ export const en = {
     hint: 'shift + d to toggle',
     heap: 'JS heap',
     noticeTitle: 'Performance mode engaged',
-    degradeReason: 'Averaged {fps} FPS over the last {seconds}s — below the {threshold} FPS threshold',
+    degradeReason:
+      'Averaged {fps} FPS over the last {seconds}s — below the {threshold} FPS threshold',
     frameBudget: 'Frame budget',
     avg: 'avg',
     adaptiveQuality: 'adaptive quality',

@@ -112,8 +112,7 @@ export function CameraRig() {
 
     // Smoothed target for each axis.
     const targetX = BASE_POSITION.x + mouse.x * MOUSE_TRAVEL_X * sway
-    const targetY =
-      BASE_POSITION.y + mouse.y * MOUSE_TRAVEL_Y * sway + progress * SCROLL_TRAVEL_Y
+    const targetY = BASE_POSITION.y + mouse.y * MOUSE_TRAVEL_Y * sway + progress * SCROLL_TRAVEL_Y
     const targetZ = BASE_POSITION.z - progress * SCROLL_TRAVEL_Z
 
     stepSpring(springs.x, targetX, dt, SPRING)

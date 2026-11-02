@@ -96,18 +96,6 @@ function installHelpers() {
   return { ok: true, hasSection: Boolean(window.__arch.section()) }
 }
 
-/** Read the camera position from the dev scene hook, if a canvas exposed one. */
-function readCamera() {
-  const hook = window.__showroomScene
-  if (!hook || !hook.camera) return null
-  const c = hook.camera
-  return {
-    x: +c.position.x.toFixed(3),
-    y: +c.position.y.toFixed(3),
-    z: +c.position.z.toFixed(3),
-  }
-}
-
 /** Geometry structure report for the architecture canvas. */
 function readArchitectureScene() {
   const hook = window.__showroomScene
@@ -219,10 +207,13 @@ report.A1_structure = await run(function a1() {
 const phases = [0, 0.15, 0.3, 0.45, 0.6, 0.7, 0.85, 1]
 report.phaseSamples = []
 for (const target of phases) {
-  await run(function scrollTo(p) {
-    window.__arch.scrollToProgress(p)
-    return true
-  }.bind(null), target)
+  await run(
+    function scrollTo(p) {
+      window.__arch.scrollToProgress(p)
+      return true
+    }.bind(null),
+    target,
+  )
   // NOTE: `run` does not forward args; inline the scroll instead.
   await send('Runtime.evaluate', {
     expression: `window.__arch.scrollToProgress(${target})`,
@@ -299,26 +290,22 @@ report.assertions = {
   stageIsSticky: report.A1_structure?.stagePosition === 'sticky',
   threeLabelsPresent:
     Array.isArray(report.A1_structure?.labels) && report.A1_structure.labels.length === 3,
-  progressMonotonic:
-    rails.every((v, i) => i === 0 || v === null || rails[i - 1] === null || v >= rails[i - 1] - 0.02),
+  progressMonotonic: rails.every(
+    (v, i) => i === 0 || v === null || rails[i - 1] === null || v >= rails[i - 1] - 0.02,
+  ),
   progressSpansRange:
-    rails.length > 1 &&
-    (rails[rails.length - 1] ?? 0) > 0.9 &&
-    (rails[0] ?? 1) < 0.1,
+    rails.length > 1 && (rails[rails.length - 1] ?? 0) > 0.9 && (rails[0] ?? 1) < 0.1,
   canvasHealthy: report.A3_canvas?.found === true && report.A3_canvas?.contextLost === false,
   sceneHasGeometry:
-    report.A4_scene?.ok === true &&
-    report.A4_scene.meshes > 0 &&
-    report.A4_scene.lineSegments > 0,
+    report.A4_scene?.ok === true && report.A4_scene.meshes > 0 && report.A4_scene.lineSegments > 0,
   cameraMoves:
     cams.length > 1 &&
     cams.some((c) => Math.abs(c.x - cams[0].x) > 0.3 || Math.abs(c.z - cams[0].z) > 0.3),
-  headingFadesIn: (report.phaseSamples[0]?.heading ?? 1) < 0.2 &&
-    (report.phaseSamples[2]?.heading ?? 0) > 0.5,
+  headingFadesIn:
+    (report.phaseSamples[0]?.heading ?? 1) < 0.2 && (report.phaseSamples[2]?.heading ?? 0) > 0.5,
   metricsHiddenEarly: (report.phaseSamples[0]?.metrics ?? 1) < 0.2,
   metricsVisibleLate: (report.phaseSamples[report.phaseSamples.length - 1]?.metrics ?? 0) > 0.5,
-  captionChanges:
-    new Set(report.phaseSamples.map((s) => s.caption).filter(Boolean)).size >= 2,
+  captionChanges: new Set(report.phaseSamples.map((s) => s.caption).filter(Boolean)).size >= 2,
 }
 
 report.exceptions = exceptions

@@ -126,7 +126,14 @@ function clickStage(nx, ny) {
   const r = canvas.getBoundingClientRect()
   const x = r.left + r.width * nx
   const y = r.top + r.height * ny
-  const opts = { clientX: x, clientY: y, bubbles: true, cancelable: true, pointerType: 'mouse', button: 0 }
+  const opts = {
+    clientX: x,
+    clientY: y,
+    bubbles: true,
+    cancelable: true,
+    pointerType: 'mouse',
+    button: 0,
+  }
   canvas.dispatchEvent(new PointerEvent('pointerdown', opts))
   canvas.dispatchEvent(new PointerEvent('pointerup', opts))
   canvas.dispatchEvent(new MouseEvent('click', opts))
@@ -252,7 +259,12 @@ const camBefore = await run(function cam() {
 
 // Click several points; the middle of the stage should hit the agent layer.
 let clicked = null
-for (const [nx, ny] of [[0.5, 0.5], [0.5, 0.42], [0.5, 0.58], [0.45, 0.5]]) {
+for (const [nx, ny] of [
+  [0.5, 0.5],
+  [0.5, 0.42],
+  [0.5, 0.58],
+  [0.45, 0.5],
+]) {
   await run(clickStage, nx, ny)
   await sleep(700)
   const hud = await run(function hud() {
@@ -295,8 +307,18 @@ const shotFocus = await send('Page.captureScreenshot', { format: 'png' })
 writeFileSync('screenshots/60-focus-hud.png', Buffer.from(shotFocus.data, 'base64'))
 
 /* 閳光偓閳光偓 P6: Escape clears the focus 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓 */
-await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
-await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
+await send('Input.dispatchKeyEvent', {
+  type: 'keyDown',
+  key: 'Escape',
+  code: 'Escape',
+  windowsVirtualKeyCode: 27,
+})
+await send('Input.dispatchKeyEvent', {
+  type: 'keyUp',
+  key: 'Escape',
+  code: 'Escape',
+  windowsVirtualKeyCode: 27,
+})
 await sleep(2200)
 
 const camRestored = await run(function cam() {
@@ -311,8 +333,7 @@ const hudAfterEsc = await run(function hud() {
   return d ? d.getAttribute('aria-hidden') : null
 })
 
-const dist = (a, b) =>
-  a && b ? Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) : null
+const dist = (a, b) => (a && b ? Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) : null)
 
 report.assertions = {
   conduitExists: report.P1P2_conduit?.ok === true,

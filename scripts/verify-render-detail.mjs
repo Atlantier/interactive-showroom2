@@ -481,18 +481,20 @@ writeFileSync('screenshots/81-cord-overload.png', Buffer.from(shotHot.data, 'bas
  */
 const jitterLoaded = []
 for (let i = 0; i < 10; i++) {
-  const v = await run(function j(t) {
-    // `__rdTime` is read by the render loop; nudging it repaints with a new
-    // jitter phase WITHOUT stepping the physics.
-    window.__rdTime = t
-    return window.__rd.cordLine(0)
-  }, 100 + i * 0.037)
+  const v = await run(
+    function j(t) {
+      // `__rdTime` is read by the render loop; nudging it repaints with a new
+      // jitter phase WITHOUT stepping the physics.
+      window.__rdTime = t
+      return window.__rd.cordLine(0)
+    },
+    100 + i * 0.037,
+  )
   jitterLoaded.push(v)
   await sleep(80)
 }
 const loadedLine = jitterLoaded.filter((v) => typeof v === 'number')
-const jitterSpan =
-  loadedLine.length > 1 ? Math.max(...loadedLine) - Math.min(...loadedLine) : 0
+const jitterSpan = loadedLine.length > 1 ? Math.max(...loadedLine) - Math.min(...loadedLine) : 0
 
 await run(function calm2() {
   window.__rd.releaseHold(0)
@@ -522,10 +524,13 @@ report.R4_restCheck = restCheck
 
 const jitterCalm = []
 for (let i = 0; i < 10; i++) {
-  const v = await run(function j2(t) {
-    window.__rdTime = t
-    return window.__rd.cordLine(0)
-  }, 200 + i * 0.037)
+  const v = await run(
+    function j2(t) {
+      window.__rdTime = t
+      return window.__rd.cordLine(0)
+    },
+    200 + i * 0.037,
+  )
   jitterCalm.push(v)
   await sleep(80)
 }
@@ -576,7 +581,9 @@ report.exceptions = exceptions
 report.consoleErrors = consoleErrors
 writeFileSync('screenshots/render-detail-report.json', JSON.stringify(report, null, 2))
 
-const failed = Object.entries(report.assertions).filter(([, v]) => !v).map(([k]) => k)
+const failed = Object.entries(report.assertions)
+  .filter(([, v]) => !v)
+  .map(([k]) => k)
 console.log(
   JSON.stringify(
     {

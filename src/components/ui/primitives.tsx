@@ -87,7 +87,10 @@ export function Hairline({ className }: { className?: string }) {
   return (
     <span
       aria-hidden
-      className={cn('h-px w-full bg-gradient-to-r from-transparent via-void-500 to-transparent', className)}
+      className={cn(
+        'h-px w-full bg-gradient-to-r from-transparent via-void-500 to-transparent',
+        className,
+      )}
     />
   )
 }

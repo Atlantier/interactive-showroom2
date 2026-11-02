@@ -14,12 +14,7 @@ import { SHOWROOM_SECTIONS } from '@/config/sections'
 import { getDictionary } from '@/i18n/useI18n'
 import { startScroll, scrollToTarget } from '@/lib/scrollEngine'
 import { VFX_PRESET_ORDER, getVfxPalette, vfxLabelKey } from '@/lib/vfxPalette'
-import {
-  ACCENT_SWATCH,
-  useAppStore,
-  type AccentTheme,
-  type GravityMode,
-} from '@/store/useAppStore'
+import { ACCENT_SWATCH, useAppStore, type AccentTheme, type GravityMode } from '@/store/useAppStore'
 
 /**
  * The command catalogue for the Cmd/Ctrl+K palette.
@@ -151,9 +146,18 @@ function downloadResumeJson(): void {
     })),
     skills: [
       { group: dict.commands.skills.graphics, items: ['WebGL', 'Three.js', 'R3F', 'GLSL'] },
-      { group: dict.commands.skills.physics, items: ['Verlet', 'FABRIK IK', 'Constraints', 'Procedural gait'] },
-      { group: dict.commands.skills.frontend, items: ['React 19', 'TypeScript', 'Zustand', 'Single clock'] },
-      { group: dict.commands.skills.interaction, items: ['Inertial scroll', 'Command palette', 'A11y', 'Responsive'] },
+      {
+        group: dict.commands.skills.physics,
+        items: ['Verlet', 'FABRIK IK', 'Constraints', 'Procedural gait'],
+      },
+      {
+        group: dict.commands.skills.frontend,
+        items: ['React 19', 'TypeScript', 'Zustand', 'Single clock'],
+      },
+      {
+        group: dict.commands.skills.interaction,
+        items: ['Inertial scroll', 'Command palette', 'A11y', 'Responsive'],
+      },
     ],
   }
 

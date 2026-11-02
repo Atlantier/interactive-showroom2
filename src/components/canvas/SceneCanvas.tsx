@@ -174,10 +174,8 @@ function DynamicChromaticAberration() {
 
     const mouseSpeed = Math.min(
       6,
-      Math.hypot(
-        transient.mouse.x - prevMouse.current.x,
-        transient.mouse.y - prevMouse.current.y,
-      ) / Math.max(dt, 1 / 240),
+      Math.hypot(transient.mouse.x - prevMouse.current.x, transient.mouse.y - prevMouse.current.y) /
+        Math.max(dt, 1 / 240),
     )
     prevMouse.current.x = transient.mouse.x
     prevMouse.current.y = transient.mouse.y
@@ -255,10 +253,7 @@ export function SceneCanvas() {
    * bound gives the monitor room to call the situation recovered. Both are clamped so a
    * 30 Hz device still has a sane floor.
    */
-  const degradeFps = Math.max(
-    24,
-    Math.min(DEGRADE_FPS_FALLBACK * 2, Math.round(refreshHz * 0.72)),
-  )
+  const degradeFps = Math.max(24, Math.min(DEGRADE_FPS_FALLBACK * 2, Math.round(refreshHz * 0.72)))
   const healthyFps = Math.max(degradeFps + 5, Math.round(refreshHz * 0.88))
 
   // Probe once on the client so restricted/SSR environments never crash.
