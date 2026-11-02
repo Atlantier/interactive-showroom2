@@ -89,6 +89,12 @@ jobs:
         # duplicated pass.)
         run: pnpm typecheck
 
+      - name: Unit tests
+        # The pure-logic layer: spring, Verlet, FABRIK, fuzzy matcher, palette tables.
+        # No browser, no build output needed, ~0.4 s -- so it runs before the expensive
+        # steps and fails fast on a logic regression.
+        run: pnpm test
+
       - name: Verify selftest
         # Proves the probe verdict contract still bites: it spawns node five times and
         # asserts on exit codes (clean -> 0, exception/console.error/fatal/assertion -> 1).

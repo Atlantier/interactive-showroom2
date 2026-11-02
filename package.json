@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --noEmit",
+    "test": "vitest run",
     "preview": "vite preview",
     "verify:selftest": "node scripts/lib/verify.selftest.mjs",
     "verify:budget": "node scripts/verify-budget.mjs",
@@ -41,6 +42,7 @@
     "tailwindcss": "^4.3.3",
     "typescript": "~5.9.3",
     "vite": "^8.3.5",
+    "vitest": "5.0.5",
     "ws": "^8.22.1"
   },
   "engines": {
