@@ -93,7 +93,15 @@ export function TopologyMini({ className }: TopologyMiniProps) {
       <svg
         viewBox="0 0 240 130"
         className="mt-2 w-full flex-1"
-        role="img"
+        /*
+         * `group`, not `img`.
+         *
+         * ARIA does not allow interactive children inside a `role="img"` element: the
+         * whole subtree is supposed to be presented as one image, so the six
+         * `role="button"` nodes were both invalid and unreachable in some readers. A
+         * labelled `group` may contain buttons, which is what this diagram is.
+         */
+        role="group"
         aria-label={t.bento.topologyAria}
       >
         {/* Edges first so nodes paint on top. */}

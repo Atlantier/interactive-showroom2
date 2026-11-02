@@ -319,6 +319,18 @@ try {
     drawer.found ? 'sheet present, inert ' + drawer.inert : 'sheet not rendered',
   )
 
+  /* 4c. WCAG 4.1.2 — no interactive children inside a role="img". */
+  const topology = await evaluate(`(() => {
+    const svg = document.querySelector('svg[aria-label*="topology" i]')
+    if (!svg) return { found: false }
+    return { found: true, role: svg.getAttribute('role'), buttons: svg.querySelectorAll('[role="button"]').length }
+  })()`)
+  check(
+    'aria: topology container is a labelled group (buttons inside role=img are invalid)',
+    !topology.found || (topology.role !== 'img' && topology.buttons > 0),
+    topology.found ? `role=${topology.role}, buttons=${topology.buttons}` : 'not found',
+  )
+
   /* 5. WCAG 2.5.8 — the two controls that measured under 24px. */
   const targets = await evaluate(`(() => {
     const measure = (el) => { const r = el.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height) } }
