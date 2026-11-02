@@ -82,6 +82,12 @@ jobs:
         # duplicated pass.)
         run: pnpm typecheck
 
+      - name: Verify selftest
+        # Proves the probe verdict contract still bites: it spawns node five times and
+        # asserts on exit codes (clean -> 0, exception/console.error/fatal/assertion -> 1).
+        # No browser, no preview server, ~0.5 s -- so it runs before anything expensive.
+        run: pnpm verify:selftest
+
       - name: Resolve Pages base path
         # GitHub Pages serves project sites from /<repo>/, user/organisation sites
         # from /. Vite reads this at config time (see vite.config.ts).

@@ -30,6 +30,7 @@
 import { setTimeout as sleep } from 'node:timers/promises'
 import { writeFileSync, mkdirSync } from 'node:fs'
 import WebSocket from 'ws'
+import { finish } from './lib/verify.mjs'
 
 const CDP_HTTP = process.env.CDP_HTTP ?? 'http://127.0.0.1:9351'
 const URL_TO_TEST = process.argv[2] ?? 'http://127.0.0.1:5271'
@@ -373,4 +374,6 @@ console.log(
     2,
   ),
 )
+
+finish({ label: 'spectrum', exceptions, consoleErrors, report })
 ws.close()
