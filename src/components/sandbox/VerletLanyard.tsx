@@ -33,6 +33,7 @@ import { GRAVITY_SCALE, useAppStore } from '@/store/useAppStore'
 import { useI18n } from '@/i18n/useI18n'
 
 import { isScrollBusy } from '@/lib/scrollEngine'
+import { createFixedStepClock, type FixedStepClock } from '@/lib/fixedStep'
 /**
  * VerletLanyard — an interactive physics sandbox of hanging geek badges.
  *
@@ -300,7 +301,19 @@ export function VerletLanyard({ className }: { className?: string }) {
   /** Elapsed simulation time, for the wind field. */
   const timeRef = useRef(0)
   /** Accumulator for the fixed-timestep loop. */
-  const accRef = useRef(0)
+  /*
+   * Fixed-step clock, shared with the FABRIK sandbox.
+   *
+   * This file used to own a `lastTime`, a delta clamp, an accumulator, a step budget
+   * and a debt cap inline -- and so did the other sandbox, which is how the same three
+   * bugs ended up existing twice. The clock is created lazily so a re-render does not
+   * allocate a new one and silently reset the accumulator.
+   */
+  const clockRef = useRef<FixedStepClock | null>(null)
+  if (!clockRef.current) {
+    clockRef.current = createFixedStepClock({ fixedDt: FIXED_DT, maxSteps: MAX_STEPS_PER_FRAME })
+  }
+  const clock = clockRef.current
   /** Whether the sandbox is on screen. */
   /**
    * Viewport gating.
@@ -411,7 +424,6 @@ export function VerletLanyard({ className }: { className?: string }) {
 
     /* ── Own the RAF, gated on visibility ───────────────────────────────── */
     let rafId = 0
-    let lastTime = 0
     let hudTimer = 0
 
     const frame = (now: number): void => {
@@ -419,10 +431,8 @@ export function VerletLanyard({ className }: { className?: string }) {
       // Sleep when off screen. The loop still schedules itself (so waking is
       // instant and needs no observer callback), but does no work at all.
       if (!inViewRef.current) {
-        // Rebase the clock. Without this the first frame back on screen sees a
-        // `now - lastTime` equal to the whole time spent off screen, clamped to the
-        // 0.1 s ceiling and then replayed as a visible 66 ms hop of the ropes.
-        lastTime = now
+        // Rebase: without it the first frame back replays the whole absence as a hop.
+        clock.skip(now)
         return
       }
       /*
@@ -437,19 +447,16 @@ export function VerletLanyard({ className }: { className?: string }) {
        * to the frames that are being composited.
        */
       if (isScrollBusy()) {
-        lastTime = now
+        clock.skip(now)
         return
       }
 
       const sim = simRef.current
       if (!sim) return
 
-      // Clamp the frame delta: after a tab switch `now - lastTime` can be huge,
-      // and feeding that into the accumulator would run dozens of steps at once.
-      const dt = lastTime === 0 ? FIXED_DT : Math.min((now - lastTime) / 1000, 0.1)
-      lastTime = now
-
-      accRef.current += dt
+      // The clock clamps the delta too: after a tab switch `now - lastTime` can be
+      // huge, and feeding that in would run the whole step budget at once.
+      const dt = clock.begin(now)
 
       let steps = 0
       /**
@@ -475,7 +482,7 @@ export function VerletLanyard({ className }: { className?: string }) {
        */
       const solveStart = performance.now()
 
-      while (accRef.current >= FIXED_DT && steps < MAX_STEPS_PER_FRAME) {
+      while (clock.pending()) {
         timeRef.current += FIXED_DT
         sim.step(FIXED_DT, timeRef.current)
 
@@ -497,7 +504,7 @@ export function VerletLanyard({ className }: { className?: string }) {
         }
         snappedThisFrame += sim.snapCount
 
-        accRef.current -= FIXED_DT
+        clock.consume()
         steps++
       }
 
@@ -513,7 +520,7 @@ export function VerletLanyard({ className }: { className?: string }) {
        * and then keep the correct RATE, which is the behaviour you want from a
        * fixed-step integrator.
        */
-      accRef.current = Math.min(accRef.current, FIXED_DT * MAX_STEPS_PER_FRAME)
+      clock.end()
 
       if (steps > 0) {
         reportPhysicsSolve(
@@ -682,7 +689,7 @@ export function VerletLanyard({ className }: { className?: string }) {
     const vfx = vfxRef.current
     if (vfx) resetLanyardVfx(vfx)
     timeRef.current = 0
-    accRef.current = 0
+    clock.reset(performance.now())
     setBrokenCount(0)
     setPeakStrain(0)
   }
