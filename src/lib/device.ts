@@ -97,3 +97,17 @@ export function onReducedMotionChange(handler: (reduced: boolean) => void): () =
   query.addEventListener('change', listener)
   return () => query.removeEventListener('change', listener)
 }
+
+/**
+ * Canvas backing-store ratio for a quality tier.
+ *
+ * The 2D sandboxes size their own buffers (`devicePixelRatio` clamps), which is why they used to
+ * ignore the adaptive downgrade entirely: the renderer dropped to DPR 1 while the two heaviest
+ * canvases on the page kept filling 1.5x. One helper, used by both, so the policy cannot drift
+ * between them.
+ */
+export function dprForTier(tier: PerformanceTier): number {
+  // 'medium' is the downgraded state (`PerformanceTier` is 'high' | 'medium'; `low` never existed
+  // and typing it here only produced a comparison TypeScript could prove impossible).
+  return tier === 'medium' ? 1 : 1.5
+}

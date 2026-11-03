@@ -37,6 +37,7 @@ import { useI18n } from '@/i18n/useI18n'
 import { isStill } from '@/lib/testHooks'
 import { isScrollBusy } from '@/lib/scrollEngine'
 import { createFixedStepClock, type FixedStepClock } from '@/lib/fixedStep'
+import { dprForTier } from '@/lib/device'
 /**
  * VerletLanyard — an interactive physics sandbox of hanging geek badges.
  *
@@ -355,6 +356,26 @@ export function VerletLanyard({ className }: { className?: string }) {
     clockRef.current = createFixedStepClock({ fixedDt: FIXED_DT, maxSteps: MAX_STEPS_PER_FRAME })
   }
   const clock = clockRef.current
+  /**
+   * Quality tier, read through a ref by the resize path (PB-13).
+   *
+   * The sandboxes size their own canvas buffers, so the tier has to reach `applySize` without
+   * rebuilding the frame loop: the ref is updated on render and the effect below re-applies the size
+   * when it changes.
+   */
+  const tier = useAppStore((state) => state.performanceTier)
+  const tierRef = useRef(tier)
+  tierRef.current = tier
+
+  /** The mount effect's size applier, so a tier change can re-run it. */
+  const resizeRef = useRef<(() => void) | null>(null)
+
+  // A tier change has to reach the canvas buffer: without this the downgrade only takes effect on
+  // the next window resize, which on a phone may never come (PB-13).
+  useEffect(() => {
+    resizeRef.current?.()
+  }, [tier])
+
   /** Whether the sandbox is on screen. */
   /**
    * Viewport gating.
@@ -416,7 +437,20 @@ export function VerletLanyard({ className }: { className?: string }) {
       // 1.5 rather than 2: this canvas is pure additive glow on a near-black
       // ground, where the extra density of a 2x buffer is invisible, but the
       // per-frame fill cost is 44% higher.
-      dpr = Math.min(window.devicePixelRatio || 1, 1.5)
+      /*
+       * Fill-rate budget, keyed to the quality tier (PB-13).
+       *
+       * The adaptive downgrade lowers the renderer's DPR and halves the particles, but these two
+       * sandboxes ignored it and kept drawing at 1.5x -- and they are the most expensive sections
+       * on the page (the author's own note: 121 -> 144 fps with them unmounted). At the `low` tier
+       * the canvas now matches the rest of the app at DPR 1, which is a 2.25x fill-rate cut on the
+       * single heaviest canvas.
+       *
+       * 1.5 rather than 2 even at `high`: this canvas is pure additive glow on a near-black ground,
+       * where the extra density of a 2x buffer is invisible, but the per-frame fill cost is 44%
+       * higher.
+       */
+      dpr = Math.min(window.devicePixelRatio || 1, dprForTier(tierRef.current))
       canvas.width = Math.round(cssW * dpr)
       canvas.height = Math.round(cssH * dpr)
       canvas.style.width = `${cssW}px`
@@ -455,6 +489,7 @@ export function VerletLanyard({ className }: { className?: string }) {
         debugWindow.__lanyardVfx = vfx
       }
     }
+    resizeRef.current = applySize
 
     applySize()
 
