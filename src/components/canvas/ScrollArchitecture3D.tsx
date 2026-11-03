@@ -1326,6 +1326,64 @@ export interface ScrollArchitecture3DProps {
  * the chapter's ~95 draw calls per frame (main scene + transmission pass +
  * resolve/mip chain + reflection pass + 4 blurs) drop to zero when scrolled away.
  */
+/**
+ * BootCompile — link every architecture program while the boot veil still covers the page.
+ *
+ * ── Why this replaces the old "quiet frames" heuristic ─────────────────────
+ * The previous signal declared the prewarm finished after three frames shorter than 40 ms. Measured
+ * behaviour showed that was wrong in the worst way: the architecture scene was already mounted
+ * during boot (25 meshes) but its canvas held **one** program, because the heuristic fired before
+ * anything had been drawn -- `RenderGate` then closed and the rig sat there unlinked. The 19 links
+ * happened on the first scroll into the chapter instead, which is exactly the 1.1 s freeze the
+ * prewarm exists to remove.
+ *
+ * Frame pacing answers "is the machine busy", not "are the programs linked". This asks the second
+ * question directly: walk the scene with `gl.compile` and watch `gl.info.programs.length` until two
+ * consecutive readings agree. A 3 s cap keeps the veil from becoming a trap on a pathological
+ * driver, and the veil's own HOLD_MIN/HOLD_MAX still bound the visible wait.
+ */
+function BootCompile({ onSettled }: { onSettled: () => void }) {
+  const gl = useThree((state) => state.gl)
+  const scene = useThree((state) => state.scene)
+  const camera = useThree((state) => state.camera)
+
+  const settled = useRef(false)
+  const elapsed = useRef(0)
+  const lastCount = useRef(-1)
+  const stable = useRef(0)
+
+  useFrame((_, delta) => {
+    if (settled.current) return
+    elapsed.current += delta
+
+    // Give the staged mount (one layer per frame) time to commit before the first walk.
+    if (elapsed.current < 0.25) return
+
+    try {
+      gl.compile(scene, camera)
+    } catch {
+      // A compile failure must not trap the veil; the scene will compile on first draw as before.
+      settled.current = true
+      onSettled()
+      return
+    }
+
+    const programs = gl.info.programs?.length ?? 0
+    if (programs === lastCount.current) stable.current += 1
+    else {
+      stable.current = 0
+      lastCount.current = programs
+    }
+
+    if (stable.current >= 2 || elapsed.current > 3) {
+      settled.current = true
+      onSettled()
+    }
+  }, 2)
+
+  return null
+}
+
 function RenderGate({ inView }: { inView: InViewRef }) {
   const gl = useThree((s) => s.gl)
   const scene = useThree((s) => s.scene)
@@ -1428,40 +1486,14 @@ export function ScrollArchitecture3D({
   }, [prewarmed])
 
   /*
-   * Tell the boot veil when the compile storm is over.
+   * The boot veil's "compile finished" signal lives INSIDE the canvas now.
    *
-   * No single moment in this component knows: the staged mount below commits one
-   * layer per frame and each commit compiles that layer's shaders synchronously.
-   * What IS observable is frame pacing -- a compiling frame takes hundreds of
-   * milliseconds, a settled one a few. Three consecutive fast frames therefore
-   * means the storm has drained, without hardcoding how many stages exist or how
-   * slow the driver is. A timer caps it so the signal is guaranteed even on a
-   * machine that never gets quiet.
+   * It used to be a frame-pacing heuristic here (three frames shorter than 40 ms). Measurement showed
+   * it fired before anything had been drawn: the scene was mounted but its canvas held one program,
+   * so RenderGate closed and the 19 links moved back onto the first scroll into the chapter. The
+   * replacement, <BootCompile>, asks the renderer how many programs it holds instead of guessing
+   * from frame durations.
    */
-  useEffect(() => {
-    if (!prewarmed) return
-    let raf = 0
-    let quietFrames = 0
-    let last = performance.now()
-    const tick = (): void => {
-      const now = performance.now()
-      // 40ms counts both a 60Hz and a 30Hz display as quiet, while a compile
-      // frame (hundreds of ms) always resets the count.
-      quietFrames = now - last < 40 ? quietFrames + 1 : 0
-      last = now
-      if (quietFrames >= 3) {
-        setPrewarmDone()
-        return
-      }
-      raf = requestAnimationFrame(tick)
-    }
-    raf = requestAnimationFrame(tick)
-    const cap = window.setTimeout(() => setPrewarmDone(), 3000)
-    return () => {
-      cancelAnimationFrame(raf)
-      window.clearTimeout(cap)
-    }
-  }, [prewarmed, setPrewarmDone])
 
   useEffect(() => {
     if (!live) {
@@ -1548,6 +1580,7 @@ export function ScrollArchitecture3D({
         extra frames cost milliseconds at mount and make the bake reliable.
       */}
       <RenderGate inView={inViewRef} />
+      <BootCompile onSettled={setPrewarmDone} />
 
       <Environment resolution={256} frames={1}>
         <Lightformer
