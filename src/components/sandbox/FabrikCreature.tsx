@@ -1485,8 +1485,51 @@ export function FabrikCreature({ className }: { className?: string }) {
     let cssH = 0
     let dpr = 1
 
+    /**
+     * Move both rigs with the viewport instead of rebuilding them (PB-10).
+     *
+     * A phone's address bar hiding changes the viewport height by 60-140 px while the visitor is
+     * using the page. Rebuilding here -- the previous behaviour -- reset the arm's recoil, the
+     * creature's gait phase and both 640-slot particle pools: every bit of interaction state the
+     * visitor had just created, thrown away because the browser chrome moved. A height-only change
+     * is a translation in canvas space, so the rigs are moved rather than recreated. Width changes
+     * still rebuild, because the rest poses and bone lengths are derived from the width.
+     */
+    const translateRigs = (dy: number): void => {
+      const arm = armRef.current
+      if (arm) {
+        for (const joint of arm.joints) joint.y += dy
+        arm.baseY += dy
+        arm.target.y += dy
+        arm.impactY += dy
+        arm.viewH += dy
+        arm.bounds.bottom += dy
+        for (const scorch of arm.scorches) scorch.y += dy
+        for (const particle of arm.engine.particles) particle.y += dy
+      }
+
+      const creature = creatureRef.current
+      if (creature) {
+        for (const joint of creature.spine) joint.y += dy
+        creature.head.y += dy
+        creature.comY += dy
+        creature.bounds.bottom += dy
+        for (const leg of creature.legs) {
+          for (const joint of leg.joints) joint.y += dy
+          leg.anchorY += dy
+          leg.fromY += dy
+          leg.toY += dy
+        }
+        for (const ripple of creature.ripples) ripple.y += dy
+        for (const hex of creature.hexRipples) hex.y += dy
+        for (const particle of creature.engine.particles) particle.y += dy
+      }
+    }
+
     const resize = (): void => {
       const rect = wrap.getBoundingClientRect()
+      const prevW = cssW
+      const prevH = cssH
       cssW = Math.max(1, Math.round(rect.width))
       cssH = Math.max(1, Math.round(rect.height))
       // Matches the lanyard: glow-only canvas, so 1.5 is indistinguishable from 2.
@@ -1509,12 +1552,19 @@ export function FabrikCreature({ className }: { className?: string }) {
       canvas.style.width = `${cssW}px`
       canvas.style.height = `${cssH}px`
 
-      // Rebuild the rigs at the new size: their rest poses are derived from the
-      // canvas dimensions, so resizing without rebuilding would leave the arm
-      // base and the creature's feet outside the visible area.
-      armRef.current = createArm(cssW, cssH)
-      creatureRef.current = createCreature(cssW, cssH)
-      pointerRef.current = { x: cssW / 2, y: cssH * 0.35 }
+      /*
+       * Rebuild the rigs only when the width changed (or none exist yet): their rest poses and bone
+       * lengths are derived from the canvas width, so a width change genuinely invalidates them.
+       * A height-only change -- the mobile toolbar case this fix exists for -- translates them.
+       */
+      if (!armRef.current || !creatureRef.current || cssW !== prevW) {
+        armRef.current = createArm(cssW, cssH)
+        creatureRef.current = createCreature(cssW, cssH)
+        pointerRef.current = { x: cssW / 2, y: cssH * 0.35 }
+        return
+      }
+
+      if (cssH !== prevH) translateRigs(cssH - prevH)
     }
     resizeRef.current = resize
 
