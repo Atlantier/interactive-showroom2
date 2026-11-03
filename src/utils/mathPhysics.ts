@@ -286,6 +286,49 @@ export function measureMaxStrain(points: VerletPoint[], constraints: VerletConst
   return max
 }
 
+/** Where a rope gave way, in sandbox pixels, plus the signed strain that chose it. */
+export interface BreakPoint {
+  x: number
+  y: number
+  strain: number
+}
+
+/**
+ * Locate the link a rope broke at (PB-08).
+ *
+ * ── The bug this replaces ─────────────────────────────────────────────────
+ * The break RULE asks for signed strain: `(dist - rest) / rest > BREAK_STRAIN`, so only a
+ * stretched link can snap. The break-effect code then searched for the failure site by ABSOLUTE
+ * strain, which is a different question: the region just in front of a grabbed end is often far
+ * more deformed in the negative direction (compressed) than the tensioned link that actually gave
+ * way. The arcs could therefore be drawn at a link that never broke, while the real break point --
+ * the one the solver reported -- was somewhere else.
+ *
+ * Both questions now use the same quantity, so the midpoint returned here is the link whose signed
+ * strain is largest, which at break time is the link above BREAK_STRAIN.
+ *
+ * Returns `null` only for a rope with no measurable constraint; callers fall back to the anchor.
+ */
+export function findBreakPoint(
+  points: VerletPoint[],
+  constraints: VerletConstraint[],
+): BreakPoint | null {
+  let best: BreakPoint | null = null
+  for (let ci = 0; ci < constraints.length; ci++) {
+    const c = constraints[ci]
+    const a = points[c.a]
+    const b = points[c.b]
+    if (!a || !b) continue
+    const dx = b.x - a.x
+    const dy = b.y - a.y
+    const strain = (Math.sqrt(dx * dx + dy * dy) - c.restLength) / c.restLength
+    if (!best || strain > best.strain) {
+      best = { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5, strain }
+    }
+  }
+  return best
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Oriented bounding box collision                                          */
 /* -------------------------------------------------------------------------- */

@@ -8,6 +8,7 @@ import {
   bezierPathLength,
   createConstraint,
   createPoint,
+  findBreakPoint,
   integratePoints,
   measureMaxStrain,
   relaxConstraints,
@@ -106,6 +107,79 @@ describe('measureMaxStrain', () => {
     const constraint = createConstraint(0, 1, 20)
     measureMaxStrain(points, [constraint])
     expect(constraint.strain).toBeCloseTo(0.5, 6)
+  })
+})
+
+describe('findBreakPoint', () => {
+  /*
+   * PB-08: the break RULE uses signed strain, and the break EFFECT used to search with absolute
+   * strain. These pin down the shared quantity, and one test records the reason the visible
+   * difference never actually occurs: compression is bounded at -1 while a break needs > 2.5, so a
+   * rope that just broke always has its largest |strain| on the stretched link anyway.
+   */
+
+  it('returns the midpoint of the most stretched link', () => {
+    const points = [createPoint(0, 0, true), createPoint(50, 0), createPoint(52, 0)]
+    const spot = findBreakPoint(points, [createConstraint(1, 2, 20), createConstraint(0, 1, 20)])
+    expect(spot).not.toBeNull()
+    // Link 0-1 is 50 vs 20 = +1.5; link 1-2 is 2 vs 20 = -0.9.
+    expect(spot?.strain).toBeCloseTo(1.5, 6)
+    expect(spot?.x).toBeCloseTo(25, 6)
+  })
+
+  it('prefers tension over compression, unlike an absolute-strain search', () => {
+    const points = [createPoint(0, 0, true), createPoint(2, 0), createPoint(8, 0)]
+    const constraints = [createConstraint(0, 1, 30), createConstraint(1, 2, 4)]
+    const spot = findBreakPoint(points, constraints)
+    // 0-1 is 2 vs 30 = -0.93 (larger magnitude, so an absolute search picks it), 1-2 is 6 vs 4 = +0.5.
+    expect(spot?.strain).toBeCloseTo(0.5, 6)
+    expect(spot?.x).toBeCloseTo(5, 6)
+  })
+
+  it('agrees with an absolute-strain search on a rope that actually broke', () => {
+    const points = [createPoint(0, 0, true), createPoint(70, 0), createPoint(72, 0)]
+    const constraints = [createConstraint(0, 1, 20), createConstraint(1, 2, 20)]
+    const signed = findBreakPoint(points, constraints)
+    // The comparison the old code ran, kept here as evidence rather than as an implementation.
+    let worstAbs = -1
+    for (const c of constraints) {
+      const a = points[c.a] as VerletPoint
+      const b = points[c.b] as VerletPoint
+      worstAbs = Math.max(
+        worstAbs,
+        Math.abs(Math.hypot(b.x - a.x, b.y - a.y) - c.restLength) / c.restLength,
+      )
+    }
+    expect(signed?.strain).toBeCloseTo(2.5, 6)
+    expect(worstAbs).toBeCloseTo(signed?.strain ?? 0, 6)
+    expect(signed?.strain ?? 0).toBeGreaterThan(BREAK_STRAIN - 1e-9)
+  })
+
+  it('returns null for a rope with no usable constraint', () => {
+    expect(findBreakPoint([createPoint(0, 0)], [createConstraint(0, 5, 20)])).toBeNull()
+  })
+
+  it('reports the same link the break rule reported, on a rope that actually snapped', () => {
+    const specs = [{ id: 'a', label: 'A', accent: '#fff', anchorXRatio: 0.5 }]
+    const sim = new LanyardSimulation({ width: 800, height: 600, specs })
+    const lanyard = sim.lanyards[0]
+    expect(lanyard).toBeDefined()
+
+    // Grab the badge and drag it away, which is how a visitor actually breaks a rope: the held end
+    // becomes a pin inside the solver, so the chain has to absorb an unsatisfiable error.
+    const tag = lanyard!.tag
+    expect(sim.pointerDown(tag.x, tag.y)).toBe(true)
+    for (let i = 0; i < 90 && !lanyard!.broken; i++) {
+      sim.pointerMove(tag.x + 40 * i, tag.y - 10 * i)
+      sim.step(1 / 60, i / 60)
+    }
+    sim.pointerUp()
+
+    expect(lanyard!.broken).toBe(true)
+    const reported = measureMaxStrain(lanyard!.points, lanyard!.constraints)
+    const spot = findBreakPoint(lanyard!.points, lanyard!.constraints)
+    expect(reported).toBeGreaterThan(BREAK_STRAIN)
+    expect(spot?.strain).toBeCloseTo(reported, 6)
   })
 })
 

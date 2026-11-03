@@ -10,6 +10,7 @@ import {
   bezierPathLength,
   catmullRomToBezier,
   collideObb,
+  findBreakPoint,
   sampleBezier,
   traceBezierPath,
   type LanyardSpec,
@@ -1107,23 +1108,16 @@ function spawnSnapArc(vfx: LanyardVfx, sim: LanyardSimulation, index: number): v
   const l = sim.lanyards[index]
   if (!l || l.points.length < 2) return
 
-  let worstStrain = -1
-  let breakX = l.points[0].x
-  let breakY = l.points[0].y
-  for (let i = 0; i < l.constraints.length; i++) {
-    const c = l.constraints[i]
-    const pa = l.points[c.a]
-    const pb = l.points[c.b]
-    if (!pa || !pb) continue
-    const dx = pb.x - pa.x
-    const dy = pb.y - pa.y
-    const strain = Math.abs(Math.hypot(dx, dy) - c.restLength) / c.restLength
-    if (strain > worstStrain) {
-      worstStrain = strain
-      breakX = (pa.x + pb.x) * 0.5
-      breakY = (pa.y + pb.y) * 0.5
-    }
-  }
+  /*
+   * The break site, chosen with the same SIGNED strain the break rule used (PB-08).
+   *
+   * This loop used to take `Math.abs(...)`, which would happily pick a link that was merely
+   * compressed -- right under the grabbed end -- instead of the tensioned link that gave way. The
+   * arc then appeared where the rope had not broken.
+   */
+  const spot = findBreakPoint(l.points, l.constraints)
+  const breakX = spot ? spot.x : l.points[0].x
+  const breakY = spot ? spot.y : l.points[0].y
 
   // Round-robin slots: a full quartet of breaks fits exactly, and an old arc is
   // the least valuable thing to keep if a fifth somehow arrives.
