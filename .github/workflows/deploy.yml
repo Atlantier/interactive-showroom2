@@ -198,30 +198,7 @@ jobs:
           done
           # Fail fast and clearly if software WebGL is still unavailable: otherwise the
           # architecture probe reports a missing canvas and it reads like an app bug.
-          curl -sf http://127.0.0.1:9411/json/list > /dev/null
-          node -e "
-            const WebSocket = require('ws')
-            fetch('http://127.0.0.1:9411/json/list').then(r => r.json()).then(async (list) => {
-              const page = list.find((e) => e.type === 'page')
-              const ws = new WebSocket(page.webSocketDebuggerUrl)
-              await new Promise((res) => ws.once('open', res))
-              let id = 0
-              const call = (method, params) => new Promise((res) => {
-                const mine = ++id
-                ws.on('message', function onMessage(raw) {
-                  const m = JSON.parse(raw.toString())
-                  if (m.id === mine) { ws.off('message', onMessage); res(m.result) }
-                })
-                ws.send(JSON.stringify({ id: mine, method, params }))
-              })
-              const out = await call('Runtime.evaluate', {
-                expression: "(() => { const c = document.createElement('canvas'); const gl = c.getContext('webgl2'); return gl ? gl.getParameter(gl.VERSION) : 'NO WEBGL2' })()",
-                returnByValue: true,
-              })
-              console.log('probe browser WebGL2:', out.result.value)
-              ws.close()
-            })
-          "
+          node scripts/check-webgl.mjs
           node scripts/verify-architecture.mjs http://127.0.0.1:4173
           node scripts/verify-sandbox.mjs http://127.0.0.1:4173
           node scripts/verify-fabrik.mjs http://127.0.0.1:4173
