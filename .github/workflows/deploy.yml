@@ -215,6 +215,20 @@ jobs:
           CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
         run: pnpm verify:context --base http://127.0.0.1:4173
 
+      - name: Shader regression (architecture canvas)
+        # The UI gate hides every large canvas, which left shader work unverifiable -- the reason
+        # SH-13 was deferred. With the R3F clock pinned and one warm-up load, the architecture canvas
+        # proved reproducible across fresh loads (measured worst 0.9 / mean 0.14 over 144 blocks), so
+        # this compares it against visual-baselines/shader.json. A deliberate rim-colour change
+        # measured worst 35.1 and failed; reverting passed at worst 1.2.
+        #
+        # The baseline was captured on Windows and headless Chromium does not rasterise the same
+        # pixels per platform, so on this runner the script prints a skip reason and exits 0 -- the
+        # same contract as the UI gate. It gates locally, where shader edits are made.
+        env:
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+        run: pnpm verify:shader --base http://127.0.0.1:4173
+
       - name: Verify build output
         # A build that silently emits nothing (or only the HTML shell) would
         # deploy a blank page. Fail loudly here instead of after publishing.

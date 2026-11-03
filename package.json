@@ -18,7 +18,8 @@
     "verify:budget": "node scripts/verify-budget.mjs",
     "verify:scroll": "node scripts/verify-scroll.mjs",
     "verify:a11y": "node scripts/verify-a11y.mjs",
-    "verify:context": "node scripts/verify-context-loss.mjs"
+    "verify:context": "node scripts/verify-context-loss.mjs",
+    "verify:shader": "node scripts/verify-shader.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",
