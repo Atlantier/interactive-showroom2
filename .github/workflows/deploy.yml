@@ -90,10 +90,11 @@ jobs:
         run: pnpm typecheck
 
       - name: Lint & format
-        # `--max-warnings=13` is a RATCHET, not a target: the thirteen open warnings are
-        # all `react-hooks/exhaustive-deps` in effects that deliberately run once (a
-        # lazily-created fixed-step clock, refs read 60 times a second). The number may go
-        # down; if it goes up, a new warning slipped in and this fails.
+        # `--max-warnings=12` is a RATCHET, not a target: the open warnings are all
+        # `react-hooks/exhaustive-deps` in effects that deliberately run once (a lazily-created
+        # fixed-step clock, refs read 60 times a second). It came down from 13 when the dead
+        # ripple pool was deleted. The number may go down; if it goes up, a new warning slipped
+        # in and this fails.
         run: |
           pnpm lint
           pnpm format:check

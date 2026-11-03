@@ -11,7 +11,12 @@ import type { PerformanceTier } from '@/types'
  *
  *   STARDUST   a ring-buffered particle plume emitted along the pointer's path
  *   RIBBON     a tapered light band built from the last 24 cursor positions
- *   SHOCKWAVE  150 sparks plus an expanding holographic ripple on pointerdown
+ *   SHOCKWAVE  150 sparks on pointerdown
+ *
+ * The click ripple used to be a fourth layer here: a pool of three WebGL quads with their own
+ * shader, billboarded at the click point. It was superseded by the DOM `ClickRipple`
+ * (src/components/layout/ClickRipple.tsx) and its life uniform then had no writer left, so the
+ * pool was built, iterated and disposed every session without ever becoming visible. Removed.
  *
  * All three share one piece of state — where the cursor is in world space — and
  * all three are additive overlays, so they live in one component rather than
@@ -39,9 +44,9 @@ import type { PerformanceTier } from '@/types'
  * Every hue in this component comes from the active Visual Overdrive palette
  * (`vfxPreset` in the store → `@/lib/vfxPalette`). The colours are pushed into
  * the existing `THREE.Color` uniforms by one effect, so switching preset only
- * mutates twelve colour values: the shader programs, particle pool and ripple
- * pool all keep their identity, and a plume already in flight keeps animating
- * while its hue changes.
+ * mutates the colour values in place: the shader programs and the particle pool
+ * keep their identity, and a plume already in flight keeps animating while its
+ * hue changes.
  */
 
 /* -------------------------------------------------------------------------- */
@@ -122,14 +127,6 @@ const TURBULENCE = 0.16
 
 /** Radial falloff constant in I(r) = exp(-k·r²). */
 const FALLOFF = 6.0
-
-/* ── Shockwave ─────────────────────────────────────────────────────────────── */
-
-/** Seconds a ripple ring takes to expand and vanish. */
-const RING_LIFE = 0.72
-
-/** Ripple rings kept live so rapid clicking overlaps instead of restarting. */
-const RING_POOL = 3
 
 /* ── Ribbon ────────────────────────────────────────────────────────────────── */
 
@@ -354,55 +351,6 @@ const RIBBON_FRAGMENT = /* glsl */ `
 `
 
 /* -------------------------------------------------------------------------- */
-/*  Shockwave shaders                                                         */
-/* -------------------------------------------------------------------------- */
-
-/**
- * The ripple is a flat quad billboarded at the click point; the ring itself is
- * drawn in the fragment shader rather than from a `RingGeometry`, because the
- * brief asks for a holographic band with internal structure (concentric
- * interference lines and a refractive colour split) and that cannot be expressed
- * as a plain annulus. Scaling the quad expands the ring for free.
- */
-const RING_FRAGMENT = /* glsl */ `
-  varying vec2 vUv;
-
-  uniform float uLife;
-  uniform vec3 uColorCold;
-  uniform vec3 uColorHot;
-
-  void main() {
-    vec2 c = vUv - 0.5;
-    float r = length(c) * 2.0;
-    if (r > 1.0) discard;
-
-    /* The band sits near the quad's edge, so scaling the quad sweeps it
-       outwards. The trailing edge is softer than the leading one. */
-    float band = smoothstep(0.68, 0.95, r) * (1.0 - smoothstep(0.95, 1.0, r));
-
-    /* Concentric interference lines drifting inward — the "holographic" part. */
-    float interference = 0.5 + 0.5 * sin(r * 46.0 - (1.0 - uLife) * 16.0);
-
-    /* Refractive split: blue on the inside of the band, white on the outside. */
-    vec3 col = mix(uColorCold, uColorHot, smoothstep(0.68, 1.0, r));
-
-    float alpha = band * uLife * (0.42 + 0.58 * interference);
-    if (alpha < 0.004) discard;
-
-    gl_FragColor = vec4(col * (1.4 + interference * 1.2), alpha);
-  }
-`
-
-const RING_VERTEX = /* glsl */ `
-  varying vec2 vUv;
-
-  void main() {
-    vUv = uv;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }
-`
-
-/* -------------------------------------------------------------------------- */
 /*  Component                                                                 */
 /* -------------------------------------------------------------------------- */
 
@@ -430,7 +378,6 @@ export function CursorStardustTrail({ tier = 'high', count: countProp }: CursorS
   const dpr = useThree((state) => state.viewport.dpr)
   const pointsRef = useRef<THREE.Points>(null)
   const ribbonRef = useRef<THREE.Mesh>(null)
-  const ringRefs = useRef<Array<THREE.Mesh | null>>([])
 
   const count = countProp ?? (tier === 'high' ? BASE_COUNT : Math.round(BASE_COUNT / 2))
 
@@ -447,9 +394,9 @@ export function CursorStardustTrail({ tier = 'high', count: countProp }: CursorS
   }, [count])
 
   /* ── Visual Overdrive palette ──────────────────────────────────────────── */
-  // One selector subscription is enough for all three visual layers: stardust,
-  // ribbon and ripple ring are siblings in this component, so a single render on
-  // a preset change re-syncs every colour uniform in one effect below.
+  // One selector subscription is enough for both visual layers: stardust and
+  // ribbon are siblings in this component, so a single render on a preset change
+  // re-syncs every colour uniform in one effect below.
   const vfxPreset = useAppStore((state) => state.vfxPreset)
   const palette = getVfxPalette(vfxPreset)
 
@@ -668,52 +615,16 @@ export function CursorStardustTrail({ tier = 'high', count: countProp }: CursorS
       }),
     [ribbonUniforms],
   )
-
-  /* ── Shockwave ring pool ───────────────────────────────────────────────── */
-  const rings = useMemo(
-    () =>
-      Array.from({ length: RING_POOL }, () => ({
-        life: 0,
-        position: new THREE.Vector3(),
-        uniforms: {
-          uLife: { value: 0 },
-          // Palette-seeded, then synced in place by the colour effect below.
-          uColorCold: { value: new THREE.Color(palette.primary) },
-          uColorHot: { value: new THREE.Color(palette.secondary) },
-        },
-      })),
-    [],
-  )
-
-  const ringMaterials = useMemo(
-    () =>
-      rings.map(
-        (ring) =>
-          new THREE.ShaderMaterial({
-            uniforms: ring.uniforms,
-            vertexShader: RING_VERTEX,
-            fragmentShader: RING_FRAGMENT,
-            transparent: true,
-            depthWrite: false,
-            depthTest: false,
-            side: THREE.DoubleSide,
-            blending: THREE.AdditiveBlending,
-            toneMapped: false,
-          }),
-      ),
-    [rings],
-  )
-
   /* ── Palette → every colour uniform, in place ───────────────────────────── */
   /**
    * One effect re-tints all three layers at once.
    *
-   * WHY mutate instead of rebuilding: these materials, their shader programs and
-   * the ripple ring pool are created once for the whole session. Recreating them
-   * on a preset change would dispose/recompile programs, and any plume or ripple
-   * currently in flight would lose its uniforms mid-animation. `THREE.Color.set`
-   * only rewrites the RGB values the uniforms already point at, so the visual
-   * change lands on the very next frame with no rebuild at all.
+   * WHY mutate instead of rebuilding: these materials and their shader programs
+   * are created once for the whole session. Recreating them on a preset change
+   * would dispose/recompile programs, and a plume already in flight would lose
+   * its uniforms mid-animation. `THREE.Color.set` only rewrites the RGB values the
+   * uniforms already point at, so the visual change lands on the very next frame
+   * with no rebuild at all.
    */
   useEffect(() => {
     particleUniforms.uCore.value.set(palette.particleCore)
@@ -723,12 +634,7 @@ export function CursorStardustTrail({ tier = 'high', count: countProp }: CursorS
 
     ribbonUniforms.uCold.value.set(palette.primary)
     ribbonUniforms.uHot.value.set(palette.secondary)
-
-    for (const ring of rings) {
-      ring.uniforms.uColorCold.value.set(palette.primary)
-      ring.uniforms.uColorHot.value.set(palette.secondary)
-    }
-  }, [palette, particleUniforms, ribbonUniforms, rings])
+  }, [palette, particleUniforms, ribbonUniforms])
 
   /* ── Keep sprite size correct across DPR changes ───────────────────────── */
   useEffect(() => {
@@ -742,9 +648,8 @@ export function CursorStardustTrail({ tier = 'high', count: countProp }: CursorS
       particleMaterial.dispose()
       ribbon.geo.dispose()
       ribbonMaterial.dispose()
-      for (const m of ringMaterials) m.dispose()
     },
-    [geometry, particleMaterial, ribbon, ribbonMaterial, ringMaterials],
+    [geometry, particleMaterial, ribbon, ribbonMaterial],
   )
 
   /*
@@ -965,42 +870,6 @@ export function CursorStardustTrail({ tier = 'high', count: countProp }: CursorS
       posAttr.needsUpdate = true
     }
     if (ribbonRef.current) ribbonRef.current.visible = fade > 0.002
-
-    /* 7. Ripple rings: expand, billboard and fade. */
-    for (let i = 0; i < rings.length; i++) {
-      const ring = rings[i]
-      const mesh = ringRefs.current[i]
-      if (!mesh) continue
-
-      if (ring.life <= 0) {
-        mesh.visible = false
-        continue
-      }
-
-      ring.life -= dt / RING_LIFE
-      if (ring.life <= 0) {
-        ring.life = 0
-        mesh.visible = false
-        continue
-      }
-
-      mesh.visible = true
-      const progress = 1 - ring.life
-      /*
-       * Ease-out expansion, capped at scale 2.3 (≈ 4.6 world units across). The
-       * first pass ran to 3.95, which at the hero camera's z = 7.4 produced a
-       * ripple wider than half the viewport — it read as a lens overlay rather
-       * than as a shockwave emanating from the click.
-       */
-      const scale = 0.3 + (1 - (1 - progress) * (1 - progress)) * 2.0
-      mesh.scale.setScalar(scale)
-      mesh.position.copy(ring.position)
-      // Billboarding keeps the ripple facing the viewer at any camera angle,
-      // which is what makes it read as light rather than as a decal.
-      mesh.lookAt(camera.position)
-
-      ring.uniforms.uLife.value = ring.life
-    }
   })
 
   return (
@@ -1024,24 +893,6 @@ export function CursorStardustTrail({ tier = 'high', count: countProp }: CursorS
         frustumCulled={false}
         visible={false}
       />
-
-      {/*
-       * Ripple pool. A shared quad geometry, one material per ring so each can
-       * carry its own life uniform.
-       */}
-      {ringMaterials.map((material, i) => (
-        <mesh
-          key={i}
-          ref={(el) => {
-            ringRefs.current[i] = el
-          }}
-          material={material}
-          visible={false}
-          frustumCulled={false}
-        >
-          <planeGeometry args={[2, 2]} />
-        </mesh>
-      ))}
     </>
   )
 }

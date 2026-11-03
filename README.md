@@ -581,7 +581,7 @@ Windows 平台会打印跳过原因并退 0，因为基线是在 Windows 上抓�
 ```bash
 pnpm test           # 62 条单元断言（纯函数：弹簧 / Verlet / FABRIK / 模糊匹配 / 调色板 / i18n 字典）
 pnpm typecheck      # tsc -b --noEmit
-pnpm lint           # ESLint 10 flat，含 jsx-a11y；0 error，13 条 warning 为棘轮上限
+pnpm lint           # ESLint 10 flat，含 jsx-a11y；0 error，12 条 warning 为棘轮上限
 pnpm format:check   # Prettier
 pnpm build          # tsc -b && vite build
 pnpm verify:budget  # 关键路径 ≤ 240 KB，且不得含 three/webgl
