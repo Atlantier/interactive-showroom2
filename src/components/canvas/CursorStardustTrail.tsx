@@ -685,13 +685,25 @@ export function CursorStardustTrail({ tier = 'high', count: countProp }: CursorS
      *    compaction step. Sparks age faster than stardust. */
     const baseDecay = dt / LIFETIME
     let alive = 0
+    /*
+     * Track how far behind the write head the oldest live particle is (SH-07).
+     *
+     * `aLife` used to be re-uploaded in full every frame -- 16 KB at the full pool size -- while
+     * only the live window changes. The ring cursor makes that window contiguous, so this one
+     * number is all the upload needs.
+     */
+    let liveSpan = 0
     for (let i = 0; i < count; i++) {
       const l = life[i]
       if (l > 0) {
         const decay = kind[i] > 0.5 ? baseDecay * SPARK_AGE_RATE : baseDecay
         const next = l > decay ? l - decay : 0
         life[i] = next
-        if (next > 0) alive++
+        if (next > 0) {
+          alive++
+          const behind = (sim.cursor - i + count) % count
+          if (behind > liveSpan) liveSpan = behind
+        }
       }
     }
     sim.alive = alive
@@ -720,6 +732,9 @@ export function CursorStardustTrail({ tier = 'high', count: countProp }: CursorS
 
     /* 3. Emit stardust along the frame-to-frame segment. */
     let spawned = false
+    /** Slots written this frame, and the first of them, so uploads can be ranged (SH-07). */
+    let spawnedThisFrame = 0
+    let spawnStart = 0
 
     /*
      * The history has to be restarted whenever the cursor reappears, not merely
@@ -746,6 +761,7 @@ export function CursorStardustTrail({ tier = 'high', count: countProp }: CursorS
           if (n < 1) n = 1
           else if (n > MAX_EMIT_PER_FRAME) n = MAX_EMIT_PER_FRAME
 
+          if (spawnedThisFrame === 0) spawnStart = sim.cursor
           for (let k = 0; k < n; k++) {
             // Evenly spaced along last frame's point -> this frame's point.
             // This is what removes the beading on fast movement.
@@ -766,6 +782,7 @@ export function CursorStardustTrail({ tier = 'high', count: countProp }: CursorS
           }
 
           sim.spawned += n
+          spawnedThisFrame += n
           spawned = true
         }
       }
@@ -778,14 +795,52 @@ export function CursorStardustTrail({ tier = 'high', count: countProp }: CursorS
     /* 4. (was: consume a queued click — see the note where the listener used to
      *    live; click feedback is now a single thin ripple outside WebGL.) */
 
-    /* 5. Upload the particle buffers. */
+    /*
+     * 5. Upload the particle buffers -- only the slots that changed.
+     *
+     * A single emitted splat used to re-upload position, aVel, aKind and aSeed in full: 128 KB for
+     * one particle, on any frame where the cursor moved (which is most of them). Emission walks the
+     * ring cursor, so the slots written this frame are one contiguous run and the driver only needs
+     * that run.
+     */
     if (spawned) {
-      ;(geometry.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true
-      ;(geometry.getAttribute('aVel') as THREE.BufferAttribute).needsUpdate = true
-      ;(geometry.getAttribute('aKind') as THREE.BufferAttribute).needsUpdate = true
-      ;(geometry.getAttribute('aSeed') as THREE.BufferAttribute).needsUpdate = true
+      const ranges: Array<[number, number]> = []
+      if (spawnStart + spawnedThisFrame <= count) {
+        ranges.push([spawnStart, spawnedThisFrame])
+      } else {
+        ranges.push([spawnStart, count - spawnStart])
+        ranges.push([0, spawnedThisFrame - (count - spawnStart)])
+      }
+      for (const name of ['position', 'aVel', 'aKind', 'aSeed'] as const) {
+        const attr = geometry.getAttribute(name) as THREE.BufferAttribute
+        for (const [start, length] of ranges)
+          attr.addUpdateRange(start * attr.itemSize, length * attr.itemSize)
+        attr.needsUpdate = true
+      }
     }
-    ;(geometry.getAttribute('aLife') as THREE.BufferAttribute).needsUpdate = true
+
+    /*
+     * `aLife` is uploaded for the live window only (SH-07).
+     *
+     * A full re-upload of this attribute costs 16 KB per frame at the full pool size, and the pool
+     * is 4 000 slots while only ~700 are ever alive at once (LIFETIME x emission rate, well under
+     * the cap). Because emission walks a ring cursor, the slots that changed occupy one contiguous
+     * window ending at the head -- or two, when that window wraps.
+     *
+     * three uploads the ranges, then clears them itself, so nothing needs clearing here.
+     */
+    if (alive > 0 || spawnedThisFrame > 0) {
+      const lifeAttr = geometry.getAttribute('aLife') as THREE.BufferAttribute
+      const span = Math.min(count, Math.max(liveSpan + 1, spawnedThisFrame))
+      const start = (sim.cursor - span + count) % count
+      if (start + span <= count) {
+        lifeAttr.addUpdateRange(start, span)
+      } else {
+        lifeAttr.addUpdateRange(start, count - start)
+        lifeAttr.addUpdateRange(0, span - (count - start))
+      }
+      lifeAttr.needsUpdate = true
+    }
 
     /* 6. Ribbon: shift the 24-frame history and rebuild the strip in place. */
     const { history, positions, posAttr } = ribbon
