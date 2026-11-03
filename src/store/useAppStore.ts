@@ -129,6 +129,14 @@ export interface AppState {
    * `partialize`: it describes this page load, not a user preference.
    */
   prewarmDone: boolean
+  /**
+   * True while the browser has taken a WebGL context away from us (CR-12).
+   *
+   * A driver reset, a GPU process crash, or a switch between integrated and discrete graphics all
+   * produce this: the canvas goes black and stays black, with nothing in the interface to say why.
+   * three.js re-initialises on restore, so the missing piece was telling the visitor.
+   */
+  webglContextLost: boolean
 
   setSoundEnabled: (enabled: boolean) => void
   toggleSound: () => void
@@ -149,6 +157,7 @@ export interface AppState {
   setCommandPaletteOpen: (open: boolean) => void
   /** Report that the architecture rig finished compiling its shaders. */
   setPrewarmDone: () => void
+  setWebglContextLost: (lost: boolean) => void
   toggleCommandPalette: () => void
   /** Restore the persisted preferences to their boot defaults. */
   resetPreferences: () => void
@@ -349,6 +358,7 @@ export const useAppStore = create<AppState>()(
       gravityMode: 'earth',
       commandPaletteOpen: false,
       prewarmDone: false,
+      webglContextLost: false,
 
       setSoundEnabled: (enabled) => set({ soundEnabled: enabled }),
       toggleSound: () => set((state) => ({ soundEnabled: !state.soundEnabled })),
@@ -433,6 +443,7 @@ export const useAppStore = create<AppState>()(
       setGravityMode: (mode) => set({ gravityMode: mode }),
 
       setPrewarmDone: () => set({ prewarmDone: true }),
+      setWebglContextLost: (lost) => set({ webglContextLost: lost }),
       setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
       toggleCommandPalette: () =>
         set((state) => ({ commandPaletteOpen: !state.commandPaletteOpen })),

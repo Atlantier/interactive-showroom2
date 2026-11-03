@@ -256,6 +256,8 @@ export const zh: Dictionary = {
     frameBudget: '帧预算',
     avg: '均值',
     adaptiveQuality: '自适应画质',
+    contextLost: '图形上下文丢失——浏览器正在恢复',
+    contextRestored: '图形已恢复',
   },
 
   archive: {

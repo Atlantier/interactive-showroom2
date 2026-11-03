@@ -112,15 +112,19 @@ const MONITOR_ITERATIONS = 8
  */
 function DprSync({ max }: { max: number }) {
   const setDpr = useThree((state) => state.setDpr)
-  const gl = useThree((state) => state.gl)
 
+  /*
+   * One owner for one value (CR-11).
+   *
+   * This used to call `gl.setPixelRatio(ratio)` as well, with a comment claiming it covered the
+   * case where the store value was already correct but the drawing buffer was not. That claim does
+   * not hold: `setPixelRatio` only records the ratio for the next `setSize`, it does not resize the
+   * drawing buffer. R3F's `setDpr` does resize (it goes through the same path as a size change), so
+   * the second call was at best redundant and at worst a second writer racing the first.
+   */
   useEffect(() => {
-    const ratio = Math.min(window.devicePixelRatio || 1, max)
-    setDpr(ratio)
-    // `setDpr` resizes through the store; the explicit call covers the case
-    // where the store value is already correct but the drawing buffer is not.
-    gl.setPixelRatio(ratio)
-  }, [gl, setDpr, max])
+    setDpr(Math.min(window.devicePixelRatio || 1, max))
+  }, [setDpr, max])
 
   return null
 }

@@ -3,6 +3,7 @@ import { SmoothScroll } from '@/components/layout/SmoothScroll'
 import { Navbar } from '@/components/layout/Navbar'
 import { ClickRipple } from '@/components/layout/ClickRipple'
 import { BootSequence } from '@/components/layout/BootSequence'
+import { installContextWatcher } from '@/lib/contextWatcher'
 import { ScrollTelemetryHud } from '@/components/layout/ScrollTelemetryHud'
 import { PerfNoticeToast, PerfTelemetryHud } from '@/components/layout/PerfTelemetryHud'
 import {
@@ -54,6 +55,7 @@ function App() {
    * React 19 supports `inert` as a plain boolean prop, so no attribute juggling.
    */
   const paletteOpen = useAppStore((state) => state.commandPaletteOpen)
+  const webglContextLost = useAppStore((state) => state.webglContextLost)
 
   // The skip link is the first focusable thing on the page, so it needs the copy here.
   const { t } = useI18n()
@@ -136,6 +138,10 @@ function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
+  // WebGL context loss has to be caught centrally: canvases are created by R3F at arbitrary
+  // depths, and the events do not bubble (see lib/contextWatcher.ts).
+  useEffect(() => installContextWatcher(), [])
+
   return (
     <SmoothScroll>
       <div className="relative min-h-dvh bg-void-950 text-ink-100">
@@ -214,6 +220,18 @@ function App() {
         <ScrollTelemetryHud />
         <PerfTelemetryHud />
         <PerfNoticeToast />
+
+        {/* three attempts recovery; the visitor receives one visible explanation. The singleton
+            announcer speaks it, so the banner has no second live-region role. Keep it outside
+            the command palette's inert subtree. */}
+        {webglContextLost && (
+          <div
+            data-webgl-context-status
+            className="pointer-events-none fixed inset-x-4 top-[calc(var(--nav-height)+0.75rem)] z-[130] mx-auto max-w-lg rounded-panel border border-signal-amber/60 bg-void-950/95 px-4 py-3 text-center text-sm text-ink-100 shadow-lg"
+          >
+            {t.hud.contextLost}
+          </div>
+        )}
 
         {/* Cmd/Ctrl+K. Always mounted so the shortcut works while it is closed. */}
         <CommandPalette />

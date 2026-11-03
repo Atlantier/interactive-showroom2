@@ -279,6 +279,8 @@ export const en = {
     frameBudget: 'Frame budget',
     avg: 'avg',
     adaptiveQuality: 'adaptive quality',
+    contextLost: 'Graphics context lost — the browser is restoring it',
+    contextRestored: 'Graphics restored',
   },
 
   /** Archive rows. `type` stays a technical proper noun in both locales. */

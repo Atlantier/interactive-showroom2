@@ -204,6 +204,17 @@ jobs:
           node scripts/verify-sandbox.mjs http://127.0.0.1:4173
           node scripts/verify-fabrik.mjs http://127.0.0.1:4173
 
+      - name: Context-loss notice (real lost/restored WebGL context)
+        # CR-12 / SH-11: the app had no `webglcontextlost` handling anywhere, so a driver reset or a
+        # switch between GPUs left a black canvas with nothing in the interface to explain it. This
+        # probe takes a REAL context away with `WEBGL_lose_context`, asserts the notice appears with
+        # the dictionary's wording and is announced once, that it survives a partial restore, and
+        # that it clears only when the last context comes back. It launches its own browser (with
+        # SwiftShader on this GPU-less runner) instead of using the CDP endpoint above.
+        env:
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+        run: pnpm verify:context --base http://127.0.0.1:4173
+
       - name: Verify build output
         # A build that silently emits nothing (or only the HTML shell) would
         # deploy a blank page. Fail loudly here instead of after publishing.
