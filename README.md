@@ -575,11 +575,12 @@ VITE_BASE_PATH=/interactive-showroom2/ pnpm build
 
 ### 验收门禁
 
-这些命令就是本项目的验收标准，全部可在本地重跑；CI 上跑的是同一批（`verify:visual` 在非
-Windows 平台会打印跳过原因并退 0，因为基线是在 Windows 上抓的，见下）：
+这些命令就是本项目的验收标准，全部可在本地重跑；CI 上跑的是同一批（`verify:visual` 与
+`verify:shader` 在非 Windows 平台会打印跳过原因并退 0，因为基线是在 Windows 上抓的，见下）：
 
 ```bash
-pnpm test           # 62 条单元断言（纯函数：弹簧 / Verlet / FABRIK / 模糊匹配 / 调色板 / i18n 字典）
+pnpm test           # 100 条单元断言（弹簧 / Verlet 与碰撞 / FABRIK / 模糊匹配 / 调色板 / i18n 字典 /
+                    # 观察器生命周期 / 音频自动播放策略 / 绳索断点选择）
 pnpm typecheck      # tsc -b --noEmit
 pnpm lint           # ESLint 10 flat，含 jsx-a11y；0 error，12 条 warning 为棘轮上限
 pnpm format:check   # Prettier
@@ -588,35 +589,41 @@ pnpm verify:budget  # 关键路径 ≤ 240 KB，且不得含 three/webgl
 pnpm verify:a11y    # 20 条无障碍断言（含 axe 全量扫描、键盘可达、焦点可见、字体自托管）
 pnpm verify:scroll  # 滚轮帧时：同进程重复 5 轮取中位数
 pnpm verify:visual  # 6 个滚动位置的截图比对（UI 层；动画背景在比对前被排除）
+pnpm verify:context # WebGL 上下文丢失/恢复 18 条（真实 loseContext：提示出现→部分恢复仍在→最后清除）
+pnpm verify:shader  # 架构画布着色器回归：预热一次 + 钉住时钟，96 块均值比基线
 pnpm verify:selftest # 证明“判定层真的会红”（5 条判定 + 3 条 findMissing）
 ```
 
 **最近一次全量实测（2026-11-03，Windows / 无头 Chromium，5 轮中位数）**：
 
-| 指标           | 值                                                      | 说明                                                                        |
-| :------------- | :------------------------------------------------------ | :-------------------------------------------------------------------------- |
-| 关键路径 gzip  | **193.5 KB** / 240 KB                                   | three 在延迟分包里，不进首屏                                                |
-| 滚轮帧时       | p95 **3.5 ms**、p99 **6.7 ms**、中位最坏帧 **73 ms**    | 5 轮中位数；冷启动最坏帧 **1163 ms**（首次访客的着色器编译，见下）          |
-| 无障碍         | **20/20**，axe critical/serious/moderate/minor **全 0** | 含键盘完成全部关键路径                                                      |
-| 单元断言       | **62**                                                  | `math` / `fabrik` / `mathPhysics` / `fuzzyMatch` / `vfxPalette` / i18n 字典 |
-| 视觉回归       | 6 个视图全 PASS                                         | 阈值 `worst ≤ 14`；实测噪声 0–6                                             |
-| 第三方字体请求 | **0**                                                   | 两种可变字体 latin 子集自托管，共 62 KB                                     |
+| 指标           | 值                                                      | 说明                                                               |
+| :------------- | :------------------------------------------------------ | :----------------------------------------------------------------- |
+| 关键路径 gzip  | **194.5 KB** / 240 KB                                   | three 在延迟分包里，不进首屏                                       |
+| 滚轮帧时       | p95 **3.4 ms**、p99 **6.6 ms**、中位最坏帧 **77 ms**    | 5 轮中位数；冷启动最坏帧 **1184 ms**（首次访客的着色器编译，见下） |
+| 无障碍         | **20/20**，axe critical/serious/moderate/minor **全 0** | 含键盘完成全部关键路径                                             |
+| 单元断言       | **100**                                                 | 含 7 条观察器生命周期、5 条音频策略、5 条断点选择                  |
+| 视觉回归（UI） | 6 个视图全 PASS                                         | 阈值 `worst ≤ 14`；实测噪声 0–5                                    |
+| 着色器回归     | 架构画布 PASS，实测 `worst 0.4–1.6`                     | 阈值 `worst ≤ 8 / mean ≤ 2`；改一处颜色会 FAIL（实测 35.1）        |
+| WebGL 上下文   | **18/18**                                               | 真实 `loseContext` → 提示 → 部分恢复提示仍在 → 全恢复才清除        |
+| 第三方字体请求 | **0**                                                   | 两种可变字体 latin 子集自托管，共 62 KB                            |
 
 **CI 上跑的是同一批**（`test` / `typecheck` / `lint` / `format:check` / `build` / `budget` /
-`a11y` / `visual` / 三个场景探针 `architecture` / `sandbox` / `fabrik`），另有两点差异：
+`a11y` / `visual` / `context` / `shader` / 三个场景探针 `architecture` / `sandbox` / `fabrik`），另有两点差异：
 
-- `verify:visual` 在非 Windows 平台**跳过**（基线是 Windows 上抓的，无头 Chromium 的栅格化逐平台不同），打印原因后退 0；
+- `verify:visual` 与 `verify:shader` 在非 Windows 平台**跳过**（基线是 Windows 上抓的，无头 Chromium 的栅格化逐平台不同），打印原因后退 0；
 - 场景探针需要 WebGL，而 CI runner 没有 GPU，因此步骤里显式开启软件 WebGL
   （`--use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader`），并在跑探针前先用
   `scripts/check-webgl.mjs` 打印浏览器报告的版本号——"runner 没有 GL"和"应用坏了"不会再被混为一谈。
 
-**两个已知数字，别被平均值骗了**：
+**三个已知数字，别被平均值骗了**：
 
-1. **冷启动最坏帧 1163 ms @ y≈960**：架构章 19 个 shader program 的首次编译（实测每次约
+1. **冷启动最坏帧 1113–1223 ms @ y≈960**：架构章 19 个 shader program 的首次编译（实测每次约
    60 ms）。三次"把它挪到开机幕布后面"的实现都被实测否决——要么无效，要么只是把等待从
    "滚动中途卡一下"换成"开机多等 2.4 s"。详见 `修改计划.md` §5.18–5.19。
 2. **`verify:visual` 只覆盖 UI 层**：比对前会隐藏占满视口的动画画布，所以纯着色器/画布内
-   的变化它抓不到；用它批准那类改动属于误用。
+   的变化它抓不到；那类改动归 `verify:shader` 管。
+3. **`verify:shader` 只覆盖架构章一个画布**：它不是全站着色器门禁。加它之前先量过可行性
+   （预热后跨轮噪声 `worst 0.9`），见 `修改计划.md` §5.40。
 
 ### 单脚本调试
 
