@@ -19,11 +19,15 @@
  * distorting.
  *
  * ── Autoplay policy ───────────────────────────────────────────────────────
- * Browsers refuse to start an AudioContext without a user gesture. The context is
- * therefore created lazily on the first `setEnabled(true)` or first play call,
- * and `resume()` is retried on every play. Scheduling while the context is still
- * "suspended" is harmless: events are queued against `currentTime`, which is
- * frozen until the context actually starts, so they fire the moment it does.
+ * Browsers refuse to start an AudioContext without a user gesture, and the persisted preference is
+ * not a gesture: a returning visitor who left sound on used to get a context created at load, stuck
+ * suspended with its clock at 0. Because `currentTime` is frozen while suspended, every voice
+ * scheduled against it was queued at t=0 -- and they all fired together the moment anything resumed
+ * the context (PB-12).
+ *
+ * So the context is created on the FIRST REAL GESTURE, from the unlock listener that
+ * `setEnabled(true)` installs, and `begin()` refuses to schedule unless the context is `running`.
+ * A trigger that arrives before that is dropped rather than queued; nothing was audible anyway.
  *
  * ── Testability ───────────────────────────────────────────────────────────
  * The five voices are exported as free functions taking a `BaseAudioContext`, so
@@ -441,13 +445,32 @@ class SoundEngine {
 
   private enabled = false
 
+  /**
+   * Whether a real user gesture has happened yet (PB-12).
+   *
+   * Every browser's autoplay policy refuses to start an AudioContext before one, so creating it
+   * earlier produces a permanently suspended context, a console warning in some browsers, and --
+   * worse -- a clock frozen at 0 that every queued voice is scheduled against.
+   */
+  private unlocked = false
+
+  /** True while the one-shot gesture listeners are attached. */
+  private gestureBound = false
+
   /** Last trigger time per sound, in `performance.now()` milliseconds. */
   private readonly lastTriggeredAt = new Map<SoundId, number>()
 
-  /** Bound once, so the unlock listener can be removed when it fires. */
+  /**
+   * Bound once, so the unlock listener can be removed when it fires.
+   *
+   * This is also the ONLY place the context is allowed to come into existence (PB-12): the first
+   * real gesture is the moment the browser lets it start, so building it here means it starts
+   * running instead of sitting suspended.
+   */
   private readonly unlock = (): void => {
     if (!this.enabled) return
-    const ctx = this.ctx
+    this.unlocked = true
+    const ctx = this.ensureContext()
     if (ctx && ctx.state === 'suspended') void ctx.resume()
   }
 
@@ -495,19 +518,28 @@ class SoundEngine {
       return
     }
 
-    const ctx = this.ensureContext()
-    if (!ctx) return
-    if (ctx.state === 'suspended') void ctx.resume()
+    const ctx = this.ctx
+    if (ctx) {
+      if (ctx.state === 'suspended') void ctx.resume()
+      return
+    }
+
+    /*
+     * Do NOT construct the context here (PB-12).
+     *
+     * This method runs on mount with the persisted preference, which is not a user gesture. Building
+     * the graph there created an AudioContext on every visit by a returning visitor with sound on:
+     * suspended for the whole session under the autoplay policy, with its clock frozen at 0. Wait for
+     * the first real gesture instead; until then `begin()` simply reports "do not play".
+     */
+    this.listenForGesture()
   }
 
   /** Release the audio graph. Exposed for tests and teardown. */
   dispose(): void {
     this.enabled = false
     this.lastTriggeredAt.clear()
-    if (typeof document !== 'undefined') {
-      document.removeEventListener('pointerdown', this.unlock)
-      document.removeEventListener('keydown', this.unlock)
-    }
+    this.removeGestureListeners()
     const ctx = this.ctx
     if (ctx) void ctx.close()
     this.ctx = null
@@ -515,6 +547,23 @@ class SoundEngine {
     this.compressor = null
     this.analyser = null
     this.spectrumScratch = null
+    this.unlocked = false
+  }
+
+  /** Attach the one-shot unlock listeners, at most once. */
+  private listenForGesture(): void {
+    if (this.gestureBound) return
+    if (typeof document === 'undefined') return
+    this.gestureBound = true
+    document.addEventListener('pointerdown', this.unlock, { passive: true })
+    document.addEventListener('keydown', this.unlock)
+  }
+
+  private removeGestureListeners(): void {
+    this.gestureBound = false
+    if (typeof document === 'undefined') return
+    document.removeEventListener('pointerdown', this.unlock)
+    document.removeEventListener('keydown', this.unlock)
   }
 
   /* ── Spectrum ─────────────────────────────────────────────────────────── */
@@ -685,9 +734,18 @@ class SoundEngine {
     if (!ctx || !this.master) return null
     if (ctx.state === 'closed') return null
 
-    // Scheduling while suspended is fine: `currentTime` is frozen, so the events
-    // fire as soon as the resume lands.
-    if (ctx.state === 'suspended') void ctx.resume()
+    /*
+     * Never schedule against a frozen clock (PB-12).
+     *
+     * While a context is suspended its `currentTime` does not advance, so a voice scheduled at
+     * `ctx.currentTime` is queued at t=0 -- and every voice queued that way fires at once the
+     * moment something resumes the context. Dropping this trigger and asking for a resume is both
+     * honest (nothing is audible yet) and the only way to keep the queue empty.
+     */
+    if (ctx.state !== 'running') {
+      void ctx.resume()
+      return null
+    }
 
     return { ctx, out: this.master, at: ctx.currentTime }
   }
@@ -695,13 +753,15 @@ class SoundEngine {
   /**
    * Create the context and the shared bus on first use.
    *
-   * Lazy rather than at module load because constructing an AudioContext during
-   * page load logs a console warning in every browser that enforces the autoplay
-   * policy, and it would be created even for visitors who never enable sound.
+   * Callable only after a real gesture, and only with sound enabled (PB-12): the autoplay policy
+   * forbids starting a context earlier, and a context that cannot start has a frozen clock that
+   * queues every voice at t=0. The `unlocked` gate keeps that from happening by construction --
+   * `setEnabled()` attaches the gesture listeners instead of building anything.
    */
   private ensureContext(): AudioContext | null {
     if (this.ctx) return this.ctx
     if (typeof window === 'undefined') return null
+    if (!this.enabled || !this.unlocked) return null
 
     const w = window as unknown as {
       AudioContext?: typeof AudioContext
@@ -749,12 +809,6 @@ class SoundEngine {
     this.compressor = compressor
     this.analyser = analyser
     this.spectrumScratch = null
-
-    // Any gesture can unlock audio; both are cheap and one-shot in practice.
-    if (typeof document !== 'undefined') {
-      document.addEventListener('pointerdown', this.unlock, { passive: true })
-      document.addEventListener('keydown', this.unlock)
-    }
 
     return ctx
   }
