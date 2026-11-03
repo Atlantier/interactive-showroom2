@@ -81,6 +81,22 @@ export function createFABRIKResult(): FABRIKResult {
 }
 
 /** Total reach of a chain, i.e. the sum of its bone lengths. */
+/**
+ * True when every joint of a chain is finite (PB-17).
+ *
+ * The FABRIK solver is a fixed-point iteration: one non-finite coordinate feeds back into the next
+ * sweep and the whole chain is poisoned within a frame or two. The arm then points at nothing and
+ * never recovers, which reads as a frozen toy rather than as an error -- so the sandbox checks its
+ * rigs each step and rebuilds them instead.
+ */
+export function jointsAreFinite(joints: readonly IKJoint[]): boolean {
+  for (let i = 0; i < joints.length; i++) {
+    const j = joints[i]
+    if (!Number.isFinite(j.x) || !Number.isFinite(j.y)) return false
+  }
+  return true
+}
+
 export function chainLength(lengths: readonly number[]): number {
   let total = 0
   for (let i = 0; i < lengths.length; i++) total += lengths[i]

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_MAX_BEND,
   applyAngleConstraints,
+  jointsAreFinite,
   chainLength,
   solveFABRIK,
   type IKJoint,
@@ -82,6 +83,39 @@ describe('solveFABRIK', () => {
     solveFABRIK(joints, { x: -70, y: 30 }, lengths, 0.5)
     expect(root.x).toBe(before.x)
     expect(root.y).toBe(before.y)
+  })
+})
+
+describe('jointsAreFinite', () => {
+  it('accepts a healthy chain', () => {
+    expect(
+      jointsAreFinite([
+        { x: 0, y: 0 },
+        { x: 3, y: -4 },
+      ]),
+    ).toBe(true)
+    expect(jointsAreFinite([])).toBe(true)
+  })
+
+  it('catches the values a drifting solver actually produces', () => {
+    expect(
+      jointsAreFinite([
+        { x: 0, y: 0 },
+        { x: Number.NaN, y: 1 },
+      ]),
+    ).toBe(false)
+    expect(jointsAreFinite([{ x: Number.POSITIVE_INFINITY, y: 0 }])).toBe(false)
+    expect(jointsAreFinite([{ x: 0, y: Number.NEGATIVE_INFINITY }])).toBe(false)
+  })
+
+  it('notices a poisoned joint anywhere in the chain, not only the first', () => {
+    const chain = [
+      { x: 0, y: 0 },
+      { x: 1, y: 1 },
+      { x: 2, y: Number.NaN },
+      { x: 3, y: 3 },
+    ]
+    expect(jointsAreFinite(chain)).toBe(false)
   })
 })
 

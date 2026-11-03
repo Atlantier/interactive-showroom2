@@ -15,6 +15,7 @@ import {
   applyAngleConstraints,
   chainLength,
   createFABRIKResult,
+  jointsAreFinite,
   solveFABRIK,
   type FABRIKResult,
   type IKJoint,
@@ -1606,6 +1607,17 @@ export function FabrikCreature({ className }: { className?: string }) {
         if (arm && modeRef.current === 'arm') {
           stepArm(arm, FIXED, px, py)
           ikChains = 1
+          /*
+           * NaN watchdog (PB-17), the same one the lanyard sandbox has.
+           *
+           * FABRIK is a fixed-point iteration, so one non-finite coordinate poisons every later
+           * sweep and the arm points at nothing for the rest of the session. Rebuilding the rig is
+           * the only recovery that does not require deciding which joints are still trustworthy.
+           */
+          if (!jointsAreFinite(arm.joints)) {
+            armRef.current = createArm(cssW, cssH)
+            break
+          }
         }
         if (creature && modeRef.current === 'creature') {
           // Until the pointer moves, steer the creature to the canvas centre so
@@ -1614,6 +1626,14 @@ export function FabrikCreature({ className }: { className?: string }) {
           const ty = pointerSeenRef.current ? py : cssH / 2
           stepCreature(creature, FIXED, tx, ty, cssW, cssH)
           ikChains = creature.legs.length
+          // Same watchdog for the quadruped: its spine and every leg chain are iterated.
+          if (
+            !jointsAreFinite(creature.spine) ||
+            creature.legs.some((leg) => !jointsAreFinite(leg.joints))
+          ) {
+            creatureRef.current = createCreature(cssW, cssH)
+            break
+          }
         }
         clock.consume()
         steps++
