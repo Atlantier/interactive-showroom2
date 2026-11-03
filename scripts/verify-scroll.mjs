@@ -226,17 +226,29 @@ try {
   const measureRun = async (runIndex) => {
     await send('Page.navigate', { url: base })
 
-    // Wait for the boot veil to lift: the app reports readiness through `prewarmDone`.
+    /*
+     * Wait for the BOOT VEIL to lift, not merely for `main` to exist.
+     *
+     * The old condition accepted `main`, which is in the DOM about 0.1 s in, so the scroll began
+     * while the app was still compiling. That made the measurement dependent on how long boot
+     * happened to take: an experimental build whose boot ran 3.8 s had its shader compile finish
+     * before the first wheel event, and the gate reported "entry stall fixed, cold worst 43 ms"
+     * when nothing about the visitor's experience had changed -- the stall had simply moved
+     * outside the measured window. Waiting for the veil removes that whole class of
+     * self-deception: the scroll starts when the visitor can actually scroll.
+     */
     let ready = false
-    for (let attempt = 0; attempt < 60; attempt++) {
-      await sleep(500)
+    for (let attempt = 0; attempt < 80; attempt++) {
+      await sleep(250)
       ready = await evaluate(
-        `!!document.querySelector('[data-boot], main, section#hero') && document.readyState === 'complete'`,
+        `document.readyState === 'complete' &&
+         !!document.getElementById('main') &&
+         !document.querySelector('[data-boot]')`,
       )
       if (ready) break
     }
-    if (!ready) throw new Error(`run ${runIndex + 1}: page never finished loading`)
-    await sleep(2500)
+    if (!ready) throw new Error(`run ${runIndex + 1}: page never finished loading (veil still up)`)
+    await sleep(1500)
 
     await evaluate(`(() => {
       window.__scrollProbe = { frames: [] }
