@@ -573,19 +573,48 @@ pnpm preview      # 预览生产包
 VITE_BASE_PATH=/interactive-showroom2/ pnpm build
 ```
 
-### 验证脚本
+### 验收门禁
 
-仓库自带无头 Chrome（CDP）验证脚本，覆盖滚动、粒子、变形、Bento、终端、
-架构、物理沙盒、FABRIK、音效、频谱、性能降档、命令面板与移动端：
+这些命令就是本项目的验收标准，全部可在本地重跑；CI 上跑的是同一批（`verify:visual` 在非
+Windows 平台会打印跳过原因并退 0，因为基线是在 Windows 上抓的，见下）：
 
 ```bash
-node scripts/smoke.mjs                  # 冒烟：异常 / 请求 / 溢出
-node scripts/verify-perf-audit.mjs      # 性能审计（22 断言）
-node scripts/verify-command-mobile.mjs  # 命令面板 + 移动端（28 断言）
-node scripts/verify-leaks.mjs           # GPU 资源泄漏（11 断言）
+pnpm test           # 62 条单元断言（纯函数：弹簧 / Verlet / FABRIK / 模糊匹配 / 调色板 / i18n 字典）
+pnpm typecheck      # tsc -b --noEmit
+pnpm lint           # ESLint 10 flat，含 jsx-a11y；0 error，13 条 warning 为棘轮上限
+pnpm format:check   # Prettier
+pnpm build          # tsc -b && vite build
+pnpm verify:budget  # 关键路径 ≤ 240 KB，且不得含 three/webgl
+pnpm verify:a11y    # 20 条无障碍断言（含 axe 全量扫描、键盘可达、焦点可见、字体自托管）
+pnpm verify:scroll  # 滚轮帧时：同进程重复 5 轮取中位数
+pnpm verify:visual  # 6 个滚动位置的截图比对（UI 层；动画背景在比对前被排除）
+pnpm verify:selftest # 证明“判定层真的会红”（5 条判定 + 3 条 findMissing）
 ```
 
-运行方式（以 `verify-leaks` 为例）：
+**最近一次全量实测（2026-11-03，Windows / 无头 Chromium，5 轮中位数）**：
+
+| 指标           | 值                                                      | 说明                                                                        |
+| :------------- | :------------------------------------------------------ | :-------------------------------------------------------------------------- |
+| 关键路径 gzip  | **193.5 KB** / 240 KB                                   | three 在延迟分包里，不进首屏                                                |
+| 滚轮帧时       | p95 **3.5 ms**、p99 **6.7 ms**、中位最坏帧 **73 ms**    | 5 轮中位数；冷启动最坏帧 **1163 ms**（首次访客的着色器编译，见下）          |
+| 无障碍         | **20/20**，axe critical/serious/moderate/minor **全 0** | 含键盘完成全部关键路径                                                      |
+| 单元断言       | **62**                                                  | `math` / `fabrik` / `mathPhysics` / `fuzzyMatch` / `vfxPalette` / i18n 字典 |
+| 视觉回归       | 6 个视图全 PASS                                         | 阈值 `worst ≤ 14`；实测噪声 0–6                                             |
+| 第三方字体请求 | **0**                                                   | 两种可变字体 latin 子集自托管，共 62 KB                                     |
+
+**两个已知数字，别被平均值骗了**：
+
+1. **冷启动最坏帧 1163 ms @ y≈960**：架构章 19 个 shader program 的首次编译（实测每次约
+   60 ms）。三次"把它挪到开机幕布后面"的实现都被实测否决——要么无效，要么只是把等待从
+   "滚动中途卡一下"换成"开机多等 2.4 s"。详见 `修改计划.md` §5.18–5.19。
+2. **`verify:visual` 只覆盖 UI 层**：比对前会隐藏占满视口的动画画布，所以纯着色器/画布内
+   的变化它抓不到；用它批准那类改动属于误用。
+
+### 单脚本调试
+
+仓库另有无头 Chrome（CDP）验证脚本，覆盖滚动、粒子、变形、Bento、终端、架构、物理沙盒、
+FABRIK、音效、频谱、性能降档、命令面板与移动端。它们各自连到一个已经开好调试端口的
+Chrome，而不是自己启动浏览器：
 
 ```bash
 # 终端 1：开发服务器
@@ -595,9 +624,13 @@ pnpm dev --port 5279
 chrome --headless=new --remote-debugging-port=9359 \
        --user-data-dir=%TEMP%\showroom-chrome about:blank
 
-# 终端 3：执行
-node scripts/verify-leaks.mjs http://127.0.0.1:5279
+# 终端 3：执行（各脚本的默认端口不同，可用 CDP_HTTP 覆盖）
+CDP_HTTP=http://127.0.0.1:9359 node scripts/verify-leaks.mjs http://127.0.0.1:5279
 ```
+
+单个脚本现在也会**因为"没找到要测的东西"而失败**：`findMissing(report)` 收集所有回了
+`{found:false}` / `{ok:false}` 的探针，指向一个不是本应用的页面会得到 exit 1 而不是
+"verdict OK"。
 
 ---
 
@@ -651,9 +684,10 @@ flowchart LR
 - 全部交互元素可 Tab 可达，`focus-visible` 有明确青色描边
 - 命令面板是标准 `combobox` + `listbox`，`aria-activedescendant` 同步高亮
 - 3D 图层点击对应真实 DOM 弹层（`role="dialog"`），而非不可聚焦的 canvas 内容
-- 沙盒 canvas 带 `role="application"` 与中文 `aria-label`
+- 沙盒 canvas 带 `role="application"`、可聚焦、可用键盘完成抓取/甩动/发射，且**空闲时不吞方向键**
 - 尊重 `prefers-reduced-motion`
 - 中文输入法保护：`isComposing` 期间不拦截 <kbd>Enter</kbd>
+- 以上全部由 `pnpm verify:a11y` 的 20 条断言在**生产构建**上实测（`axe` 全量扫描 + 定向断言）
 
 ---
 
