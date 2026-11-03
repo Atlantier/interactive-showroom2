@@ -100,10 +100,6 @@ export function onScrollFrame(listener: FrameListener): () => void {
   }
 }
 
-/** Current smoothed progress, read outside React. */
-export const getScrollProgress = (): number => lastProgress
-export const getScrollVelocity = (): number => smoothedVelocity
-
 /**
  * True while the inertial scroll is still settling.
  *

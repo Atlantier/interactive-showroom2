@@ -70,8 +70,6 @@ export interface PerformanceCounters {
   heapCursor: number
   /** How many entries in `heapHistory` are populated. */
   heapCount: number
-  /** Canvases currently asleep because they are outside the viewport. */
-  sleepingCanvases: number
 }
 
 /** The single shared instance. Import and read/mutate directly. */
@@ -89,7 +87,6 @@ export const performanceCounters: PerformanceCounters = {
   heapHistory: new Float32Array(HEAP_HISTORY_SIZE),
   heapCursor: 0,
   heapCount: 0,
-  sleepingCanvases: 0,
 }
 
 /** Smoothing factor for the physics-solve moving average (per sample). */
@@ -217,13 +214,4 @@ export function readHeapHistory(out: Float32Array): number {
     out[i] = history[(start + i) % HEAP_HISTORY_SIZE]
   }
   return count
-}
-
-/** Register a canvas that has gone to sleep, or woken up. */
-export function setCanvasSleeping(sleeping: boolean): void {
-  if (sleeping) {
-    performanceCounters.sleepingCanvases++
-  } else {
-    performanceCounters.sleepingCanvases = Math.max(0, performanceCounters.sleepingCanvases - 1)
-  }
 }

@@ -238,9 +238,16 @@ export function PerfTelemetryHud() {
       if (solveAvgRef.current) solveAvgRef.current.textContent = c.physicsSolveAvgMs.toFixed(2)
       if (ikRef.current) ikRef.current.textContent = c.ikSolveMs.toFixed(2)
       if (canvasCountRef.current) {
-        // Read the live root count rather than tracking a second counter: the
-        // frame bridge is already the single source of truth for it.
-        canvasCountRef.current.textContent = `${getActiveCanvasCount()} / ${c.sleepingCanvases}`
+        /*
+         * Live root count only.
+         *
+         * This used to print `active / sleeping`, but the sleeping counter's only writer
+         * (`setCanvasSleeping`) had no callers and was removed as dead code -- so the panel was
+         * showing a permanent, meaningless "/ 0". Sleeping in this app means "not mounted" or
+         * "frameloop paused", which the active count already reflects; a second counter that
+         * nobody increments is worse than no counter.
+         */
+        canvasCountRef.current.textContent = String(getActiveCanvasCount())
       }
       if (heapRef.current) {
         heapRef.current.textContent = c.heapAvailable ? c.heapMB.toFixed(1) : 'n/a'

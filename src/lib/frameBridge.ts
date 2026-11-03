@@ -133,10 +133,3 @@ export function advanceR3F(timestampMs: number): void {
 
   advanceFn(clamped)
 }
-
-/** Reset internal clock bookkeeping. Exposed for tests / hot reload. */
-export function resetFrameBridge(): void {
-  originMs = null
-  lastSeconds = 0
-  activeCanvases = 0
-}

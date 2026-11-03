@@ -328,13 +328,6 @@ export function resetMouseTransient(): void {
   transient.mouse.active = false
 }
 
-/** Full reset — used on teardown / route changes. */
-export function resetTransient(): void {
-  resetMouseTransient()
-  transient.scroll.progress = 0
-  transient.scroll.velocity = 0
-}
-
 /* -------------------------------------------------------------------------- */
 /*  Store                                                                     */
 /* -------------------------------------------------------------------------- */

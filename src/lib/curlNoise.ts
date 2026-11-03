@@ -226,8 +226,14 @@ export interface CurlVolume {
   resolution: number
   /** Half-extent of the sampled cube in world units. */
   extent: number
-  /** World-space step between adjacent lattice samples. */
-  step: number
+  /**
+   * RECIPROCAL of the world-space step between lattice samples, i.e. 1 / (2 * extent / (resolution - 1)).
+   *
+   * Stored as the reciprocal because that is how the sampler uses it: world coordinates are
+   * converted to lattice coordinates by MULTIPLYING. It used to be called `step` and documented as
+   * the world-space step, which is a 12x lie for anyone who reads the name and divides by it.
+   */
+  invStep: number
 }
 
 export interface CurlVolumeOptions {
@@ -293,7 +299,7 @@ export function buildCurlVolume(options: CurlVolumeOptions = {}): CurlVolume {
     }
   }
 
-  return { data, resolution, extent, step: invStep }
+  return { data, resolution, extent, invStep }
 }
 
 /**
@@ -311,12 +317,12 @@ export function sampleCurl(
   out: Float32Array,
   o: number,
 ): void {
-  const { data, resolution, extent, step } = volume
+  const { data, resolution, extent, invStep } = volume
 
   // World → lattice coordinates.
-  const gx = (x + extent) * step
-  const gy = (y + extent) * step
-  const gz = (z + extent) * step
+  const gx = (x + extent) * invStep
+  const gy = (y + extent) * invStep
+  const gz = (z + extent) * invStep
 
   // Floor + clamp so i0 and i0+1 are always in range.
   const max = resolution - 2
