@@ -189,6 +189,25 @@ function compareBlocks(a, b, rect) {
 /*  Browser                                                                   */
 /* -------------------------------------------------------------------------- */
 
+/*
+ * Cross-platform skip, BEFORE any browser work.
+ *
+ * The baseline records the platform it was captured on, and headless Chromium does not rasterise the
+ * same pixels elsewhere. Checking up front means the Linux CI runner does not spend seven page loads
+ * under SwiftShader only to discard the result.
+ */
+if (!update && existsSync(BASELINE_FILE)) {
+  const saved = JSON.parse(readFileSync(BASELINE_FILE, 'utf8'))
+  if (saved.meta?.platform && saved.meta.platform !== process.platform) {
+    console.log(
+      `shader: baseline was captured on ${saved.meta.platform}, this is ${process.platform} — skipping`,
+    )
+    console.log('        (headless Chromium does not rasterise the same pixels per platform)')
+    finish({ label: 'shader' })
+    process.exit(process.exitCode ?? 0)
+  }
+}
+
 const port = 9200 + Math.floor(Math.random() * 60)
 const profile = await mkdtemp(join(tmpdir(), 'showroom-shader-'))
 const chrome = spawn(
