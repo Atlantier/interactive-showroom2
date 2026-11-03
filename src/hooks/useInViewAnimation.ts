@@ -1,4 +1,5 @@
 import { useEffect, useRef, type RefObject } from 'react'
+import { createInViewBinding, type InViewBinding } from '@/lib/inViewObserver'
 
 /**
  * A live, mutable visibility flag.
@@ -39,8 +40,10 @@ export interface UseInViewAnimationOptions {
  * ── What "pause" means per module ─────────────────────────────────────────
  *   · 2D sandboxes (Verlet, FABRIK) — stop scheduling their rAF loop. The loops
  *     read `.current` at the top of each frame and return early.
- *   · R3F canvases — the rig and its post-processing composer are mounted
- *     only while visible, so an off-screen section renders nothing at all.
+ *   · R3F canvases — the rig contents and their post-processing composer are gated
+ *     on this flag. The canvas element itself may stay mounted (keeping the context
+ *     alive), and measured at the top of the page it issues 0 draw calls per second
+ *     while the architecture chapter is two screens away.
  *
  * ── Why one shared hook ───────────────────────────────────────────────────
  * Three modules previously each hand-rolled the same observer with slightly
@@ -66,39 +69,68 @@ export function useInViewAnimation<T extends Element>(
   const callbackRef = useRef(onChange)
   callbackRef.current = onChange
 
+  // Read through refs: the binding owns one observer for the component's lifetime, so it must not
+  // capture the margin or the element from the render that happened to create it.
+  const marginRef = useRef(rootMargin)
+  marginRef.current = rootMargin
+  const bindingRef = useRef<InViewBinding | null>(null)
+
+  /*
+   * Deliberately no dependency array (CR-13).
+   *
+   * A `RefObject` never changes identity, so `[ref, rootMargin]` ran this effect once -- at the
+   * first commit, where the observed element may not exist yet (conditional render, Suspense, a
+   * replaced node). The observer was then never attached and the pause gate silently stopped
+   * working: off-screen sandboxes kept simulating and off-screen canvases kept their rigs mounted.
+   * `sync()` compares and returns when nothing moved, so running it on every render costs a
+   * property read and a string comparison.
+   */
   useEffect(() => {
-    const element = ref.current
-
-    // No element (unmounted, or a ref that has not attached yet): assume
-    // visible. Reporting "hidden" would silently park a module that might be
-    // perfectly on screen.
-    if (!element) {
-      inViewRef.current = true
-      return
-    }
-
     // Older browsers and some embedded webviews: run everything always rather
     // than freezing the page.
     if (typeof IntersectionObserver === 'undefined') {
+      bindingRef.current?.disconnect()
+      bindingRef.current = null
       inViewRef.current = true
       return
     }
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          const next = entry.isIntersecting
-          if (next === inViewRef.current) continue
-          inViewRef.current = next
-          callbackRef.current?.(next)
-        }
-      },
-      { rootMargin },
-    )
+    /*
+     * No element (not attached yet, or detached): assume visible. Reporting "hidden" would
+     * silently park a module that might be perfectly on screen, and the observer corrects the
+     * flag on its first delivery once the node exists.
+     */
+    if (ref.current === null) {
+      inViewRef.current = true
+      bindingRef.current?.sync()
+      return
+    }
 
-    observer.observe(element)
-    return () => observer.disconnect()
-  }, [ref, rootMargin])
+    const binding =
+      bindingRef.current ??
+      (bindingRef.current = createInViewBinding({
+        getElement: () => ref.current,
+        getRootMargin: () => marginRef.current,
+        onIntersect: (inView) => {
+          if (inView === inViewRef.current) return
+          inViewRef.current = inView
+          callbackRef.current?.(inView)
+        },
+        createObserver: (onEntries, margin) =>
+          new IntersectionObserver((entries) => onEntries(entries), { rootMargin: margin }),
+      }))
+
+    binding.sync()
+  })
+
+  // Detach on unmount only. The setup effect above cleans up its own rewiring.
+  useEffect(
+    () => () => {
+      bindingRef.current?.disconnect()
+      bindingRef.current = null
+    },
+    [],
+  )
 
   return inViewRef
 }
