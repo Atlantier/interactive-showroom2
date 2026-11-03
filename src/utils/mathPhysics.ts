@@ -306,9 +306,6 @@ export function collideObb(a: Obb, b: Obb, out: ObbHit): ObbHit {
   const cb = Math.cos(b.angle)
   const sb = Math.sin(b.angle)
 
-  // Face normals of each box.
-  const axesX = [ca, sa, -sa, ca, cb, sb, -sb, cb]
-
   const dx = b.cx - a.cx
   const dy = b.cy - a.cy
 
@@ -316,9 +313,17 @@ export function collideObb(a: Obb, b: Obb, out: ObbHit): ObbHit {
   let nx = 0
   let ny = 0
 
+  /*
+   * Four separating axes, walked without building an array.
+   *
+   * `const axesX = [ca, sa, -sa, ca, cb, sb, -sb, cb]` allocated an 8-element array on every
+   * call, and this runs inside the sandbox's fixed-step loop -- clusters of tags collide most
+   * frames, so that was ~60 arrays/second of pure garbage for values that are two locals each.
+   * The four pairs are spelled out instead; the loop structure is unchanged.
+   */
   for (let k = 0; k < 4; k++) {
-    const ax = axesX[k * 2]
-    const ay = axesX[k * 2 + 1]
+    const ax = k === 0 ? ca : k === 1 ? -sa : k === 2 ? cb : -sb
+    const ay = k === 0 ? sa : k === 1 ? ca : k === 2 ? sb : cb
 
     // Projected radius of each box onto this axis.
     const ra = a.hw * Math.abs(ca * ax + sa * ay) + a.hh * Math.abs(-sa * ax + ca * ay)

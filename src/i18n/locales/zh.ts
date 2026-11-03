@@ -246,7 +246,7 @@ export const zh: Dictionary = {
     shaderPass: '着色通道',
     physSolve: '物理求解',
     ikSolve: 'IK 求解',
-    canvases: 'Canvas 启用',
+    canvases: 'Canvas 活跃',
     tier: '档位',
     vfxPreset: '视觉调色',
     hint: 'shift + d 切换',

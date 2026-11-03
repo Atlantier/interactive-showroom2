@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   BREAK_STRAIN,
+  collideObb,
   FIXED_DT,
   RELAXATION_ITERATIONS,
   bezierPathLength,
@@ -104,6 +105,76 @@ describe('measureMaxStrain', () => {
     const constraint = createConstraint(0, 1, 20)
     measureMaxStrain(points, [constraint])
     expect(constraint.strain).toBeCloseTo(0.5, 6)
+  })
+})
+
+describe('collideObb', () => {
+  /** An axis-aligned box centred on (cx, cy). */
+  const box = (cx: number, cy: number, hw = 10, hh = 10) => ({ cx, cy, hw, hh, angle: 0 })
+  const hit = () => ({ hit: false, nx: 0, ny: 0, depth: 0 })
+
+  it('reports a miss, with a cleared normal and depth', () => {
+    const out = collideObb(box(0, 0), box(40, 0), hit())
+    expect(out.hit).toBe(false)
+    expect(out.nx).toBe(0)
+    expect(out.ny).toBe(0)
+    expect(out.depth).toBe(0)
+  })
+
+  it('reports a hit with a unit normal pointing from A to B', () => {
+    const out = collideObb(box(0, 0), box(15, 0), hit())
+    expect(out.hit).toBe(true)
+    expect(Math.hypot(out.nx, out.ny)).toBeCloseTo(1, 6)
+    // B is to the right of A, so the normal points +X.
+    expect(out.nx).toBeCloseTo(1, 6)
+    expect(out.ny).toBeCloseTo(0, 6)
+    expect(out.depth).toBeCloseTo(5, 6)
+  })
+
+  it('points the normal the other way when B is to the left', () => {
+    const out = collideObb(box(0, 0), box(-15, 0), hit())
+    expect(out.nx).toBeCloseTo(-1, 6)
+    expect(out.depth).toBeCloseTo(5, 6)
+  })
+
+  it('picks the axis of least penetration, not the first one tested', () => {
+    /*
+     * A at (0,0), B at (15,19), both 20x20: X overlap is 20-15 = 5, Y overlap is 20-19 = 1.
+     * The shallow axis is Y, so the normal must be vertical with depth 1 -- if the code returned
+     * the first axis it tested, this would come back horizontal with depth 5.
+     */
+    const out = collideObb(box(0, 0), box(15, 19), hit())
+    expect(out.hit).toBe(true)
+    expect(out.nx).toBeCloseTo(0, 6)
+    expect(out.ny).toBeCloseTo(1, 6)
+    expect(out.depth).toBeCloseTo(1, 6)
+  })
+
+  it('separates two rotated boxes that their AABBs would call a hit', () => {
+    /*
+     * A 10x10 box rotated 45 degrees reaches 10*sqrt(2) ~= 14.14 along each axis, so two of them
+     * separated by 26 on X still have their axis-aligned boxes overlapping -- an AABB test would
+     * report a collision. The separating-axis test must not.
+     */
+    const a = { cx: 0, cy: 0, hw: 10, hh: 10, angle: Math.PI / 4 }
+    const b = { cx: 30, cy: 0, hw: 10, hh: 10, angle: Math.PI / 4 }
+    expect(collideObb(a, b, hit()).hit).toBe(false)
+  })
+
+  it('is symmetric in hit/miss and mirrors the normal', () => {
+    const a = box(0, 0)
+    const b = box(15, 0)
+    const forward = collideObb(a, b, hit())
+    const backward = collideObb(b, a, hit())
+    expect(forward.hit).toBe(backward.hit)
+    expect(backward.nx).toBeCloseTo(-forward.nx, 6)
+    expect(backward.depth).toBeCloseTo(forward.depth, 6)
+  })
+
+  it("writes into the caller's object rather than allocating", () => {
+    const out = hit()
+    const returned = collideObb(box(0, 0), box(15, 0), out)
+    expect(returned).toBe(out)
   })
 })
 

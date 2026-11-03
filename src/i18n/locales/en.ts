@@ -268,7 +268,7 @@ export const en = {
     shaderPass: 'Shader pass',
     physSolve: 'Phys solve',
     ikSolve: 'IK solve',
-    canvases: 'Canvas a/s',
+    canvases: 'Canvas active',
     tier: 'Tier',
     vfxPreset: 'VFX preset',
     hint: 'shift + d to toggle',

@@ -50,6 +50,14 @@ const FRAME_BUDGET_MS = 1000 / 60
 /** How often the heap is sampled, in ms. Reading it is not free. */
 const HEAP_SAMPLE_INTERVAL = 250
 
+/**
+ * How often the counter readouts are formatted and written, in ms.
+ *
+ * Faster than a person reads a digit, slow enough that an open HUD costs roughly a tenth of what
+ * it used to. See the note at the write site for why "observation perturbs" matters here.
+ */
+const COUNTER_WRITE_INTERVAL = 100
+
 /** Sparkline dimensions, in CSS pixels. */
 const SPARK_W = 216
 const SPARK_H = 40
@@ -99,6 +107,7 @@ export function PerfTelemetryHud() {
     let windowStart = performance.now()
     let prevFrame = windowStart
     let lastHeapSample = 0
+    let lastCounterWrite = 0
 
     // Reused across frames; the read fills at most HEAP_HISTORY_SIZE entries.
     const heapScratch = new Float32Array(HEAP_HISTORY_SIZE)
@@ -224,8 +233,23 @@ export function PerfTelemetryHud() {
         windowStart = now
       }
 
-      /* Counters the producers write; cheap enough to read every frame. */
+      /*
+       * Counters the producers write.
+       *
+       * These used to be read and written EVERY frame -- eight `textContent` assignments plus a
+       * `toLocaleString` -- and the sparkline was redrawn every frame too. The panel's own purpose
+       * is to measure the frame, so spending a slice of every frame formatting numbers for it is
+       * the purest form of observer effect: with the HUD open the machine is slower than the
+       * machine it is describing.
+       *
+       * A tenth of a second is faster than anyone reads a digit, and slow enough that the panel
+       * costs about a tenth of what it did. The windowed fps/bar block above stays on its own
+       * 250 ms cadence.
+       */
       const c = performanceCounters
+      if (now - lastCounterWrite < COUNTER_WRITE_INTERVAL) return
+      lastCounterWrite = now
+
       if (particlesRef.current) {
         // Sum of every registered canvas, not one producer's number.
         particlesRef.current.textContent = getActiveParticleCount().toLocaleString('en-US')
