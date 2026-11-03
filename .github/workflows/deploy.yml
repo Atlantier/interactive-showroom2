@@ -172,6 +172,29 @@ jobs:
           CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
         run: pnpm verify:visual --base http://127.0.0.1:4173
 
+      - name: Scene probes (architecture, sandbox, fabrik)
+        # D4's incremental CI adoption: these three were the last of the review's "22 scripts that
+        # never run in CI". Unlike the gates above they connect to a CDP endpoint instead of
+        # launching a browser, so the step starts one and points them at it.
+        #
+        # They are structure and behaviour assertions, not pixel comparisons, so a software
+        # rasteriser is fine -- and each one now fails when it cannot find what it came to
+        # measure (findMissing), which is what made them safe to gate on.
+        env:
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+          CDP_HTTP: http://127.0.0.1:9411
+        run: |
+          set -euo pipefail
+          "$CHROME_PATH" --headless=new --no-sandbox --disable-dev-shm-usage \
+            --remote-debugging-port=9411 --user-data-dir=/tmp/probe-chrome about:blank &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:9411/json/version > /dev/null && break
+            sleep 1
+          done
+          node scripts/verify-architecture.mjs http://127.0.0.1:4173
+          node scripts/verify-sandbox.mjs http://127.0.0.1:4173
+          node scripts/verify-fabrik.mjs http://127.0.0.1:4173
+
       - name: Verify build output
         # A build that silently emits nothing (or only the HTML shell) would
         # deploy a blank page. Fail loudly here instead of after publishing.
