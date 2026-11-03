@@ -856,6 +856,51 @@ export class LanyardSimulation {
 
   /* ── Reset ─────────────────────────────────────────────────────────────── */
 
+  /**
+   * Detect a non-finite state and rebuild if one is found (PB-17).
+   *
+   * ── Why this exists ─────────────────────────────────────────────────────────
+   * Every value here is fed back into the next step: a single NaN -- from a corrupted input, a
+   * driver hiccup, or one degenerate division -- propagates to the whole rope and stays there. The
+   * visible result is a badge that vanishes permanently, with nothing in the console and no way back
+   * short of a reload. A watchdog costs one pass over ~52 numbers per rope and turns "permanently
+   * broken" into "reseeds on the next frame".
+   *
+   * It reseeds rather than trying to repair in place: repairing a poisoned Verlet state means
+   * deciding which of `x`, `px`, `vx` are trustworthy, and there is no principled answer. The
+   * specs are all that is needed to start clean.
+   *
+   * @returns true when the state had gone non-finite and was rebuilt.
+   */
+  recoverIfNonFinite(specs: LanyardSpec[]): boolean {
+    for (let li = 0; li < this.lanyards.length; li++) {
+      const l = this.lanyards[li]
+      for (let i = 0; i < l.points.length; i++) {
+        const p = l.points[i]
+        if (
+          !Number.isFinite(p.x) ||
+          !Number.isFinite(p.y) ||
+          !Number.isFinite(p.px) ||
+          !Number.isFinite(p.py)
+        ) {
+          this.reforge(specs)
+          return true
+        }
+      }
+      const tag = l.tag
+      if (
+        !Number.isFinite(tag.x) ||
+        !Number.isFinite(tag.y) ||
+        !Number.isFinite(tag.angle) ||
+        !Number.isFinite(tag.angularVelocity)
+      ) {
+        this.reforge(specs)
+        return true
+      }
+    }
+    return false
+  }
+
   /** Rebuild every lanyard from scratch ("Re-forge Lanyards"). */
   reforge(specs: LanyardSpec[]): void {
     this.grabbedIndex = -1

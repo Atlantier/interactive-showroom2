@@ -563,6 +563,17 @@ export function VerletLanyard({ className }: { className?: string }) {
         sim.step(FIXED_DT, timeRef.current)
 
         /*
+         * NaN watchdog (PB-17).
+         *
+         * A non-finite value anywhere in the rope poisons every later step, so the badge silently
+         * disappears for the rest of the session. `recoverIfNonFinite` scans the solver state (a few
+         * dozen numbers per rope) and reseeds from the specs when it finds one. Checked per SUBSTEP
+         * rather than per frame because the substep is where the state advances -- and because a
+         * frame can run four of them.
+         */
+        sim.recoverIfNonFinite(LANYARD_SPECS)
+
+        /*
          * Turn this substep's solver output into sparks and break effects.
          *
          * Done HERE, inside the fixed-step loop, for two reasons: the solver

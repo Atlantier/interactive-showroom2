@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   BREAK_STRAIN,
+  LanyardSimulation,
   collideObb,
   FIXED_DT,
   RELAXATION_ITERATIONS,
@@ -175,6 +176,54 @@ describe('collideObb', () => {
     const out = hit()
     const returned = collideObb(box(0, 0), box(15, 0), out)
     expect(returned).toBe(out)
+  })
+})
+
+describe('recoverIfNonFinite', () => {
+  const specs = [
+    { id: 'a', label: 'A', accent: '#fff', anchorXRatio: 0.3 },
+    { id: 'b', label: 'B', accent: '#fff', anchorXRatio: 0.7 },
+  ]
+  const build = () => new LanyardSimulation({ width: 800, height: 600, specs })
+  const finite = (sim: LanyardSimulation): boolean =>
+    sim.lanyards.every(
+      (l) =>
+        l.points.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y)) &&
+        Number.isFinite(l.tag.x) &&
+        Number.isFinite(l.tag.angle),
+    )
+
+  it('leaves a healthy simulation alone', () => {
+    const sim = build()
+    expect(sim.recoverIfNonFinite(specs)).toBe(false)
+    expect(finite(sim)).toBe(true)
+  })
+
+  it('reseeds when a point goes NaN, instead of letting it poison every later step', () => {
+    const sim = build()
+    const victim = sim.lanyards[1]?.points[3]
+    expect(victim).toBeDefined()
+    ;(victim as { x: number }).x = Number.NaN
+    expect(sim.recoverIfNonFinite(specs)).toBe(true)
+    expect(finite(sim)).toBe(true)
+    // The rope is rebuilt, not left short or empty.
+    expect(sim.lanyards).toHaveLength(specs.length)
+    expect(sim.lanyards[0]?.points.length).toBeGreaterThan(8)
+  })
+
+  it('reseeds when a tag pose goes non-finite', () => {
+    const sim = build()
+    sim.lanyards[0]!.tag.angle = Number.POSITIVE_INFINITY
+    expect(sim.recoverIfNonFinite(specs)).toBe(true)
+    expect(finite(sim)).toBe(true)
+  })
+
+  it('keeps stepping cleanly after a recovery', () => {
+    const sim = build()
+    sim.lanyards[0]!.points[0]!.y = Number.NaN
+    sim.recoverIfNonFinite(specs)
+    for (let i = 0; i < 200; i++) sim.step(1 / 60, i / 60)
+    expect(finite(sim)).toBe(true)
   })
 })
 
