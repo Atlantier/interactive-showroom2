@@ -602,6 +602,14 @@ pnpm verify:selftest # 证明“判定层真的会红”（5 条判定 + 3 条 f
 | 视觉回归       | 6 个视图全 PASS                                         | 阈值 `worst ≤ 14`；实测噪声 0–6                                             |
 | 第三方字体请求 | **0**                                                   | 两种可变字体 latin 子集自托管，共 62 KB                                     |
 
+**CI 上跑的是同一批**（`test` / `typecheck` / `lint` / `format:check` / `build` / `budget` /
+`a11y` / `visual` / 三个场景探针 `architecture` / `sandbox` / `fabrik`），另有两点差异：
+
+- `verify:visual` 在非 Windows 平台**跳过**（基线是 Windows 上抓的，无头 Chromium 的栅格化逐平台不同），打印原因后退 0；
+- 场景探针需要 WebGL，而 CI runner 没有 GPU，因此步骤里显式开启软件 WebGL
+  （`--use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader`），并在跑探针前先用
+  `scripts/check-webgl.mjs` 打印浏览器报告的版本号——"runner 没有 GL"和"应用坏了"不会再被混为一谈。
+
 **两个已知数字，别被平均值骗了**：
 
 1. **冷启动最坏帧 1163 ms @ y≈960**：架构章 19 个 shader program 的首次编译（实测每次约
