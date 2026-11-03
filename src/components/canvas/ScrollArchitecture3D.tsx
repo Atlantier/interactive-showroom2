@@ -1135,42 +1135,56 @@ function ArchitectureRig({
       root.scale.setScalar(s)
     }
 
-    // Adjust every material's opacity from the fade weight. Traversing on each
-    // frame is acceptable here: the subtree is ~40 objects and the alternative
-    // is threading a uniform through five different materials.
+    /*
+     * Adjust every material's opacity from the fade weight. Traversing on each
+     * frame is acceptable here: the subtree is ~40 objects and the alternative
+     * is threading a uniform through five different materials.
+     *
+     * What was NOT acceptable was the shape of the walk: `Array.isArray(mat) ?
+     * mat : [mat]` allocated a one-element array per mesh per frame -- about 37
+     * arrays, 2 200 a second at 60 Hz -- to iterate a list that is almost always a
+     * single material. The two cases are branched instead, with the per-material
+     * work hoisted into one closure created once per frame rather than per object.
+     */
+    const applyExitFade = (m: THREE.Material): void => {
+      const anyMat = m as THREE.Material & { opacity: number; transparent: boolean }
+      if (typeof anyMat.opacity !== 'number') return
+      /*
+       * Opt-out for the spatial layer's hero surfaces. They must stay at their
+       * design opacity for the whole chapter: the plasma core is a custom
+       * ShaderMaterial that computes its own alpha, so it never participates in
+       * this fade. Dimming only the shell and its edge lattice produced the
+       * reported 'the sphere recovered but the shell is still dark' look -- a
+       * bright core sitting inside an almost invisible cage.
+       */
+      if (m.userData?.noExitFade) return
+      /*
+       * Scale the material's OWN opacity instead of overwriting it.
+       *
+       * Writing `opacity = fade` looks equivalent only because most materials are
+       * opaque (1). For the deliberately translucent ones — the prism cage at
+       * 0.25, the shard shells at 0.35 — it silently pushed them to fully opaque,
+       * which hid the plasma core behind a black mass at close camera ranges. An
+       * earlier `if (transmission) continue` guard masked this by accident: it
+       * skipped the old transmission prism, and vanished with it.
+       */
+      let base = baseOpacity.get(m)
+      if (base === undefined) {
+        base = anyMat.opacity
+        baseOpacity.set(m, base)
+      }
+      // Only write when it changes; three re-reads this flag when sorting.
+      if (!anyMat.transparent) anyMat.transparent = true
+      anyMat.opacity = base * fade
+    }
+
     root?.traverse((obj) => {
       const mat = (obj as THREE.Mesh).material
       if (!mat) return
-      const list = Array.isArray(mat) ? mat : [mat]
-      for (const m of list) {
-        const anyMat = m as THREE.Material & { opacity: number; transparent: boolean }
-        if (typeof anyMat.opacity !== 'number') continue
-        /*
-         * Opt-out for the spatial layer's hero surfaces. They must stay at their
-         * design opacity for the whole chapter: the plasma core is a custom
-         * ShaderMaterial that computes its own alpha, so it never participates in
-         * this fade. Dimming only the shell and its edge lattice produced the
-         * reported 'the sphere recovered but the shell is still dark' look --
-         * a bright core sitting inside an almost invisible cage.
-         */
-        if (m.userData?.noExitFade) continue
-        /*
-         * Scale the material's OWN opacity instead of overwriting it.
-         *
-         * Writing `opacity = fade` looks equivalent only because most materials
-         * are opaque (1). For the deliberately translucent ones — the prism cage
-         * at 0.25, the shard shells at 0.35 — it silently pushed them to fully
-         * opaque, which hid the plasma core behind a black mass at close camera
-         * ranges. An earlier `if (transmission) continue` guard masked this by
-         * accident: it skipped the old transmission prism, and vanished with it.
-         */
-        let base = baseOpacity.get(m)
-        if (base === undefined) {
-          base = anyMat.opacity
-          baseOpacity.set(m, base)
-        }
-        anyMat.transparent = true
-        anyMat.opacity = base * fade
+      if (Array.isArray(mat)) {
+        for (let i = 0; i < mat.length; i++) applyExitFade(mat[i] as THREE.Material)
+      } else {
+        applyExitFade(mat)
       }
     })
   })
