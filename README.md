@@ -590,7 +590,7 @@ pnpm verify:a11y    # 20 条无障碍断言（含 axe 全量扫描、键盘可�
 pnpm verify:scroll  # 滚轮帧时：同进程重复 5 轮取中位数
 pnpm verify:visual  # 6 个滚动位置的截图比对（UI 层；动画背景在比对前被排除）
 pnpm verify:context # WebGL 上下文丢失/恢复 18 条（真实 loseContext：提示出现→部分恢复仍在→最后清除）
-pnpm verify:shader  # 架构画布着色器回归：预热一次 + 钉住时钟，96 块均值比基线
+pnpm verify:shader  # 画布回归 3 视图（架构章 + 上下两块沙盒）：预热 + 钉时钟，96 块均值比基线
 pnpm verify:selftest # 证明“判定层真的会红”（5 条判定 + 3 条 findMissing）
 ```
 
@@ -603,7 +603,7 @@ pnpm verify:selftest # 证明“判定层真的会红”（5 条判定 + 3 条 f
 | 无障碍         | **20/20**，axe critical/serious/moderate/minor **全 0** | 含键盘完成全部关键路径                                         |
 | 单元断言       | **100**                                                 | 含 7 条观察器生命周期、5 条音频策略、5 条断点选择              |
 | 视觉回归（UI） | 6 个视图全 PASS                                         | 阈值 `worst ≤ 14`；实测噪声 0–5                                |
-| 着色器回归     | 架构画布 PASS，实测 `worst 0.4–1.6`                     | 阈值 `worst ≤ 8 / mean ≤ 2`；改一处颜色会 FAIL（实测 35.1）    |
+| 画布回归       | 3 视图 PASS，实测 `worst 0.1–3.3`                       | 阈值 `worst ≤ 8 / mean ≤ 2`；改一处颜色会 FAIL（实测 35.1）    |
 | WebGL 上下文   | **18/18**                                               | 真实 `loseContext` → 提示 → 部分恢复提示仍在 → 全恢复才清除    |
 | 第三方字体请求 | **0**                                                   | 两种可变字体 latin 子集自托管，共 62 KB                        |
 
@@ -622,7 +622,7 @@ pnpm verify:selftest # 证明“判定层真的会红”（5 条判定 + 3 条 f
    1.4 s；这是用户拍板的方案 B（§5.42）。三次"挪走编译"的旧实验为何失败，见 `修改计划.md` §5.19。
 2. **`verify:visual` 只覆盖 UI 层**：比对前会隐藏占满视口的动画画布，所以纯着色器/画布内
    的变化它抓不到；那类改动归 `verify:shader` 管。
-3. **`verify:shader` 只覆盖架构章一个画布**：它不是全站着色器门禁。加它之前先量过可行性
+3. **`verify:shader` 覆盖三个画布**（架构章 + 上下两块沙盒），不是全站画布门禁（背景粒子流仍不覆盖）。加它之前先量过可行性
    （预热后跨轮噪声 `worst 0.9`），见 `修改计划.md` §5.40。
 
 ### 单脚本调试

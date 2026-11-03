@@ -1,36 +1,33 @@
 /**
- * Shader-level visual regression gate.
+ * Shader/canvas-level visual regression gate.
  *
  * ── The gap this closes ─────────────────────────────────────────────────────
- * `verify-visual` compares the UI layer and hides every large canvas, because the backdrop streams
- * particles whose count depends on how long the page took to load. That was the right call for a UI
- * gate, but it left shader work unverifiable -- which is exactly why the review's SH-13 (duplicated
- * sin-hash noise, 24 `sin()` calls per fragment on the cone) has been deferred: changing a shader
- * without a gate is how you break a picture and find out from a visitor.
+ * `verify-visual` compares the UI layer and hides every large canvas, because the animated canvases
+ * used to be irreproducible. That was the right call for a UI gate, but it left shader and canvas
+ * work unverifiable -- the reason SH-13 (duplicated sin-hash noise) sat deferred for so long.
  *
- * ── What made it possible ───────────────────────────────────────────────────
- * Measured, not assumed: with the R3F clock pinned (`window.__stillAt`) and the page's 2D loops
- * frozen (`window.__still`), the architecture canvas is reproducible ACROSS FRESH LOADS -- but only
- * once the shader cache is warm. Three loads of the same build, 96 px blocks, canvas region:
+ * Two changes made canvas comparison possible, both measured rather than assumed:
+ *   1. With the R3F clock pinned (`window.__stillAt`) and one warm-up load, the architecture canvas
+ *      reproduces to worst 0.9 / mean 0.14 across fresh loads (修改计划 §5.40).
+ *   2. The two 2D sandboxes now snap to a canonical state when the `still` event fires, which brought
+ *      them to the same noise level: worst 0.9 / 0.8 (§5.43).
+ * So this gate warms up, captures a second load at each view, and compares 96 px block means against
+ * a committed baseline.
  *
- *   cold load vs warm: worst 19.2, mean 3.78   (first load compiles 19 programs; extra frames)
- *   warm load vs warm: worst  0.9, mean 0.14   (two independent loads)
+ * ── What it covers ─────────────────────────────────────────────────────────
+ *   · architecture-mid  -- the chapter canvas, where the SH-13 shaders live;
+ *   · playground        -- the two 2D sandboxes (Verlet lanyard, FABRIK creature).
+ * It is not a whole-site shader gate: the backdrop canvas streams particles whose count depends on
+ * load timing and is deliberately out of scope. `verify:visual` keeps owning the UI layer.
  *
- * So this gate spends one load warming up, captures a second load, and compares that against a
- * committed baseline. Thresholds sit far above the measured noise floor and far below a real
- * shader edit's signal (a colour change moves blocks by tens of levels).
- *
- * ── What it deliberately does NOT do ────────────────────────────────────────
- * It is not a UI gate (`verify:visual` owns that) and it currently covers ONE canvas: the
- * architecture chapter, where the shaders SH-13 is about live. Scroll positions and the viewport are
- * fixed; the baseline records both, plus the platform, because headless Chromium does not rasterise
- * the same pixels per platform -- on a different platform this prints a skip reason and exits 0,
- * exactly like the UI gate.
+ * Baselines record the platform, viewport, scroll position and every compared rectangle. Headless
+ * Chromium does not rasterise the same pixels per platform, so on a different platform this prints a
+ * skip reason and exits 0 -- the same contract as the UI gate.
  *
  * Usage:
- *   pnpm preview --port 4173            # in another shell
+ *   pnpm preview --port 4173
  *   node scripts/verify-shader.mjs --base http://127.0.0.1:4173
- *   node scripts/verify-shader.mjs --base ... --update    # re-capture the baseline
+ *   node scripts/verify-shader.mjs --base ... --update    # re-capture every view's baseline
  */
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -67,9 +64,8 @@ const update = process.argv.includes('--update')
 /**
  * Thresholds, per block and per channel.
  *
- * Warm-to-warm noise measured 0.9 worst / 0.14 mean over 144 blocks. 8 and 2 leave roughly 8x
- * headroom while still failing on a colour edit (tens of levels) or a removed light. The
- * "unsettled" guard below catches the cold-cache case that produced 19.
+ * Warm-to-warm noise measured 0.4–0.9 across the canvases this gate covers. 8 and 2 leave roughly
+ * 8x headroom while still failing on a colour edit (tens of levels) or a removed light.
  */
 const MAX_WORST_DELTA = 8
 const MAX_MEAN_DELTA = 2
@@ -78,16 +74,45 @@ const UNSETTLED_WORST = 24
 
 const BLOCK = 96
 const VIEWPORT = { width: 1600, height: 900, deviceScaleFactor: 1 }
-const VIEW = {
-  id: 'architecture-mid',
-  /** Fraction of the chapter's track; 0.5 of the section plus half a viewport puts the stack mid-plot. */
-  sectionRatio: 0.5,
-}
+const SETTLE_MS = 2600
+const BOOT_MS = 4000
+const WARMUP_MS = 2000
+
+/**
+ * One view = where to scroll, which canvases to compare, and how big they must be to count.
+ *
+ * `minAreaRatio` is relative to the viewport. The architecture canvas is nearly full-screen; the two
+ * sandboxes are about half, so a single ratio would not select both sensibly.
+ */
+const VIEWS = [
+  {
+    id: 'architecture-mid',
+    sectionId: 'architecture',
+    /** 'ratio' = fraction of viewport past the section top; 'offset' = fixed pixels. */
+    scroll: { mode: 'ratio', value: 0.5 },
+    minAreaRatio: 0.6,
+    only2d: false,
+  },
+  {
+    // The two sandboxes are stacked and cannot both fit in 900 px, so each gets its own scroll
+    // position. Gating one and calling it "the playground" would leave the other unverified.
+    id: 'playground-top',
+    sectionId: 'playground',
+    scroll: { mode: 'offset', value: 200 },
+    minAreaRatio: 0.2,
+    only2d: true,
+  },
+  {
+    id: 'playground-bottom',
+    sectionId: 'playground',
+    scroll: { mode: 'offset', value: 420 },
+    minAreaRatio: 0.2,
+    only2d: true,
+  },
+]
+
 const BASELINE_DIR = 'visual-baselines'
 const BASELINE_FILE = join(BASELINE_DIR, 'shader.json')
-const SETTLE_MS = 2600
-const BOOT_MS = 3500
-const WARMUP_MS = 2000
 
 const chromePath = CANDIDATES.find((c) => typeof c === 'string' && c.length > 0 && existsSync(c))
 if (!chromePath) {
@@ -153,10 +178,9 @@ function compareBlocks(a, b, rect) {
       counted += 1
     }
   }
-  if (counted === 0) throw new Error('rect covers no whole block')
   return {
     worst: Number(worst.toFixed(1)),
-    mean: Number((total / counted).toFixed(2)),
+    mean: counted ? Number((total / counted).toFixed(2)) : 0,
     blocks: counted,
   }
 }
@@ -267,15 +291,15 @@ try {
   await send('Emulation.setDeviceMetricsOverride', { ...VIEWPORT, mobile: false })
 
   /**
-   * One capture: load, settle on the chapter, freeze, shoot, and report where the canvas is.
+   * One capture of one view: load, settle on the section, wait for fonts, freeze, shoot, measure.
    *
-   * `warmup` loads are discarded: the first load pays for 19 shader program links and its extra
-   * frames are what produced the 19.2 cold-vs-warm measurement.
+   * `warmup` loads are discarded: the first load pays for the shader program links, and its extra
+   * frames are what produced the 19-level cold-vs-warm difference measured in §5.40.
    */
-  const capture = async (label) => {
+  const capture = async (view, label) => {
     await send('Page.navigate', { url: base })
     let ready = false
-    for (let attempt = 0; attempt < 200; attempt++) {
+    for (let attempt = 0; attempt < 240; attempt++) {
       await sleep(250)
       ready = await evaluate(
         "document.readyState === 'complete' && !!document.getElementById('main')",
@@ -285,16 +309,21 @@ try {
     if (!ready) throw new Error('page never loaded')
     await sleep(BOOT_MS)
 
-    await evaluate(`(() => {
-      const section = document.getElementById('architecture')
+    const target =
+      view.scroll.mode === 'ratio'
+        ? `section.offsetTop + window.innerHeight * ${view.scroll.value}`
+        : `section.offsetTop + ${view.scroll.value}`
+    const scrolled = await evaluate(`(() => {
+      const section = document.getElementById('${view.sectionId}')
       if (!section) return false
-      window.scrollTo(0, section.offsetTop + window.innerHeight * ${VIEW.sectionRatio})
+      window.scrollTo(0, ${target})
       return true
     })()`)
+    if (!scrolled) throw new Error(`view ${view.id}: section never appeared`)
     await sleep(SETTLE_MS)
 
-    // Same font rule as the UI gate: freeze only after every pending face has settled, otherwise text
-    // inside the canvas can be measured in a fallback face on one run and not the other.
+    // Fonts before freezing: a capture taken while text is still in the fallback face is a frame the
+    // next run cannot reproduce.
     await evaluate(`(document.fonts && document.fonts.ready
       ? document.fonts.ready.then(() => document.fonts.status)
       : 'unsupported')`)
@@ -307,88 +336,122 @@ try {
       window.dispatchEvent(new Event('still'))
       return true
     })()`)
-    if (!frozen) throw new Error('could not freeze the page')
+    if (!frozen) throw new Error(`view ${view.id}: could not freeze the page`)
 
-    // A couple of frames for the pinned-clock redraw to land, without letting the scene drift.
     await sleep(400 + (label === 'warmup' ? WARMUP_MS : 0))
 
-    const rect = await evaluate(`(() => {
-      const entry = Array.from(document.querySelectorAll('canvas'))
-        .map((canvas) => ({ canvas, box: canvas.getBoundingClientRect() }))
-        .filter((item) => item.box.width * item.box.height >= window.innerWidth * window.innerHeight * 0.6)
-        .sort((a, b) => b.box.width * b.box.height - a.box.width * a.box.height)[0]
-      if (!entry) return null
-      const gl = entry.canvas.getContext('webgl2')
-      return {
+    const rects = await evaluate(`(() => {
+      const viewportArea = window.innerWidth * window.innerHeight
+      const candidates = Array.from(document.querySelectorAll('canvas'))
+        .map((canvas) => {
+          const box = canvas.getBoundingClientRect()
+          return {
+            canvas,
+            box,
+            area: box.width * box.height,
+            is2d: canvas.getContext('2d') !== null,
+          }
+        })
+        .filter((entry) => entry.area >= viewportArea * ${view.minAreaRatio})
+        .filter((entry) => !${view.only2d} || entry.is2d)
+        .filter((entry) => entry.box.top >= 0 && entry.box.bottom <= window.innerHeight)
+        .sort((a, b) => b.area - a.area)
+      const picked = ${view.only2d} ? candidates : candidates.slice(0, 1)
+      return picked.map((entry) => ({
         x: Math.round(entry.box.x),
         y: Math.round(entry.box.y),
         w: Math.round(entry.box.width),
         h: Math.round(entry.box.height),
-        contextLost: gl ? gl.isContextLost() : null,
-        scrollY: Math.round(window.scrollY),
-      }
+        is2d: entry.is2d,
+        contextLost: (() => {
+          const gl = entry.canvas.getContext('webgl2')
+          return gl ? gl.isContextLost() : null
+        })(),
+      }))
     })()`)
-    if (!rect) return { rect: null }
+    if (!Array.isArray(rects) || rects.length === 0) {
+      throw new Error(`view ${view.id}: no matching canvas`)
+    }
 
     const shot = await send('Page.captureScreenshot', { format: 'png' })
     const png = PNG.sync.read(Buffer.from(shot.data, 'base64'))
-    return { rect, grid: blockMeans(png) }
+    return { rects, grid: blockMeans(png), scrollY: await evaluate('Math.round(window.scrollY)') }
   }
 
-  /* ── Warm-up, then two measured captures ───────────────────────────────── */
-  const warmup = await capture('warmup')
-  if (!warmup.rect) throw new Error('no large canvas found during warm-up')
-  const first = await capture('measure')
-  const second = await capture('measure')
-  if (!first.rect || !second.rect) throw new Error('the canvas disappeared between captures')
-
-  const settled = compareBlocks(first.grid, second.grid, second.rect)
-  if (settled.worst > UNSETTLED_WORST) {
-    console.log(
-      `shader: WARNING the same build disagreed with itself (worst ${settled.worst}); ` +
-        'the machine is probably busy — comparing anyway',
-    )
-  }
+  /* ── Warm-up, then two measured captures per view ──────────────────────── */
+  await capture(VIEWS[0], 'warmup')
 
   const meta = {
     platform: process.platform,
     viewport: VIEWPORT,
-    view: VIEW.id,
-    scrollY: second.rect.scrollY,
-    canvas: { w: second.rect.w, h: second.rect.h },
     block: BLOCK,
+    views: VIEWS.map((view) => view.id),
+  }
+
+  const measured = {}
+  for (const view of VIEWS) {
+    const first = await capture(view, 'measure')
+    const second = await capture(view, 'measure')
+    measured[view.id] = { first, second }
   }
 
   if (update) {
     mkdirSync(BASELINE_DIR, { recursive: true })
-    writeFileSync(
-      BASELINE_FILE,
-      JSON.stringify({ meta, grid: second.grid, rect: second.rect }, null, 0) + '\n',
-    )
-    console.log(`shader: baseline written to ${BASELINE_FILE}`)
+    const views = {}
+    for (const view of VIEWS) {
+      const second = measured[view.id].second
+      views[view.id] = { rects: second.rects, grid: second.grid, scrollY: second.scrollY }
+    }
+    writeFileSync(BASELINE_FILE, JSON.stringify({ meta, views }, null, 0) + '\n')
+    console.log(`shader: baseline written to ${BASELINE_FILE} (${VIEWS.length} views)`)
     finish({ label: 'shader', exceptions, consoleErrors, failures, report: { meta } })
+  } else if (!existsSync(BASELINE_FILE)) {
+    console.error(`::error::shader: no baseline at ${BASELINE_FILE} (run with --update)`)
+    process.exitCode = 1
   } else {
-    if (!existsSync(BASELINE_FILE)) {
-      console.error(`::error::shader: no baseline at ${BASELINE_FILE} (run with --update)`)
+    const baseline = JSON.parse(readFileSync(BASELINE_FILE, 'utf8'))
+    if (baseline.meta.platform !== process.platform) {
+      console.log(
+        `shader: baseline was captured on ${baseline.meta.platform}, this is ${process.platform} — skipping`,
+      )
+      console.log('        (headless Chromium does not rasterise the same pixels per platform)')
+    } else if (!baseline.views) {
+      console.error('::error::shader: baseline predates multi-view support; run with --update')
       process.exitCode = 1
     } else {
-      const baseline = JSON.parse(readFileSync(BASELINE_FILE, 'utf8'))
-      if (baseline.meta.platform !== process.platform) {
-        console.log(
-          `shader: baseline was captured on ${baseline.meta.platform}, this is ${process.platform} — skipping`,
-        )
-        console.log('        (headless Chromium does not rasterise the same pixels per platform)')
-      } else {
-        const result = compareBlocks(baseline.grid, second.grid, second.rect)
-        const pass = result.worst <= MAX_WORST_DELTA && result.mean <= MAX_MEAN_DELTA
-        console.log(
-          `${pass ? 'PASS  ' : 'FAIL  '}${VIEW.id}  worst ${result.worst}  mean ${result.mean}  ` +
-            `(${result.blocks} blocks)  y=${second.rect.scrollY}  stability ${settled.worst}`,
-        )
-        if (!pass) {
+      for (const view of VIEWS) {
+        const aligned = measured[view.id]
+        const saved = baseline.views[view.id]
+        if (!saved) {
+          failures.push(`${view.id}: no baseline for this view`)
+          continue
+        }
+        if (saved.rects.length !== aligned.second.rects.length) {
           failures.push(
-            `${VIEW.id}: canvas differs from the baseline (worst ${result.worst} > ${MAX_WORST_DELTA} or mean ${result.mean} > ${MAX_MEAN_DELTA})`,
+            `${view.id}: ${aligned.second.rects.length} canvases matched now, ${saved.rects.length} in the baseline`,
           )
+          continue
+        }
+        for (let index = 0; index < saved.rects.length; index++) {
+          const rect = aligned.second.rects[index]
+          const result = compareBlocks(saved.grid, aligned.second.grid, rect)
+          const settled = compareBlocks(aligned.first.grid, aligned.second.grid, rect)
+          const pass = result.worst <= MAX_WORST_DELTA && result.mean <= MAX_MEAN_DELTA
+          const label = `${view.id}${saved.rects.length > 1 ? `#${index}` : ''}`
+          console.log(
+            `${pass ? 'PASS  ' : 'FAIL  '}${label}  worst ${result.worst}  mean ${result.mean}  ` +
+              `(${result.blocks} blocks)  y=${aligned.second.scrollY}  stability ${settled.worst}`,
+          )
+          if (settled.worst > UNSETTLED_WORST) {
+            console.log(
+              `shader: WARNING ${label} disagreed with itself by ${settled.worst}; the machine is probably busy`,
+            )
+          }
+          if (!pass) {
+            failures.push(
+              `${label}: canvas differs from the baseline (worst ${result.worst} > ${MAX_WORST_DELTA} or mean ${result.mean} > ${MAX_MEAN_DELTA})`,
+            )
+          }
         }
       }
     }
@@ -398,11 +461,7 @@ try {
       exceptions,
       consoleErrors,
       failures,
-      report: {
-        meta,
-        measured: { worst: settled.worst, mean: settled.mean },
-        canvas: second.rect,
-      },
+      report: { meta, views: Object.keys(measured) },
     })
   }
 } finally {
