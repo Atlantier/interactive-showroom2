@@ -15,6 +15,8 @@
  * into "files" would only move the coupling around.
  */
 
+import { NOISE_HASH_3D, NOISE_VALUE_3D } from '@/components/canvas/shaderNoise'
+
 export const EDGE_VERTEX = /* glsl */ `
   attribute float aAlong;
   varying float vAlong;
@@ -126,25 +128,13 @@ varying vec3 vCenter;
 varying vec3 vNormalW;
 varying vec3 vViewDir;
 
-float hash31(vec3 p) {
-  return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453123);
-}
-
-float vnoise(vec3 p) {
-  vec3 i = floor(p);
-  vec3 f = fract(p);
-  f = f * f * (3.0 - 2.0 * f);
-  float a = mix(hash31(i), hash31(i + vec3(1.0, 0.0, 0.0)), f.x);
-  float b = mix(hash31(i + vec3(0.0, 1.0, 0.0)), hash31(i + vec3(1.0, 1.0, 0.0)), f.x);
-  float c = mix(hash31(i + vec3(0.0, 0.0, 1.0)), hash31(i + vec3(1.0, 0.0, 1.0)), f.x);
-  float d = mix(hash31(i + vec3(0.0, 1.0, 1.0)), hash31(i + vec3(1.0, 1.0, 1.0)), f.x);
-  return mix(mix(a, b, f.y), mix(c, d, f.y), f.z);
-}
+${NOISE_HASH_3D}
+${NOISE_VALUE_3D}
 
 // One cloud sample: a low-frequency field warps the lookup of a second one.
 float cloudAt(vec3 p, float t) {
-  float w = vnoise(p * 1.35 + vec3(0.0, t, 0.0));
-  return vnoise(p * 1.8 + vec3(w * 1.6, t * 0.65, w * 1.1));
+  float w = vnoise3(p * 1.35 + vec3(0.0, t, 0.0));
+  return vnoise3(p * 1.8 + vec3(w * 1.6, t * 0.65, w * 1.1));
 }
 
 void main() {

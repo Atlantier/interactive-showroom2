@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { getVfxPalette } from '@/lib/vfxPalette'
+import { NOISE_HASH_3D } from '@/components/canvas/shaderNoise'
 import { getTransient, useAppStore } from '@/store/useAppStore'
 import type { PerformanceTier } from '@/types'
 
@@ -111,32 +112,31 @@ const CONE_HEIGHT = 11
 /* -------------------------------------------------------------------------- */
 
 /**
- * Classic 3D gradient (Perlin) noise with a sin-hash.
+ * 3D value noise ("gradient noise" kept as the historical name) on the shared trig-free hash.
  *
- * Value noise would be a third of the cost and, for fog, indistinguishable — but
- * the brief names Perlin specifically, and the cones cover a small enough part
- * of the frame that eight gradient dots per octave stays affordable. Quintic
- * interpolation is used because the cheaper cubic produces visible lattice
- * creases once the fog is stretched over 11 world units.
+ * The sin-hash that used to live here was 24 `sin()` calls per fragment on the cones (three octaves
+ * of eight taps), which is both expensive and the classic mediump banding source on mobile. The
+ * hash now comes from `shaderNoise.ts` (SH-13); the lattice differs but the statistics do not.
+ *
+ * Quintic interpolation is used because the cheaper cubic produces visible lattice creases once the
+ * fog is stretched over 11 world units.
  */
 const PERLIN = /* glsl */ `
-  float hash31(vec3 p) {
-    return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453123);
-  }
+  ${NOISE_HASH_3D}
 
   float gradientNoise(vec3 p) {
     vec3 i = floor(p);
     vec3 f = fract(p);
     vec3 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
 
-    float n000 = hash31(i + vec3(0.0, 0.0, 0.0)) * 2.0 - 1.0;
-    float n100 = hash31(i + vec3(1.0, 0.0, 0.0)) * 2.0 - 1.0;
-    float n010 = hash31(i + vec3(0.0, 1.0, 0.0)) * 2.0 - 1.0;
-    float n110 = hash31(i + vec3(1.0, 1.0, 0.0)) * 2.0 - 1.0;
-    float n001 = hash31(i + vec3(0.0, 0.0, 1.0)) * 2.0 - 1.0;
-    float n101 = hash31(i + vec3(1.0, 0.0, 1.0)) * 2.0 - 1.0;
-    float n011 = hash31(i + vec3(0.0, 1.0, 1.0)) * 2.0 - 1.0;
-    float n111 = hash31(i + vec3(1.0, 1.0, 1.0)) * 2.0 - 1.0;
+    float n000 = hash13(i + vec3(0.0, 0.0, 0.0)) * 2.0 - 1.0;
+    float n100 = hash13(i + vec3(1.0, 0.0, 0.0)) * 2.0 - 1.0;
+    float n010 = hash13(i + vec3(0.0, 1.0, 0.0)) * 2.0 - 1.0;
+    float n110 = hash13(i + vec3(1.0, 1.0, 0.0)) * 2.0 - 1.0;
+    float n001 = hash13(i + vec3(0.0, 0.0, 1.0)) * 2.0 - 1.0;
+    float n101 = hash13(i + vec3(1.0, 0.0, 1.0)) * 2.0 - 1.0;
+    float n011 = hash13(i + vec3(0.0, 1.0, 1.0)) * 2.0 - 1.0;
+    float n111 = hash13(i + vec3(1.0, 1.0, 1.0)) * 2.0 - 1.0;
 
     return mix(
       mix(mix(n000, n100, u.x), mix(n010, n110, u.x), u.y),

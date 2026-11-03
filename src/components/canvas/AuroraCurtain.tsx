@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { getVfxPalette } from '@/lib/vfxPalette'
+import { NOISE_HASH_2D, NOISE_VALUE_2D } from '@/components/canvas/shaderNoise'
 import { useAppStore } from '@/store/useAppStore'
 import { soundEngine } from '@/utils/soundEngine'
 import type { PerformanceTier } from '@/types'
@@ -205,31 +206,12 @@ const FRAGMENT_SHADER = /* glsl */ `
   uniform vec3 uColorSecondary;
   uniform vec3 uColorAccent;
 
-  // ── Hash ─────────────────────────────────────────────────────────────────
-  // Sin-based 2D hash. The brief allows a cheap sin hash; at the scales the
-  // noise is sampled here the difference to gradient noise is invisible, and
-  // this is a handful of ALU ops instead of eight gradient dot products.
-  float hash21(vec2 p) {
-    p = fract(p * vec2(123.34, 456.21));
-    p += dot(p, p + 45.32);
-    return fract(p.x * p.y);
-  }
-
-  float valueNoise(vec2 p) {
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    // Smoothstep interpolation. A plain linear blend between the four corners
-    // exposes the lattice as diamond creases once the noise is stretched into
-    // long vertical fibres, which is exactly how it is used below.
-    vec2 u = f * f * (3.0 - 2.0 * f);
-
-    float a = hash21(i);
-    float b = hash21(i + vec2(1.0, 0.0));
-    float c = hash21(i + vec2(0.0, 1.0));
-    float d = hash21(i + vec2(1.0, 1.0));
-
-    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
-  }
+  // ── Noise ────────────────────────────────────────────────────────────────
+  // Shared, trig-free hash and value noise (SH-13). The comment here used to
+  // describe a sin hash while the body was already the trig-free construction --
+  // exactly the kind of drift a second copy invites.
+  ${NOISE_HASH_2D}
+  ${NOISE_VALUE_2D}
 
   /**
    * Four octaves of value noise.
@@ -245,7 +227,7 @@ const FRAGMENT_SHADER = /* glsl */ `
 
     for (int i = 0; i < 4; i++) {
       float octave = (i == 3) ? detail : 1.0;
-      sum += amp * octave * valueNoise(p);
+      sum += amp * octave * vnoise2(p);
       p = p * 2.03 + vec2(19.7, 7.3);
       amp *= 0.5;
     }
@@ -362,7 +344,7 @@ const FRAGMENT_SHADER = /* glsl */ `
     // Dither: a large additive gradient shows 8-bit banding. A fraction of a
     // percent of fragment-position noise breaks the contours; one hash is far
     // cheaper than the full-screen Noise pass the medium tier does not get.
-    alpha += (hash21(gl_FragCoord.xy) - 0.5) * 0.010;
+    alpha += (hash12(gl_FragCoord.xy) - 0.5) * 0.010;
 
     if (alpha < 0.004) discard;
 
