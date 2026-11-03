@@ -9,6 +9,7 @@ import {
   LanyardSimulation,
   bezierPathLength,
   catmullRomToBezier,
+  collideObb,
   sampleBezier,
   traceBezierPath,
   type LanyardSpec,
@@ -1018,77 +1019,6 @@ function resetLanyardVfx(vfx: LanyardVfx): void {
 }
 
 /**
- * Scalar separating-axis test, used only to locate contacts for sparks.
- *
- * ── Why this duplicates `collideObb` ──────────────────────────────────────
- * The solver's version is the source of truth and is used for the real
- * resolution, but it allocates its eight axis components into an array on every
- * call. That is fine for a handful of pairs inside a physics step, and not fine
- * for the render loop's no-allocation rule, so this is the same four-axis test
- * with the axes kept in locals and the result written into a caller-owned record.
- * The maths is deliberately identical, normal direction included, so the two
- * agree about which way the badges hit.
- */
-function overlapObb(a: Obb, b: Obb, out: ObbHit): ObbHit {
-  const ca = Math.cos(a.angle)
-  const sa = Math.sin(a.angle)
-  const cb = Math.cos(b.angle)
-  const sb = Math.sin(b.angle)
-  const dx = b.cx - a.cx
-  const dy = b.cy - a.cy
-
-  let minOverlap = Number.POSITIVE_INFINITY
-  let nx = 0
-  let ny = 0
-
-  for (let k = 0; k < 4; k++) {
-    let ax: number
-    let ay: number
-    if (k === 0) {
-      ax = ca
-      ay = sa
-    } else if (k === 1) {
-      ax = -sa
-      ay = ca
-    } else if (k === 2) {
-      ax = cb
-      ay = sb
-    } else {
-      ax = -sb
-      ay = cb
-    }
-
-    // Projected radii of both boxes on this axis.
-    const ra = a.hw * Math.abs(ca * ax + sa * ay) + a.hh * Math.abs(-sa * ax + ca * ay)
-    const rb = b.hw * Math.abs(cb * ax + sb * ay) + b.hh * Math.abs(-sb * ax + cb * ay)
-    const dist = dx * ax + dy * ay
-    const overlap = ra + rb - Math.abs(dist)
-
-    if (overlap <= 0) {
-      out.hit = false
-      out.nx = 0
-      out.ny = 0
-      out.depth = 0
-      return out
-    }
-
-    if (overlap < minOverlap) {
-      minOverlap = overlap
-      // Orient the normal from A toward B.
-      const sign = dist < 0 ? -1 : 1
-      nx = ax * sign
-      ny = ay * sign
-    }
-  }
-
-  out.hit = true
-  out.nx = nx
-  out.ny = ny
-  out.depth = minOverlap
-  return out
-}
-
-/**
  * Throw the collision burst.
  *
  * Count and speed are both driven by the measured impulse, across the 15–40
@@ -1311,7 +1241,15 @@ function captureImpactEvents(vfx: LanyardVfx, sim: LanyardSimulation): void {
       VFX_OBB_B.hh = tb.height * 0.5
       VFX_OBB_B.angle = tb.angle
 
-      const hit = overlapObb(VFX_OBB_A, VFX_OBB_B, VFX_HIT)
+      /*
+       * The shared SAT test from `mathPhysics`, not a local copy.
+       *
+       * There used to be an `overlapObb` here that duplicated `collideObb` to avoid its per-call
+       * axis array. That reason expired when `collideObb` stopped allocating (PB-09): the two were
+       * then the same maths written twice, in two files, with a comment worrying about them
+       * agreeing on the normal direction. One implementation, tested directly (seven assertions).
+       */
+      const hit = collideObb(VFX_OBB_A, VFX_OBB_B, VFX_HIT)
       // The solver corrects 72% of the penetration, so a real hit still leaves a
       // visible sliver; sub-pixel overlap is just badges resting together.
       if (!hit.hit || hit.depth < 0.5) continue
