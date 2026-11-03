@@ -9,7 +9,7 @@
  * inextensible by construction rather than by tuning stiffness.
  *
  * ── Allocation discipline ─────────────────────────────────────────────────
- * `step()` runs 360 times a second across four ropes (13 points each). Every
+ * `step()` runs 60 times a second across four ropes (12 points each). Every
  * scratch value there is a local number; no arrays, objects or vectors are
  * created inside the hot path. Render state is read directly off the mutable
  * `LanyardState` objects, never copied into fresh structures.

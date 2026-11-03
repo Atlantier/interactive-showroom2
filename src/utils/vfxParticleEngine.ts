@@ -74,6 +74,15 @@ export interface VfxParticle {
   stretch: number
   /** Remaining generations of bounce-splitting. */
   splits: number
+  /**
+   * Cached stroke style for this particle's colour, with alpha 1.
+   *
+   * The draw path used to build `rgba(r, g, b, alpha)` per particle per frame -- two template strings
+   * per live spark, i.e. hundreds of short-lived strings a frame on a busy collision, in the hottest
+   * loop the sandboxes have. Alpha is now applied through `globalAlpha`, so the string only changes
+   * when the colour does (once per spawn).
+   */
+  style: string
 }
 
 export interface VfxBurstOptions {
@@ -103,6 +112,14 @@ export interface VfxBurstOptions {
 export type VfxSpawnOptions = Omit<VfxBurstOptions, 'count'>
 
 const FULL_CIRCLE = Math.PI * 2
+
+/**
+ * The hot-core stroke colour, hoisted so the draw loop never builds it.
+ *
+ * With alpha applied through `globalAlpha`, a solid-colour string is enough for every particle's
+ * core, and this constant is the only one the loop can ever assign (SH-17).
+ */
+const SPARK_CORE_STYLE = 'rgba(255,255,255,1)'
 
 /**
  * Fractal lightning between two points, by midpoint displacement.
@@ -217,6 +234,7 @@ export class VfxParticleEngine {
         bounce: false,
         stretch: 0,
         splits: 0,
+        style: 'rgba(255,255,255,1)',
       }
     }
   }
@@ -260,6 +278,8 @@ export class VfxParticleEngine {
     p.bounce = options.bounce ?? false
     p.stretch = options.stretch ?? 0
     p.splits = options.splits ?? 0
+    // One string per spawn, not per frame: see the `style` field.
+    p.style = 'rgba(' + p.r + ',' + p.g + ',' + p.b + ',1)'
 
     return p
   }
@@ -382,7 +402,16 @@ export class VfxParticleEngine {
       const tailX = p.x - p.vx * p.stretch
       const tailY = p.y - p.vy * p.stretch
 
-      ctx.strokeStyle = `rgba(${p.r}, ${p.g}, ${p.b}, ${alpha})`
+      /*
+       * Alpha through `globalAlpha`, colour through a string cached at spawn (SH-17).
+       *
+       * The strings are the expensive part: `rgba(...)` per particle per frame allocated two
+       * strings for every live spark, which on a 40-spark collision is ~4800 strings a second in the
+       * hottest loop the sandbox has. `globalAlpha` multiplies the same colour, so the pixels are
+       * identical while the allocation count drops to zero per frame.
+       */
+      ctx.strokeStyle = p.style
+      ctx.globalAlpha = alpha
       ctx.lineWidth = p.size
       ctx.beginPath()
       ctx.moveTo(tailX, tailY)
@@ -392,7 +421,8 @@ export class VfxParticleEngine {
       // Hot white core on the head, so sparks read as metal vapour rather than
       // as coloured chalk.
       if (p.size > 0.9) {
-        ctx.strokeStyle = `rgba(255, 255, 255, ${alpha * 0.75})`
+        ctx.strokeStyle = SPARK_CORE_STYLE
+        ctx.globalAlpha = alpha * 0.75
         ctx.lineWidth = p.size * 0.42
         ctx.beginPath()
         ctx.moveTo(tailX, tailY)
@@ -401,6 +431,7 @@ export class VfxParticleEngine {
       }
     }
 
+    ctx.globalAlpha = 1
     ctx.globalCompositeOperation = 'source-over'
   }
 
