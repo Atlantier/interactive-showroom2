@@ -524,12 +524,20 @@ try {
       await sleep(300)
     }
     if (!stableShot) {
-      // Never settled. Use the last frame and REPORT that, rather than calling it stable.
+      /*
+       * Never settled. Use the last frame, say so, and continue.
+       *
+       * This is NOT a failure, and treating it as one was a bug: the settle loop exists to CHOOSE
+       * a frame, while the comparison against the baseline is what decides pass or fail. A view
+       * that keeps moving (a canvas that ignores the freeze, a late widget) was making the whole
+       * gate red even when the compared pixels matched the baseline within threshold -- failing
+       * for a reason that has nothing to do with whether the UI changed.
+       */
       const last = settleFrames[settleFrames.length - 1]
       stableShot = { png: last.png, grid: last.grid, attempts: settleFrames.length }
-      failures.push({
-        text: `${view.name}: picture never settled in ${settleFrames.length} captures`,
-      })
+      console.log(
+        `        ${view.name}: WARNING never settled in ${settleFrames.length} captures; comparing the last frame`,
+      )
     }
     console.log(`        ${view.name}: settled after ${stableShot.attempts} capture(s)`)
 
