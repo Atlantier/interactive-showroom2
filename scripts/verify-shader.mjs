@@ -293,6 +293,12 @@ try {
     })()`)
     await sleep(SETTLE_MS)
 
+    // Same font rule as the UI gate: freeze only after every pending face has settled, otherwise text
+    // inside the canvas can be measured in a fallback face on one run and not the other.
+    await evaluate(`(document.fonts && document.fonts.ready
+      ? document.fonts.ready.then(() => document.fonts.status)
+      : 'unsupported')`)
+
     const frozen = await evaluate(`(() => {
       // Same seam the UI gate uses: pin the R3F clock, stop the 2D loops, and tell components that
       // own timers to snap to a canonical state.

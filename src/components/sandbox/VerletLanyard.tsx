@@ -35,7 +35,7 @@ import { reportPhysicsSolve } from '@/lib/perfMetrics'
 import { GRAVITY_SCALE, useAppStore } from '@/store/useAppStore'
 import { useI18n } from '@/i18n/useI18n'
 
-import { isStill } from '@/lib/testHooks'
+import { isStill, onStillChange } from '@/lib/testHooks'
 import { isScrollBusy } from '@/lib/scrollEngine'
 import { createFixedStepClock, type FixedStepClock } from '@/lib/fixedStep'
 import { dprForTier } from '@/lib/device'
@@ -652,7 +652,28 @@ export function VerletLanyard({ className }: { className?: string }) {
 
     rafId = requestAnimationFrame(frame)
 
+    /*
+     * Deterministic freeze.
+     *
+     * `isStill()` stops the loop wherever it happens to be, so the frozen frame depends on how long
+     * the page took to load -- which is exactly why this canvas was excluded from every visual gate.
+     * On the freeze event the simulation is rebuilt from its specs (construction uses no randomness;
+     * the only `Math.random` in the solver is the spin added when a rope breaks), the transient pools
+     * are dropped and one frame is drawn. Two runs of the same build then produce the same pixels,
+     * which is what a canvas baseline needs.
+     */
+    const snapToCanonical = (): void => {
+      resetLanyardVfx(vfx)
+      const fresh = new LanyardSimulation({ width: cssW, height: cssH, specs: LANYARD_SPECS })
+      simRef.current = fresh
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      ctx.clearRect(0, 0, cssW, cssH)
+      drawSandbox(ctx, fresh, cssW, cssH, 0, vfx, 0)
+    }
+    const stopStillSubscription = onStillChange(snapToCanonical)
+
     return () => {
+      stopStillSubscription()
       cancelAnimationFrame(rafId)
       resizeObserver.disconnect()
       // Retire the pool with the canvas. A dead sandbox must not keep a few

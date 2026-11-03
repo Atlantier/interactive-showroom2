@@ -6,7 +6,7 @@ import { soundEngine } from '@/utils/soundEngine'
 import { useInViewAnimation } from '@/hooks/useInViewAnimation'
 import { reportIkSolve } from '@/lib/perfMetrics'
 import { useI18n } from '@/i18n/useI18n'
-import { isStill } from '@/lib/testHooks'
+import { isStill, onStillChange } from '@/lib/testHooks'
 import { isScrollBusy } from '@/lib/scrollEngine'
 import { createFixedStepClock, type FixedStepClock } from '@/lib/fixedStep'
 import { dprForTier } from '@/lib/device'
@@ -1744,7 +1744,30 @@ export function FabrikCreature({ className }: { className?: string }) {
 
     raf = requestAnimationFrame(frame)
 
+    /*
+     * Deterministic freeze (same reasoning as VerletLanyard).
+     *
+     * `isStill()` stops the loop wherever it landed, so the frozen frame depends on load timing.
+     * Rebuilding both rigs from the current canvas size, dropping the particle pools and drawing one
+     * frame makes two runs of the same build produce the same pixels.
+     */
+    const snapToCanonical = (): void => {
+      const freshArm = createArm(cssW, cssH)
+      const freshCreature = createCreature(cssW, cssH)
+      freshArm.engine.clear()
+      freshCreature.engine.clear()
+      armRef.current = freshArm
+      creatureRef.current = freshCreature
+      pointerRef.current = { x: cssW / 2, y: cssH * 0.35 }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      ctx.clearRect(0, 0, cssW, cssH)
+      if (modeRef.current === 'arm') drawArm(ctx, freshArm, debugRef.current.vectors)
+      else drawCreature(ctx, freshCreature, debugRef.current.vectors)
+    }
+    const stopStillSubscription = onStillChange(snapToCanonical)
+
     return () => {
+      stopStillSubscription()
       cancelAnimationFrame(raf)
       ro.disconnect()
     }

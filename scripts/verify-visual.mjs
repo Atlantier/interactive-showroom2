@@ -435,6 +435,18 @@ try {
     await sleep(SETTLE_MS)
 
     /*
+     * Fonts first.
+     *
+     * The freeze used to happen whether or not the webfonts had landed. When they had not, text was
+     * measured in the fallback face and the capture was a frame the next run could never reproduce;
+     * the gates survived it only because their noise budget is generous. `document.fonts.ready`
+     * resolves once every pending face has settled.
+     */
+    await evaluate(`(document.fonts && document.fonts.ready
+      ? document.fonts.ready.then(() => document.fonts.status)
+      : 'unsupported')`)
+
+    /*
      * Freeze, then shoot.
      *
      * Without this the comparison is hopeless: the camera eases toward its scroll target
