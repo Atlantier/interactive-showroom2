@@ -2,6 +2,7 @@ import Lenis from 'lenis'
 import { clamp, createSpring, resetSpring, safeNumber, stepSpring } from '@/lib/math'
 import { advanceR3F } from '@/lib/frameBridge'
 import { invalidatePointerBox, transient, writeScroll } from '@/store/useAppStore'
+import { resolveProgress } from '@/lib/scrollProgress'
 
 /**
  * Scroll engine — the single clock of the application.
@@ -142,8 +143,17 @@ export function createScrollEngine(): () => void {
     const dt = lastTime ? Math.min((time - lastTime) / 1000, 0.1) : 1 / 60
     lastTime = time
 
-    // 2. Lenis already smooths its animatedScroll; just read the result.
-    const progress = clamp(safeNumber(lenis.progress), 0, 1)
+    /*
+     * 2. Lenis already smooths its animatedScroll; just read the result.
+     *
+     * Through `resolveProgress` rather than straight off the instance: Lenis reports
+     * `progress === 1` for a document with no scrollable distance, and this app reads progress as
+     * "how far through the narrative" -- so a short page, or a long one measured before its
+     * content laid out (the first frame or two), started with the camera at the end of its path
+     * and eased backwards from there. Zero scrollable distance means zero progress.
+     */
+    const lenisLimit = (lenis as unknown as { limit?: number }).limit ?? 0
+    const progress = resolveProgress(safeNumber(lenis.progress), lenisLimit)
 
     // 3. Velocity in normalized "progress per second" units.
     //    The raw per-frame delta is noisy, so it is smoothed with a critically
